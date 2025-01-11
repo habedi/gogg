@@ -1,17 +1,22 @@
 package main
 
 import (
-	"github.com/habedi/template-go-project/cmd"
+	"github.com/habedi/gogg/cmd"
+	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
 func main() {
-	// send all logs to stdout
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
+	// If the DEBUG_GOGG environment variable is set, enable debug logging to stdout, otherwise disable logging
+	if os.Getenv("DEBUG_GOGG") != "" {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.Disabled)
+	}
 
 	// This block sets up a go routine to listen for an interrupt signal which will immediately exit the program
 	stopChan := make(chan os.Signal, 1)

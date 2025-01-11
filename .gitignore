@@ -78,3 +78,6 @@ poetry.lock
 # Add any additional file patterns a directory names that should be ignored down here
 *.log
 bin/
+download/
+catalogue.csv
+*.snap
