@@ -1,0 +1,80 @@
+# Python specific
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env/
+env/
+.venv/
+venv/
+
+# Packaging and distribution files
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Dependency directories
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+.installed.cfg
+
+# Test and coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# IDE specific files and directories
+.idea/
+*.iml
+.vscode/
+
+# Jupyter Notebook files
+.ipynb_checkpoints
+
+# Temporary files created by editors and the system and folders to ignore
+*.swp
+*~
+*.bak
+*.tmp
+temp/
+tmp/
+
+# Database files (SQLite, DuckDB, etc.)
+*.duckdb
+*.db
+*.wal
+*.sqlite
+
+# Dependency lock files (uncomment to ignore)
+poetry.lock
+
+# Golang specific
+*.out
+*.test
+*.prof
+*.exe
+#go.sum
+
+# Miscellaneous files and directories to ignore
+# Add any additional file patterns a directory names that should be ignored down here
+*.log
+bin/

@@ -1,0 +1,53 @@
+# Normalize all text files to LF line endings
+* text=auto eol=lf
+
+# Go source files
+*.go text
+*.mod text
+*.sum text
+
+# Markdown and documentation files
+*.md text
+*.rst text
+
+# JSON, YAML, and configuration files
+*.json text
+*.yaml text
+*.yml text
+*.toml text
+
+# Shell scripts
+*.sh text eol=lf
+
+# Static files
+*.html text
+*.css text
+*.js text
+*.svg text
+*.xml text
+
+# Large assets (use Git LFS)
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.gif filter=lfs diff=lfs merge=lfs -text
+*.ico filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.mov filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.tar filter=lfs diff=lfs merge=lfs -text
+*.gz filter=lfs diff=lfs merge=lfs -text
+*.tgz filter=lfs diff=lfs merge=lfs -text
+
+# Font files (binary, tracked via LFS)
+*.ttf filter=lfs diff=lfs merge=lfs -text
+*.woff filter=lfs diff=lfs merge=lfs -text
+*.woff2 filter=lfs diff=lfs merge=lfs -text
+
+# Build artifacts (binary, optional LFS tracking)
+*.exe filter=lfs diff=lfs merge=lfs -text
+*.dll filter=lfs diff=lfs merge=lfs -text
+*.so filter=lfs diff=lfs merge=lfs -text
+*.out filter=lfs diff=lfs merge=lfs -text
+*.a filter=lfs diff=lfs merge=lfs -text
+*.o filter=lfs diff=lfs merge=lfs -text
