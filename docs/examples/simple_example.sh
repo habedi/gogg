@@ -14,18 +14,18 @@ $GOGG version
 $GOGG init
 
 # Login to GOG.com (headless mode; no browser window is opened)
-$GOGG login --show=false
+$GOGG auth --show=false
 
 # Update game catalogue with the data from GOG.com
-$GOGG catalogue refresh --threads 10
+$GOGG catalogue refresh --threads=10
 
 # Search for games with specific terms in their titles
 $GOGG catalogue search --term "Witcher"
 $GOGG catalogue search --term "mess"
 
 # Download a specific game ("The Messenger") with the given options
-$GOGG download --id 1433116924 --dir ./games --platform all --lang en --threads 3 \
-    --dlcs false --extras false --resume false
+$GOGG download --id=1433116924 --dir=./games --platform=all --lang=en --threads=3 \
+    --dlcs=false --extras=false --resume=true
 
 # Show the downloaded game files
 tree ./games

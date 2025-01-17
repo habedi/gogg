@@ -72,13 +72,13 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 
 	// Check the number of threads is valid
 	if numThreads < 1 || numThreads > 20 {
-		log.Error().Msg("Number of threads must be between 1 and 20")
+		fmt.Println("Number of threads must be between 1 and 20.")
 		return
 	}
 
 	// Try to refresh the access token
 	if _, err := authenticateUser(false); err != nil {
-		log.Error().Msg("Failed to refresh the access token")
+		log.Error().Msg("Failed to refresh the access token.")
 		return
 	}
 
@@ -134,7 +134,7 @@ func logDownloadParameters(game client.Game, gameID int, downloadPath, language,
 	fmt.Println("================================= Download Parameters =====================================")
 	fmt.Printf("Downloading \"%v\" (with game ID=\"%d\") to \"%v\"\n", game.Title, gameID, downloadPath)
 	fmt.Printf("Platform: \"%v\", Language: '%v'\n", platformName, gameLanguages[language])
-	fmt.Printf("Include Extras: \"%vv, Include DLCs: \"%v\", Resume enabled: \"%v\"\n", extrasFlag, dlcFlag, resumeFlag)
+	fmt.Printf("Include Extras: \"%v, Include DLCs: \"%v\", Resume enabled: \"%v\"\n", extrasFlag, dlcFlag, resumeFlag)
 	fmt.Printf("Number of worker threads for download: \"%d\"\n", numThreads)
 	fmt.Println("============================================================================================")
 }
