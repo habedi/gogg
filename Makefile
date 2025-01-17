@@ -98,3 +98,8 @@ install-deps:
 lint:
 	@echo "Linting Go files..."
 	golangci-lint run ./...
+
+# Create Test Coverage Report for Codecov
+codecov: format
+	@echo "Uploading coverage report to Codecov..."
+	go test -coverprofile=coverage.txt ./...
