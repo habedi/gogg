@@ -20,6 +20,9 @@
   <a href="https://github.com/habedi/gogg/releases/latest">
     <img src="https://img.shields.io/github/release/habedi/gogg.svg?style=flat-square" alt="Release">
   </a>
+  <a href="https://codecov.io/gh/habedi/gogg" > 
+    <img src="https://codecov.io/gh/habedi/gogg/graph/badge.svg?token=1RUL13T0VE" alt="Code Coverage">
+  </a>
   <br>
   <a href="https://github.com/habedi/gogg/actions/workflows/build_linux.yml">
     <img src="https://github.com/habedi/gogg/actions/workflows/build_linux.yml/badge.svg" alt="Linux Build">
