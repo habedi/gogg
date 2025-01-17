@@ -12,7 +12,7 @@ Write-Host "${GREEN}The code in this script downloads all games owned by the use
 Write-Host "${GREEN}============================================================================================${NC}"
 
 $DEBUG_MODE = 1 # Debug mode enabled
-$GOGG = ".\gogg" # Path to Gogg's executable file (for example, ".\bin\gogg")
+$GOGG = ".\bin/gogg" # Path to Gogg's executable file (for example, ".\bin\gogg")
 
 $LANG = "en" # Language English
 $PLATFORM = "windows" # Platform Windows
@@ -35,8 +35,8 @@ function Cleanup
 }
 
 # Update game catalogue and export it to a CSV file
-& $GOGG catalogue refresh
-& $GOGG catalogue export --format csv --dir ./
+& $GOGG catalogue refresh --threads=10
+& $GOGG catalogue export --format=csv --dir=./
 
 # Find the newest catalogue file
 $latest_csv = Get-ChildItem -Path . -Filter "gogg_catalogue_*.csv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -57,8 +57,8 @@ Get-Content $latest_csv.FullName | Select-Object -Skip 1 | ForEach-Object {
     $game_title = $fields[1]
     Write-Host "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
     $env:DEBUG_GOGG = $DEBUG_MODE
-    & $GOGG download --id $game_id --dir "./games" --platform $PLATFORM --lang $LANG `
-        --dlcs $INCLUDE_DLC --extras $INCLUDE_EXTRA_CONTENT --resume $RESUME_DOWNLOAD --threads $NUM_THREADS
+    & $GOGG download --id=$game_id --dir="./games" --platform=$PLATFORM --lang=$LANG `
+        --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS
     Start-Sleep -Seconds 1
 }
 

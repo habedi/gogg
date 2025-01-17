@@ -18,7 +18,7 @@ func Execute() {
 
 	// Execute the root command
 	if err := rootCmd.Execute(); err != nil {
-		log.Error().Err(err).Msg("Command execution failed")
+		log.Error().Err(err).Msg("Command execution failed.")
 		os.Exit(1) // Exit with a failure code
 	}
 }
@@ -61,7 +61,7 @@ func initializeDatabase() {
 // closeDatabase closes the database connection
 func closeDatabase() {
 	if err := db.CloseDB(); err != nil {
-		log.Error().Err(err).Msg("Failed to close the database")
+		log.Error().Err(err).Msg("Failed to close the database.")
 		os.Exit(1)
 	}
 }
