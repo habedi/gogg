@@ -100,21 +100,21 @@ gogg auth
 
 ```bash
 # Will fetch the up-to-date information about the games you own on GOG
-gogg catalogue refresh
+gogg catalogue refresh --threads=10
 ```
 
 #### Searching for Games
 
 ```bash
-# Will search for games with the the term `witcher` in their title
-gogg catalogue search --term witcher
+# Will search for games with the the term `Witcher` in their title
+gogg catalogue search --term="Witcher"
 ```
 
 #### Downloading a Game
 
 ```bash
-# Will download the game files for `The Witcher: Enhanced Edition` to `./games` directory
-gogg download --id 1207658924 --dir ./games --platform windows --lang en --dlcs true --extras true --resume true --threads 5
+# Will download the game files for `The Witcher: Enhanced Edition` to `./games` directory (without extra content)
+gogg download --id=1207658924 --dir=./games --platform=windows --lang=en --dlcs=true --extras=false --resume=true --threads 5
 ```
 
 ## Contributing

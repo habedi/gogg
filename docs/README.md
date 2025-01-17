@@ -66,13 +66,13 @@ The search can be done either by the game ID or by a search term.
 
 ```sh
 # Search by the game ID
-gogg catalogue search --id <game_id>
+gogg catalogue search --id=<game_id>
 ```
 
 ```sh
 # Search by search a term
 # The search term is case-insensitive and can be a partial match of the game title
-gogg catalogue search --term <search_term>
+gogg catalogue search --term=<search_term>
 ```
 
 #### Game Details
@@ -82,7 +82,7 @@ The command requires the game ID as an argument.
 
 ```sh
 # Displays the detailed information about a game from the catalogue
-gogg catalogue info --id <game_id>
+gogg catalogue info --id=<game_id>
 ```
 
 #### Exporting the Catalogue
@@ -94,7 +94,7 @@ If the format is CSV, the file will include the game ID, title of every game in 
 
 ```sh
 # Export the catalogue as CSV to a file in the specified directory
-gogg catalogue export --format csv --dir <directory_to_save_the_file>
+gogg catalogue export --format=csv --dir=<directory_to_save_the_file>
 ```
 
 If the format is JSON, the file will include the full information about every game in the catalogue.
@@ -102,7 +102,7 @@ The full information is the data that GOG provides about the game.
 
 ```sh
 # Export the catalogue as JSON to a file in the specified directory
-gogg catalogue export --format json --dir <directory_to_save_the_file>
+gogg catalogue export --format=json --dir=<directory_to_save_the_file>
 ```
 
 ### Downloading Game Files
@@ -111,7 +111,7 @@ To download game files, use the `download` command and provide it with the game 
 where you want to save the files.
 
 ```sh
-gogg download --id <game_id> --dir <directory_to_save_the_files>
+gogg download --id=<game_id> --dir=<directory_to_save_the_files>
 ```
 
 The `download` command supports the following additional options:
@@ -123,11 +123,12 @@ The `download` command supports the following additional options:
 - `--resume`: Resume interrupted downloads (default is true)
 - `--threads`: Number of worker threads to use for downloading (default is 5)
 
-For example, to download all files of a game with the ID `<game_id>` to the directory `<game_dir>` with the specified
+For example, to download all files (English language) of a game with the ID `<game_id>` to the directory `<game_dir>`
+with the specified
 options:
 
 ```sh
-gogg download --id <game_id> --dir <game_dir> --platform all --lang en --dlcs true --extras true --resume true --threads 5
+gogg download --id=<game_id> --dir=<game_dir> --platform=all --lang=en --dlcs=true --extras=true --resume=true --threads=5
 ```
 
 ## Enabling Debug Mode

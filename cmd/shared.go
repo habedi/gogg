@@ -16,7 +16,7 @@ func authenticateUser(showWindow bool) (*db.User, error) {
 	}
 
 	if err := client.AuthGOG(authURL, user, !showWindow); err != nil {
-		log.Error().Err(err).Msg("Failed to authenticate with GOG.com")
+		log.Error().Err(err).Msg("Failed to authenticate with GOG.com.")
 		return nil, err
 	}
 
