@@ -25,6 +25,7 @@ help:
 	@echo "  snap             Build the Snap package"
 	@echo "  install-deps     Install development dependencies on Debian-based systems"
 	@echo "  lint             Lint Go files to check for potential errors"
+	@echo "  codecov          Create test coverage report for Codecov"
 	@echo "  help             Show this help message"
 
 # Building the project
