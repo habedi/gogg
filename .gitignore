@@ -81,3 +81,6 @@ bin/
 download/
 catalogue.csv
 *.snap
+gogg/
+games/
+gogg_catalogue*

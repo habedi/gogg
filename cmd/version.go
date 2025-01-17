@@ -6,7 +6,7 @@ import (
 
 var (
 	// Gogg version
-	version = "1.0.0"
+	version = "0.2.0"
 )
 
 // versionCmd shows the version of Gogg

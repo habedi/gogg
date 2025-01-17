@@ -251,7 +251,7 @@ func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 
 	wg.Wait()
 	bar.Finish()
-	cmd.Printf("Refreshing completed successfully. There are %d games in the catalogue.\n", len(games))
+	cmd.Printf("Refreshing completed successfully.")
 }
 
 // searchCmd searches for games in the catalogue by ID or title
