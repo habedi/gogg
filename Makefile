@@ -25,6 +25,7 @@ help:
 	@echo "  snap             Build the Snap package"
 	@echo "  install-deps     Install development dependencies on Debian-based systems"
 	@echo "  lint             Lint Go files to check for potential errors"
+	@echo "  codecov          Create test coverage report for Codecov"
 	@echo "  help             Show this help message"
 
 # Building the project
@@ -98,3 +99,8 @@ install-deps:
 lint:
 	@echo "Linting Go files..."
 	golangci-lint run ./...
+
+# Create Test Coverage Report for Codecov
+codecov: format
+	@echo "Uploading coverage report to Codecov..."
+	go test -coverprofile=coverage.txt ./...
