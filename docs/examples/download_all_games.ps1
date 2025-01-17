@@ -57,8 +57,8 @@ Get-Content $latest_csv.FullName | Select-Object -Skip 1 | ForEach-Object {
     $game_title = $fields[1]
     Write-Host "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
     $env:DEBUG_GOGG = $DEBUG_MODE
-    & $GOGG download --id $game_id --dir "./games" --platform $PLATFORM --lang $LANG `
-        --dlcs $INCLUDE_DLC --extras $INCLUDE_EXTRA_CONTENT --resume $RESUME_DOWNLOAD --threads $NUM_THREADS
+    & $GOGG download --id=$game_id --dir="./games" --platform=$PLATFORM --lang=$LANG `
+        --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS
     Start-Sleep -Seconds 1
 }
 
