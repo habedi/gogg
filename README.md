@@ -11,19 +11,6 @@
   <a href="https://github.com/habedi/gogg/actions/workflows/tests.yml">
     <img src="https://github.com/habedi/gogg/actions/workflows/tests.yml/badge.svg" alt="Tests">
   </a>
-  <a href="https://goreportcard.com/report/github.com/habedi/gogg">
-    <img src="https://goreportcard.com/badge/github.com/habedi/gogg" alt="Go Report Card">
-  </a>
-  <a href="https://pkg.go.dev/github.com/habedi/gogg">
-    <img src="https://pkg.go.dev/badge/github.com/habedi/gogg.svg" alt="Go Reference">
-  </a>
-  <a href="https://github.com/habedi/gogg/releases/latest">
-    <img src="https://img.shields.io/github/release/habedi/gogg.svg?style=flat-square" alt="Release">
-  </a>
-  <a href="https://codecov.io/gh/habedi/gogg" > 
-    <img src="https://codecov.io/gh/habedi/gogg/graph/badge.svg?token=1RUL13T0VE" alt="Code Coverage">
-  </a>
-  <br>
   <a href="https://github.com/habedi/gogg/actions/workflows/build_linux.yml">
     <img src="https://github.com/habedi/gogg/actions/workflows/build_linux.yml/badge.svg" alt="Linux Build">
   </a>
@@ -32,6 +19,25 @@
   </a>
   <a href="https://github.com/habedi/gogg/actions/workflows/build_macos.yml">
     <img src="https://github.com/habedi/gogg/actions/workflows/build_macos.yml/badge.svg" alt="MacOS Build">
+  </a>
+  <br>
+  <a href="https://goreportcard.com/report/github.com/habedi/gogg">
+    <img src="https://goreportcard.com/badge/github.com/habedi/gogg" alt="Go Report Card">
+  </a>
+  <a href="https://pkg.go.dev/github.com/habedi/gogg">
+    <img src="https://pkg.go.dev/badge/github.com/habedi/gogg.svg" alt="Go Reference">
+  </a>
+  <a href="https://codecov.io/gh/habedi/gogg">
+    <img src="https://codecov.io/gh/habedi/gogg/graph/badge.svg?token=1RUL13T0VE" alt="Code Coverage">
+  </a>
+  <a href="https://www.codefactor.io/repository/github/habedi/gogg">
+    <img src="https://www.codefactor.io/repository/github/habedi/gogg/badge" alt="CodeFactor">
+  </a>
+  <a href="https://github.com/habedi/gogg/releases/latest">
+    <img src="https://img.shields.io/github/release/habedi/gogg.svg?style=flat-square" alt="Release">
+  </a>
+  <a href="https://github.com/habedi/gogg/releases">
+  <img src="https://img.shields.io/github/downloads/habedi/gogg/total.svg" alt="Total Downloads">
   </a>
 </p>
 
