@@ -1,8 +1,8 @@
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="assets/logo-v1.jpeg">
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-v1.jpeg">
-    <img alt="Gogg logo" src="assets/logo-v1.jpeg" height="35%" width="35%">
+    <source media="(prefers-color-scheme: light)" srcset="logo.jpeg">
+    <source media="(prefers-color-scheme: dark)" srcset="logo.jpeg">
+    <img alt="Gogg logo" src="logo.jpeg" height="40%" width="40%">
   </picture>
 </div>
 <br>
@@ -20,10 +20,16 @@
   <a href="https://github.com/habedi/gogg/releases/latest">
     <img src="https://img.shields.io/github/release/habedi/gogg.svg?style=flat-square" alt="Release">
   </a>
-  <a href="https://snapcraft.io/gogg">
-  <img src="https://snapcraft.io/gogg/badge.svg" alt="Snap Store">
+  <br>
+  <a href="https://github.com/habedi/gogg/actions/workflows/build_linux.yml">
+    <img src="https://github.com/habedi/gogg/actions/workflows/build_linux.yml/badge.svg" alt="Linux Build">
   </a>
-
+  <a href="https://github.com/habedi/gogg/actions/workflows/build_windows.yml">
+    <img src="https://github.com/habedi/gogg/actions/workflows/build_windows.yml/badge.svg" alt="Windows Build">
+  </a>
+  <a href="https://github.com/habedi/gogg/actions/workflows/build_macos.yml">
+    <img src="https://github.com/habedi/gogg/actions/workflows/build_macos.yml/badge.svg" alt="MacOS Build">
+  </a>
 </p>
 
 # Gogg
@@ -56,6 +62,8 @@ Additionally, it allows users to perform the following actions:
 
 See the [documentation](docs/README.md) for how to install and use Gogg.
 
+Run `gogg -h` to see the available commands and options.
+
 ### Examples
 
 For more detailed examples, see the content of the [examples](docs/examples/) directory.
@@ -76,8 +84,8 @@ gogg auth
 ```
 
 > You must have [Google Chrome](https://www.google.com/chrome/) or [Chromium](https://www.chromium.org/) installed
-on your machine for the first-time authentication. 
-So, make sure you have one of them installed.
+> on your machine for the first-time authentication.
+> So, make sure you have one of them installed.
 
 #### Syncing the Game Catalogue
 
@@ -93,6 +101,6 @@ gogg catalogue refresh
 gogg download --id 1207658924 --dir ./games --platform windows --lang en --dlcs true --extras true --resume true --threads 5
 ```
 
-## Bugs and Features
+## Contributing
 
-Use the [issue tracker](github.com/habedi/gogg/issues) to report a bug or ask for a feature.
+Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for information on how to contribute to Gogg.

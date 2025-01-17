@@ -1,11 +1,11 @@
-name: MacOS Build
+name: Windows Build
 
 on:
-    workflow_dispatch: # Only enable manual runs for now
+    workflow_dispatch: # Enable manual execution
 
 jobs:
     build:
-        runs-on: macos-latest
+        runs-on: windows-latest
 
         steps:
             # Checkout the repository
@@ -21,26 +21,24 @@ jobs:
             # Install dependencies and run the tests
             -   name: Install Dependencies
                 run: |
-                    brew install make
+                    choco install make -y
                     make format
                     make test
                 continue-on-error: false
 
             # Build the application
-            -   name: Build for MacOS
+            -   name: Build for Windows
                 run: |
-                    make build-macos
-
+                    make build GOGG_BINARY=gogg.exe
                 continue-on-error: false
 
             # Debug: List Build Directory
             -   name: List Build Directory
                 run: ls -R bin
 
-            # Archive the build artifacts
-            -   name: Archive Build Artifacts
+            # Upload Build Artifact
+            -   name: Upload Build Artifact
                 uses: actions/upload-artifact@v4
                 with:
-                    name: gogg-macos-universal
-                    path: 'bin/gogg'
-
+                    name: gogg-windows-amd64
+                    path: 'bin/gogg.exe'

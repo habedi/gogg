@@ -1,7 +1,7 @@
 name: Linux Build
 
 on:
-    workflow_dispatch: # Only enable manual runs for now
+    workflow_dispatch: # Enable manual execution
 
 jobs:
     build:
@@ -36,11 +36,9 @@ jobs:
             -   name: List Build Directory
                 run: ls -R bin
 
-            # Archive the build artifacts
-            -   name: Archive Build Artifacts
+            # Upload Build Artifact
+            -   name: Upload Build Artifact
                 uses: actions/upload-artifact@v4
                 with:
                     name: gogg-linux-amd64
                     path: 'bin/gogg'
-
-

@@ -23,7 +23,7 @@ func main() {
 	signal.Notify(stopChan, os.Interrupt)
 	go listenForInterrupt(stopChan)
 
-	// Execute the CLI program
+	// Program entry point
 	cmd.Execute()
 }
 

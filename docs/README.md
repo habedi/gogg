@@ -10,10 +10,7 @@
 
 You can download the binary builds of Gogg for your operating system
 from the [releases page](https://github.com/habedi/gogg/releases).
-
 You might want to add the binary to your system's PATH to use it from anywhere on your system.
-
-Run `gogg -h` to see the available commands and options.
 
 ## Usage
 

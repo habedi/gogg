@@ -24,6 +24,7 @@ help:
 	@echo "  snap-deps        Install Snapcraft dependencies"
 	@echo "  snap             Build the Snap package"
 	@echo "  install-deps     Install development dependencies on Debian-based systems"
+	@echo "  lint             Lint Go files to check for potential errors"
 	@echo "  help             Show this help message"
 
 # Building the project
@@ -75,6 +76,7 @@ snap-deps:
 	@echo "Installing Snapcraft dependencies..."
 	sudo apt-get update
 	sudo apt-get install -y snapd
+	sudo snap refresh
 	sudo snap install snapcraft --classic
 	sudo snap install multipass --classic
 
@@ -86,7 +88,13 @@ snap: build # snap-deps
 # Install Dependencies on Debian-based systems like Ubuntu
 install-deps:
 	@echo "Installing dependencies..."
-	sudo apt-get update
-	sudo apt-get install -y chromium-browser snapd build-essential
-	sudo snap refresh
-	sudo snap install snapcraft multipass chromium go
+	make snap-deps
+	sudo apt-get install -y chromium-browser build-essential
+	sudo snap install chromium
+	sudo snap install go --classic
+	sudo snap install golangci-lint --classic
+
+# Linting Go files
+lint:
+	@echo "Linting Go files..."
+	golangci-lint run ./...
