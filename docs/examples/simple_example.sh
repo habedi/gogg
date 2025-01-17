@@ -4,6 +4,9 @@
 
 GOGG=$(command -v bin/gogg || command -v gogg)
 
+# Show Gogg's commands
+$GOGG --help
+
 # Show the Gogg version
 $GOGG version
 
