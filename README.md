@@ -117,6 +117,10 @@ gogg catalogue search --term="Witcher"
 gogg download --id=1207658924 --dir=./games --platform=windows --lang=en --dlcs=true --extras=false --resume=true --threads 5
 ```
 
+## Demo
+
+[![asciicast](https://asciinema.org/a/AVvvpkicWHINxmaX0Gsk7H8xL.svg)](https://asciinema.org/a/AVvvpkicWHINxmaX0Gsk7H8xL)
+
 ## Contributing
 
 Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for information on how to contribute to Gogg.
