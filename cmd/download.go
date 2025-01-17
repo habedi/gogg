@@ -55,11 +55,11 @@ func downloadCmd() *cobra.Command {
 
 	// Game ID flag and download path are required
 	if err := cmd.MarkFlagRequired("id"); err != nil {
-		log.Error().Err(err).Msg("Failed to mark 'id' flag as required")
+		log.Error().Err(err).Msg("Failed to mark 'id' flag as required.")
 	}
 
 	if err := cmd.MarkFlagRequired("path"); err != nil {
-		log.Error().Err(err).Msg("Failed to mark 'path' flag as required")
+		log.Error().Err(err).Msg("Failed to mark 'path' flag as required.")
 	}
 
 	return cmd
@@ -94,24 +94,24 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	// Fetch the game details from the catalogue
 	game, err := db.GetGameByID(gameID)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get game by ID")
+		log.Error().Err(err).Msg("Failed to get game by ID.")
 		return
 	} else if game == nil {
-		log.Error().Msg("Game not found in the catalogue")
+		log.Error().Msg("Game not found in the catalogue.")
 		return
 	}
 
 	// Parse the game data into a Game object
 	parsedGameData, err := client.ParseGameData(game.Data)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to parse game details")
+		log.Error().Err(err).Msg("Failed to parse game details.")
 		return
 	}
 
 	// Load the user data
 	user, err := db.GetUserData()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to retrieve user data from the database")
+		log.Error().Err(err).Msg("Failed to retrieve user data from the database.")
 		return
 	}
 
@@ -123,9 +123,9 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	err = client.DownloadGameFiles(user.AccessToken, parsedGameData, downloadPath, gameLanguages[language],
 		platformName, extrasFlag, dlcFlag, resumeFlag, numThreads)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to download game files")
+		log.Error().Err(err).Msg("Failed to download game files.")
 	}
-	fmt.Println("Game files downloaded successfully.")
+	fmt.Println("\rGame files downloaded successfully.")
 }
 
 // logDownloadParameters logs the download parameters
