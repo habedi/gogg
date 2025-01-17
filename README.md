@@ -94,6 +94,13 @@ gogg auth
 gogg catalogue refresh
 ```
 
+#### Searching for Games
+
+```bash
+# Will search for games with the the term `witcher` in their title
+gogg catalogue search --term witcher
+```
+
 #### Downloading a Game
 
 ```bash
