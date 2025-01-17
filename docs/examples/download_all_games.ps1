@@ -12,7 +12,7 @@ Write-Host "${GREEN}The code in this script downloads all games owned by the use
 Write-Host "${GREEN}============================================================================================${NC}"
 
 $DEBUG_MODE = 1 # Debug mode enabled
-$GOGG = ".\gogg" # Path to Gogg's executable file (for example, ".\bin\gogg")
+$GOGG = ".\bin/gogg" # Path to Gogg's executable file (for example, ".\bin\gogg")
 
 $LANG = "en" # Language English
 $PLATFORM = "windows" # Platform Windows
@@ -35,8 +35,8 @@ function Cleanup
 }
 
 # Update game catalogue and export it to a CSV file
-& $GOGG catalogue refresh
-& $GOGG catalogue export --format csv --dir ./
+& $GOGG catalogue refresh --threads=10
+& $GOGG catalogue export --format=csv --dir=./
 
 # Find the newest catalogue file
 $latest_csv = Get-ChildItem -Path . -Filter "gogg_catalogue_*.csv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
