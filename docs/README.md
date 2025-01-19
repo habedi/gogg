@@ -1,9 +1,7 @@
-## Dependency Notice
-
+> [!IMPORTANT]
 > The current Gogg release needs [Google Chrome](https://www.google.com/chrome/) or
 [Chromium](https://www.chromium.org/) as a dependency for the first-time authentication (logging into the GOG website
-> using
-> username and password).
+> using username and password).
 > So, make sure you have one of them installed on your machine.
 
 ## Installation
@@ -14,26 +12,13 @@ You might want to add the binary to your system's PATH to use it from anywhere o
 
 ## Usage
 
-### First Time Setup
+### Login to GOG
 
-To use Gogg, you must enter your GOG credentials using the `init` command.
-This command will save your credentials in Gogg's internal database.
-
-```sh
-gogg init
-```
-
-### Authentication
-
-Use the `auth` command to authenticate with GOG using your saved credentials:
+Use the `login` command to login to your GOG account the first time you use Gogg.
 
 ```sh
-gogg auth
+gogg login
 ```
-
-The first time you run this command, Gogg will open a browser window to authenticate with GOG.
-After you log in, Gogg will save the authentication token in its internal database.
-After that, you can use the `auth` command to refresh the token if it is expired.
 
 ### Game Catalogue
 
@@ -65,14 +50,14 @@ To search for games in the catalogue, you can use the `catalogue search` command
 The search can be done either by the game ID or by a search term.
 
 ```sh
-# Search by the game ID
-gogg catalogue search --id=<game_id>
+# Search by search a term (default)
+# The search term is case-insensitive and can be a partial match of the game title
+gogg catalogue search <search_term>
 ```
 
 ```sh
-# Search by search a term
-# The search term is case-insensitive and can be a partial match of the game title
-gogg catalogue search --term=<search_term>
+# Search by the game ID (use the --id flag)
+gogg catalogue search --id=true <game_id>
 ```
 
 #### Game Details
@@ -82,7 +67,7 @@ The command requires the game ID as an argument.
 
 ```sh
 # Displays the detailed information about a game from the catalogue
-gogg catalogue info --id=<game_id>
+gogg catalogue info <game_id>
 ```
 
 #### Exporting the Catalogue
@@ -94,7 +79,7 @@ If the format is CSV, the file will include the game ID, title of every game in 
 
 ```sh
 # Export the catalogue as CSV to a file in the specified directory
-gogg catalogue export --format=csv --dir=<directory_to_save_the_file>
+gogg catalogue export --format=csv <output_dir>
 ```
 
 If the format is JSON, the file will include the full information about every game in the catalogue.
@@ -102,7 +87,7 @@ The full information is the data that GOG provides about the game.
 
 ```sh
 # Export the catalogue as JSON to a file in the specified directory
-gogg catalogue export --format=json --dir=<directory_to_save_the_file>
+gogg catalogue export --format=json <output_dir>
 ```
 
 ### Downloading Game Files
@@ -111,7 +96,7 @@ To download game files, use the `download` command and provide it with the game 
 where you want to save the files.
 
 ```sh
-gogg download --id=<game_id> --dir=<directory_to_save_the_files>
+gogg download <game_id> <download_dir>
 ```
 
 The `download` command supports the following additional options:
@@ -122,13 +107,15 @@ The `download` command supports the following additional options:
 - `--extras`: Include extra files in the download like soundtracks, wallpapers, etc. (default is true)
 - `--resume`: Resume interrupted downloads (default is true)
 - `--threads`: Number of worker threads to use for downloading (default is 5)
+- `--flatten`: Flatten the directory structure of the downloaded files (default is true)
 
-For example, to download all files (English language) of a game with the ID `<game_id>` to the directory `<game_dir>`
-with the specified
-options:
+For example, to download all files (English language) of a game with the ID `<game_id>` to the directory
+`<download_dir>`
+with the specified options:
 
 ```sh
-gogg download --id=<game_id> --dir=<game_dir> --platform=all --lang=en --dlcs=true --extras=true --resume=true --threads=5
+gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --extras=true \
+--resume=true --threads=5 --flatten=true
 ```
 
 ## Enabling Debug Mode
@@ -139,10 +126,4 @@ In debug mode, Gogg will be much more verbose and print a lot of information to 
 ```sh
 DEBUG_GOGG=true gogg <command>
 ```
-
-## Internal Database
-
-Gogg's internal database that stores user's GOG credentials and the game catalogue is located in the user's home under
-the `.gogg` directory by default. The database file is named `games.db` and you should be able to transfer it to another
-machine to use Gogg without the need to re-enter your GOG credentials given you're using the same version of Gogg.
 

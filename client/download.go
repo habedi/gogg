@@ -7,6 +7,7 @@ import (
 	"github.com/schollz/progressbar/v3"
 	"io"
 	"net/http"
+	netURL "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 )
 
 // ParseGameData parses the raw game data JSON into a Game struct.
+// It takes a JSON string as input and returns a Game struct and an error if the parsing fails.
 func ParseGameData(data string) (Game, error) {
 	var rawResponse Game
 	if err := json.Unmarshal([]byte(data), &rawResponse); err != nil {
@@ -24,6 +26,7 @@ func ParseGameData(data string) (Game, error) {
 }
 
 // ensureDirExists checks if a directory exists and creates it if it doesn't.
+// It takes a directory path as input and returns an error if the directory cannot be created.
 func ensureDirExists(path string) error {
 	info, err := os.Stat(path)
 	if err == nil {
@@ -39,8 +42,9 @@ func ensureDirExists(path string) error {
 	return err
 }
 
-// sanitizePath sanitizes a string to be used as a file path by removing special characters, spaces, and converting to lowercase.
-func sanitizePath(name string) string {
+// SanitizePath sanitizes a string to be used as a file path by removing special characters, spaces, and converting to lowercase.
+// It takes a string as input and returns a sanitized string.
+func SanitizePath(name string) string {
 	replacements := []struct {
 		old string
 		new string
@@ -58,18 +62,21 @@ func sanitizePath(name string) string {
 	return name
 }
 
-// downloadTask represents a download task
+// downloadTask represents a download task with URL, file name, sub-directory, resume, and flatten flags.
 type downloadTask struct {
 	url      string
 	fileName string
 	subDir   string
 	resume   bool
+	flatten  bool
 }
 
 // DownloadGameFiles downloads the game files, extras, and DLCs to the specified path.
+// It takes various parameters including access token, game data, download path, language, platform, flags for extras, DLCs, resume, flatten, and number of threads.
+// It returns an error if the download fails.
 func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 	gameLanguage string, platformName string, extrasFlag bool, dlcFlag bool, resumeFlag bool,
-	numThreads int) error {
+	flattenFlag bool, numThreads int) error {
 	client := &http.Client{}
 	clientNoRedirect := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -78,7 +85,7 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 	}
 
 	if err := ensureDirExists(downloadPath); err != nil {
-		log.Error().Err(err).Msgf("Failed to prepare output path %s", downloadPath)
+		log.Error().Err(err).Msgf("Failed to create download path %s", downloadPath)
 		return err
 	}
 
@@ -111,18 +118,38 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 	}
 
 	downloadFiles := func(task downloadTask) error {
+
+		// Error variable to store the error
+		var err error
+
 		url := task.url
 		fileName := task.fileName
 		subDir := task.subDir
 		resume := task.resume
+		flatten := flattenFlag
 
 		if location := findFileLocation(url); location != "" {
 			url = location
 			fileName = filepath.Base(location)
 		}
 
-		subDir = sanitizePath(subDir)
-		gameTitle := sanitizePath(game.Title)
+		// Decode URL-encoded characters in the file name (e.g. %20 -> space)
+		decodedFileName, err := netURL.QueryUnescape(fileName)
+		if err != nil {
+			log.Error().Err(err).Msgf("Failed to decode file name %s", fileName)
+			return err
+		}
+		fileName = decodedFileName
+
+		// Don't make additional directories if flatten is enabled
+		if flatten {
+			subDir = ""
+		} else {
+			subDir = SanitizePath(subDir)
+		}
+
+		// Sanitize the game title to be used as base directory name
+		gameTitle := SanitizePath(game.Title)
 		filePath := filepath.Join(downloadPath, gameTitle, subDir, fileName)
 
 		if err := ensureDirExists(filepath.Dir(filePath)); err != nil {
@@ -131,7 +158,6 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 		}
 
 		var file *os.File
-		var err error
 		var startOffset int64
 
 		// Check if resuming is enabled and the file already exists
@@ -278,7 +304,8 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 
 				url := fmt.Sprintf("https://embed.gog.com%s", *file.ManualURL)
 				fileName := filepath.Base(*file.ManualURL)
-				taskChan <- downloadTask{url, fileName, platformFiles.subDir, resumeFlag}
+				taskChan <- downloadTask{url, fileName, platformFiles.subDir,
+					resumeFlag, flattenFlag}
 			}
 		}
 	}
@@ -291,8 +318,9 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 		}
 
 		extraURL := fmt.Sprintf("https://embed.gog.com%s", extra.ManualURL)
-		extraFileName := sanitizePath(extra.Name)
-		taskChan <- downloadTask{extraURL, extraFileName, "extras", resumeFlag}
+		extraFileName := SanitizePath(extra.Name)
+		taskChan <- downloadTask{extraURL, extraFileName, "extras",
+			resumeFlag, flattenFlag}
 	}
 
 	if dlcFlag {
@@ -328,7 +356,8 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 						url := fmt.Sprintf("https://embed.gog.com%s", *file.ManualURL)
 						fileName := filepath.Base(*file.ManualURL)
 						subDir := filepath.Join("dlcs", platformFiles.subDir)
-						taskChan <- downloadTask{url, fileName, subDir, resumeFlag}
+						taskChan <- downloadTask{url, fileName, subDir,
+							resumeFlag, flattenFlag}
 					}
 				}
 			}
@@ -341,9 +370,10 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 				}
 
 				extraURL := fmt.Sprintf("https://embed.gog.com%s", extra.ManualURL)
-				extraFileName := sanitizePath(extra.Name)
+				extraFileName := SanitizePath(extra.Name)
 				subDir := filepath.Join("dlcs", "extras")
-				taskChan <- downloadTask{extraURL, extraFileName, subDir, resumeFlag}
+				taskChan <- downloadTask{extraURL, extraFileName,
+					subDir, resumeFlag, flattenFlag}
 			}
 		}
 	}
@@ -356,7 +386,7 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 		log.Error().Err(err).Msg("Failed to encode game metadata")
 		return err
 	}
-	metadataPath := filepath.Join(downloadPath, sanitizePath(game.Title), "metadata.json")
+	metadataPath := filepath.Join(downloadPath, SanitizePath(game.Title), "metadata.json")
 	if err := os.WriteFile(metadataPath, metadata, 0644); err != nil {
 		log.Error().Err(err).Msgf("Failed to save game metadata to %s", metadataPath)
 		return err

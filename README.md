@@ -22,7 +22,7 @@
   </a>
   <br>
   <a href="https://goreportcard.com/report/github.com/habedi/gogg">
-    <img src="https://goreportcard.com/badge/github.com/habedi/gogg" alt="Go Report Card">
+  <img src="https://goreportcard.com/badge/github.com/habedi/gogg" alt="Go Report Card">
   </a>
   <a href="https://pkg.go.dev/github.com/habedi/gogg">
     <img src="https://pkg.go.dev/badge/github.com/habedi/gogg.svg" alt="Go Reference">
@@ -77,49 +77,50 @@ Run `gogg -h` to see the available commands and options.
 
 For more detailed examples, see the content of the [examples](docs/examples/) directory.
 
-#### First Time Setup
+#### Login to GOG
 
 ```bash
-# Will ask for the GOG username and password
-gogg init
+# First-time using Gogg, you need to login to GOG to authenticate
+gogg login
 ```
 
-#### Authentication with GOG
-
-```bash
-# On first time try will open a browser window to authenticate with GOG,
-# afterwards running `auth` will reauthenticate with GOG without opening a browser window
-gogg auth
-```
-
-> You must have [Google Chrome](https://www.google.com/chrome/) or [Chromium](https://www.chromium.org/) installed
-> on your machine for the first-time authentication.
-> So, make sure you have one of them installed.
+> [!IMPORTANT]
+> You need to have [Google Chrome](https://www.google.com/chrome/) or [Chromium](https://www.chromium.org/) installed on
+> your machine for the first-time authentication.
+> So, make sure you have one of them installed and available in your system's PATH.
 
 #### Syncing the Game Catalogue
 
 ```bash
 # Will fetch the up-to-date information about the games you own on GOG
-gogg catalogue refresh --threads=10
+gogg catalogue refresh
 ```
 
 #### Searching for Games
 
 ```bash
-# Will search for games with the the term `Witcher` in their title
-gogg catalogue search --term="Witcher"
+# Will show the game ID and title of the games that contain "Witcher" in their title
+gogg catalogue search "Witcher"
 ```
 
 #### Downloading a Game
 
 ```bash
-# Will download the game files for `The Witcher: Enhanced Edition` to `./games` directory (without extra content)
-gogg download --id=1207658924 --dir=./games --platform=windows --lang=en --dlcs=true --extras=false --resume=true --threads 5
+# Will download the files for `The Witcher: Enhanced Edition` to `./games` directory (without extra content)
+gogg download 1207658924 ./games --platform=windows --lang=en --dlcs=true --extras=false \
+ --resume=true --threads 5 --flatten=true
+```
+
+#### File Hashes (For Verification)
+
+```bash
+# Will show the SHA1 hash of the downloaded files for `The Witcher: Enhanced Edition`
+gogg file hash ./games/the-witcher-enhanced-edition --algo=sha1
 ```
 
 ## Demo
 
-[![asciicast](https://asciinema.org/a/AVvvpkicWHINxmaX0Gsk7H8xL.svg)](https://asciinema.org/a/AVvvpkicWHINxmaX0Gsk7H8xL)
+[![asciicast](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI.svg)](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI)
 
 ## Contributing
 

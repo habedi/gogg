@@ -9,6 +9,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// main is the entry point of the application.
+// It sets up logging based on the DEBUG_GOGG environment variable,
+// starts a goroutine to listen for interrupt signals, and executes the main command.
 func main() {
 
 	// If the DEBUG_GOGG environment variable is set, enable debug logging to stdout, otherwise disable logging
@@ -27,7 +30,8 @@ func main() {
 	cmd.Execute()
 }
 
-// listenForInterrupt listens for an interrupt signal and exits the program when it is received
+// listenForInterrupt listens for an interrupt signal and exits the program when it is received.
+// It takes a channel of os.Signal as a parameter.
 func listenForInterrupt(stopScan chan os.Signal) {
 	<-stopScan
 	log.Fatal().Msg("Interrupt signal received. Exiting...")

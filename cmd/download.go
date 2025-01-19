@@ -7,6 +7,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"os"
+	"path/filepath"
+	"strconv"
 )
 
 // Map of supported game languages and their native names
@@ -24,49 +26,49 @@ var gameLanguages = map[string]string{
 	"ko":      "한국어",                 // Korean
 }
 
-// downloadCmd downloads a selected game from GOG
+// downloadCmd creates a new cobra.Command for downloading a selected game from GOG.
+// It returns a pointer to the created cobra.Command.
 func downloadCmd() *cobra.Command {
-	var gameID int
-	var downloadDir string
 	var language string
 	var platformName string
 	var extrasFlag bool
 	var dlcFlag bool
 	var resumeFlag bool
 	var numThreads int
+	var flattenFlag bool
 
 	cmd := &cobra.Command{
-		Use:   "download",
+		Use:   "download [gameID] [downloadDir]",
 		Short: "Download game files from GOG",
+		Long:  "Download game files from GOG for the specified game ID to the specified directory",
+		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			executeDownload(gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, numThreads)
+			gameID, err := strconv.Atoi(args[0])
+			if err != nil {
+				cmd.PrintErrln("Error: Invalid game ID. It must be a positive integer.")
+				return
+			}
+			downloadDir := args[1]
+			executeDownload(gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads)
 		},
 	}
 
 	// Add flags for download options
-	cmd.Flags().IntVarP(&gameID, "id", "i", 0, "ID of the game to download (required)")
-	cmd.Flags().StringVarP(&downloadDir, "dir", "o", "", "Directory to store the downloaded files (required)")
 	cmd.Flags().StringVarP(&language, "lang", "l", "en", "Game language [en, fr, de, es, it, ru, pl, pt-BR, zh-Hans, ja, ko]")
 	cmd.Flags().StringVarP(&platformName, "platform", "p", "windows", "Platform name [all, windows, mac, linux]; all means all platforms")
-	cmd.Flags().BoolVarP(&extrasFlag, "extras", "e", true, "Include extras? [true, false]")
-	cmd.Flags().BoolVarP(&dlcFlag, "dlcs", "d", true, "Include DLC? [true, false]")
+	cmd.Flags().BoolVarP(&extrasFlag, "extras", "e", true, "Include extra content files? [true, false]")
+	cmd.Flags().BoolVarP(&dlcFlag, "dlcs", "d", true, "Include DLC files? [true, false]")
 	cmd.Flags().BoolVarP(&resumeFlag, "resume", "r", true, "Resume downloading? [true, false]")
-	cmd.Flags().IntVarP(&numThreads, "threads", "t", 5, "Number of threads to use for downloading (default: 5)")
-
-	// Game ID flag and download path are required
-	if err := cmd.MarkFlagRequired("id"); err != nil {
-		log.Error().Err(err).Msg("Failed to mark 'id' flag as required.")
-	}
-
-	if err := cmd.MarkFlagRequired("path"); err != nil {
-		log.Error().Err(err).Msg("Failed to mark 'path' flag as required.")
-	}
+	cmd.Flags().IntVarP(&numThreads, "threads", "t", 5, "Number of worker threads to use for downloading [1-20]")
+	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", true, "Flatten the directory structure when downloading? [true, false]")
 
 	return cmd
 }
 
-// executeDownload handles the download logic
-func executeDownload(gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag bool, numThreads int) {
+// executeDownload handles the download logic for a specified game.
+// It takes the game ID, download path, language, platform name, and various flags as parameters.
+func executeDownload(gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag bool,
+	flattenFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...\n", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v\n", language, platformName, extrasFlag, dlcFlag)
 
@@ -77,8 +79,8 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	}
 
 	// Try to refresh the access token
-	if _, err := authenticateUser(false); err != nil {
-		log.Error().Msg("Failed to refresh the access token.")
+	if _, err := client.RefreshToken(); err != nil {
+		log.Error().Msg("Failed to refresh the access token. Please login again.")
 		return
 	}
 
@@ -109,7 +111,7 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	}
 
 	// Load the user data
-	user, err := db.GetUserData()
+	user, err := db.GetTokenRecord()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to retrieve user data from the database.")
 		return
@@ -117,24 +119,27 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 
 	// Show download parameters to the user
 	logDownloadParameters(parsedGameData, gameID, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag,
-		numThreads)
+		flattenFlag, numThreads)
 
 	// Download the game files
 	err = client.DownloadGameFiles(user.AccessToken, parsedGameData, downloadPath, gameLanguages[language],
-		platformName, extrasFlag, dlcFlag, resumeFlag, numThreads)
+		platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to download game files.")
 	}
-	fmt.Println("\rGame files downloaded successfully.")
+	fmt.Printf("\rGame files downloaded successfully to: \"%s\"\n", filepath.Join(downloadPath,
+		client.SanitizePath(parsedGameData.Title)))
 }
 
-// logDownloadParameters logs the download parameters
+// logDownloadParameters logs the download parameters to the console.
+// It takes the game object, game ID, download path, language, platform name, and various flags as parameters.
 func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string,
-	extrasFlag, dlcFlag, resumeFlag bool, numThreads int) {
+	extrasFlag, dlcFlag, resumeFlag bool, flattenFlag bool, numThreads int) {
 	fmt.Println("================================= Download Parameters =====================================")
 	fmt.Printf("Downloading \"%v\" (with game ID=\"%d\") to \"%v\"\n", game.Title, gameID, downloadPath)
 	fmt.Printf("Platform: \"%v\", Language: '%v'\n", platformName, gameLanguages[language])
 	fmt.Printf("Include Extras: \"%v, Include DLCs: \"%v\", Resume enabled: \"%v\"\n", extrasFlag, dlcFlag, resumeFlag)
 	fmt.Printf("Number of worker threads for download: \"%d\"\n", numThreads)
+	fmt.Printf("Flatten directory structure: \"%v\"\n", flattenFlag)
 	fmt.Println("============================================================================================")
 }

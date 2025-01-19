@@ -11,72 +11,99 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 )
 
-// AuthGOG logs in to GOG.com and retrieves an access token for the user.
-func AuthGOG(authURL string, user *db.User, headless bool) error {
+var (
+	// GOGLoginURL is the URL to login to GOG.com.
+	GOGLoginURL = "https://auth.gog.com/auth?client_id=46899977096215655" +
+		"&redirect_uri=https%3A%2F%2Fembed.gog.com%2Fon_login_success%3Forigin%3Dclient" +
+		"&response_type=code&layout=client2"
+)
 
-	if user == nil {
-		return fmt.Errorf("user data is empy. Please run 'gogg init' to initialize the database")
+// Login logs in to GOG.com and retrieves an access token for the user.
+// It takes the login URL, username, password, and a boolean indicating whether to use headless mode.
+// It returns an error if the login process fails.
+func Login(loginURL string, username string, password string, headless bool) error {
+
+	if username == "" || password == "" {
+		return fmt.Errorf("username and password cannot be empty")
 	}
 
-	if isTokenValid(user) {
-		log.Info().Msg("Access token is still valid")
-		return nil
-	}
-
-	if user.RefreshToken != "" {
-		log.Info().Msg("Refreshing access token")
-		return refreshToken(user)
-	}
-
+	// Try headless login first
 	ctx, cancel := createChromeContext(headless)
 	defer cancel()
 
-	finalURL, err := performLogin(ctx, authURL, user)
+	// Perform the login
+	finalURL, err := performLogin(ctx, loginURL, username, password)
 	if err != nil {
-		return fmt.Errorf("failed during automated login: %w", err)
+		if headless {
+			log.Warn().Err(err).Msg("Headless login failed, retrying with window mode")
+			// Retry with window mode if headless login fails
+			ctx, cancel = createChromeContext(false)
+			defer cancel()
+
+			finalURL, err = performLogin(ctx, loginURL, username, password)
+			if err != nil {
+				return fmt.Errorf("failed to login: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to login: %w", err)
+		}
 	}
 
+	// Extract the authorization code from the final URL after successful login
 	code, err := extractAuthCode(finalURL)
 	if err != nil {
 		return err
 	}
 
+	// Exchange the authorization code for an access token and a refresh token
 	token, refreshToken, expiresAt, err := exchangeCodeForToken(code)
 	if err != nil {
 		return fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
 
-	user.AccessToken = token
-	user.RefreshToken = refreshToken
-	user.ExpiresAt = expiresAt
-	return db.UpsertUserData(user)
-}
-
-// SaveUserCredentials saves the user's credentials in the database.
-func SaveUserCredentials(username, password string) error {
-	user := &db.User{
-		Username:     username,
-		Password:     password,
-		AccessToken:  "",
-		RefreshToken: "",
-		ExpiresAt:    "",
+	// Print the access token, refresh token, and expiration if debug mode is enabled
+	if os.Getenv("DEBUG_GOGG") != "" {
+		log.Info().Msgf("Access token: %s", token[:10])
+		log.Info().Msgf("Refresh token: %s", refreshToken[:10])
+		log.Info().Msgf("Expires at: %s", expiresAt)
 	}
-	return db.UpsertUserData(user)
+
+	// Save the token record in the database
+	return db.UpsertTokenRecord(&db.Token{AccessToken: token, RefreshToken: refreshToken, ExpiresAt: expiresAt})
 }
 
-// refreshToken refreshes the access token using the refresh token.
-func refreshToken(user *db.User) error {
+// RefreshToken refreshes the access token if it is expired and returns the updated token record.
+// It returns a pointer to the updated token record and an error if the refresh process fails.
+func RefreshToken() (*db.Token, error) {
+	token, err := db.GetTokenRecord()
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve token record: %w", err)
+	}
+
+	if !isTokenValid(token) {
+		if err := refreshAccessToken(token); err != nil {
+			return nil, fmt.Errorf("failed to refresh token: %w", err)
+		}
+	}
+
+	return token, nil
+}
+
+// refreshAccessToken refreshes the access token using the refresh token.
+// It takes a pointer to the token record and returns an error if the refresh process fails.
+func refreshAccessToken(token *db.Token) error {
 	tokenURL := "https://auth.gog.com/token"
 	query := url.Values{
 		"client_id":     {"46899977096215655"},
 		"client_secret": {"9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"},
 		"grant_type":    {"refresh_token"},
-		"refresh_token": {user.RefreshToken},
+		"refresh_token": {token.RefreshToken},
 	}
 
 	resp, err := http.PostForm(tokenURL, query)
@@ -100,24 +127,25 @@ func refreshToken(user *db.User) error {
 		return fmt.Errorf("failed to parse token response: %w", err)
 	}
 
-	user.AccessToken = result.AccessToken
-	user.RefreshToken = result.RefreshToken
-	user.ExpiresAt = time.Now().Add(time.Duration(result.ExpiresIn) * time.Second).Format(time.RFC3339)
-	return db.UpsertUserData(user)
+	token.AccessToken = result.AccessToken
+	token.RefreshToken = result.RefreshToken
+	token.ExpiresAt = time.Now().Add(time.Duration(result.ExpiresIn) * time.Second).Format(time.RFC3339)
+	return db.UpsertTokenRecord(token)
 }
 
 // isTokenValid checks if the access token (stored in the database) is still valid.
-func isTokenValid(user *db.User) bool {
+// It takes a pointer to the token record and returns a boolean indicating whether the token is valid.
+func isTokenValid(token *db.Token) bool {
 
-	if user == nil {
+	if token == nil {
 		return false
 	}
 
-	if user.AccessToken == "" || user.ExpiresAt == "" {
+	if token.AccessToken == "" || token.ExpiresAt == "" {
 		return false
 	}
 
-	expiresAt, err := time.Parse(time.RFC3339, user.ExpiresAt)
+	expiresAt, err := time.Parse(time.RFC3339, token.ExpiresAt)
 	if err != nil {
 		log.Error().Err(err).Msg("Invalid expiration time format")
 		return false
@@ -126,7 +154,8 @@ func isTokenValid(user *db.User) bool {
 	return time.Now().Before(expiresAt)
 }
 
-// createChromeContext creates a new ChromeDP context.
+// createChromeContext creates a new ChromeDP context with the specified option to run Chrome in headless mode or not.
+// It returns the ChromeDP context and a cancel function to release resources.
 func createChromeContext(headless bool) (context.Context, context.CancelFunc) {
 	// Check if Google Chrome or Chromium is available in the path
 	var execPath string
@@ -158,17 +187,18 @@ func createChromeContext(headless bool) (context.Context, context.CancelFunc) {
 	}
 }
 
-// performLogin performs the login process using ChromeDP.
-func performLogin(ctx context.Context, authURL string, user *db.User) (string, error) {
+// performLogin performs the login process using the provided username and password and returns the final URL after successful login.
+// It takes the ChromeDP context, login URL, username, and password as parameters and returns the final URL and an error if the login process fails.
+func performLogin(ctx context.Context, loginURL string, username string, password string) (string, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 
 	var finalURL string
 	err := chromedp.Run(timeoutCtx,
-		chromedp.Navigate(authURL),
+		chromedp.Navigate(loginURL),
 		chromedp.WaitVisible(`#login_username`, chromedp.ByID),
-		chromedp.SendKeys(`#login_username`, user.Username, chromedp.ByID),
-		chromedp.SendKeys(`#login_password`, user.Password, chromedp.ByID),
+		chromedp.SendKeys(`#login_username`, username, chromedp.ByID),
+		chromedp.SendKeys(`#login_password`, password, chromedp.ByID),
 		chromedp.Click(`#login_login`, chromedp.ByID),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			for {
@@ -187,7 +217,8 @@ func performLogin(ctx context.Context, authURL string, user *db.User) (string, e
 	return finalURL, err
 }
 
-// extractAuthCode extracts the authorization code from the URL.
+// extractAuthCode extracts the authorization code from the URL after successful login.
+// It takes the authorization URL as a parameter and returns the authorization code and an error if the extraction fails.
 func extractAuthCode(authURL string) (string, error) {
 	parsedURL, err := url.Parse(authURL)
 	if err != nil {
@@ -196,13 +227,14 @@ func extractAuthCode(authURL string) (string, error) {
 
 	code := parsedURL.Query().Get("code")
 	if code == "" {
-		return "", errors.New("authorization code not found in URL")
+		return "", errors.New("authorization code not found in the URL")
 	}
 
 	return code, nil
 }
 
 // exchangeCodeForToken exchanges the authorization code for an access token and a refresh token.
+// It takes the authorization code as a parameter and returns the access token, refresh token, expiration time, and an error if the exchange process fails.
 func exchangeCodeForToken(code string) (string, string, string, error) {
 	tokenURL := "https://auth.gog.com/token"
 	query := url.Values{

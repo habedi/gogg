@@ -20,6 +20,8 @@ $INCLUDE_DLC = 1 # Include DLCs
 $INCLUDE_EXTRA_CONTENT = 1 # Include extra content
 $RESUME_DOWNLOAD = 1 # Resume download
 $NUM_THREADS = 4 # Number of worker threads for downloading
+$FLATTEN = 1 # Flatten directory structure
+$OUTPUT_DIR = "./games" # Output directory
 
 # Function to clean up the CSV file
 function Cleanup
@@ -35,8 +37,8 @@ function Cleanup
 }
 
 # Update game catalogue and export it to a CSV file
-& $GOGG catalogue refresh --threads=10
-& $GOGG catalogue export --format=csv --dir=./
+& $GOGG catalogue refresh
+& $GOGG catalogue export ./ --format=csv
 
 # Find the newest catalogue file
 $latest_csv = Get-ChildItem -Path . -Filter "gogg_catalogue_*.csv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -57,8 +59,9 @@ Get-Content $latest_csv.FullName | Select-Object -Skip 1 | ForEach-Object {
     $game_title = $fields[1]
     Write-Host "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
     $env:DEBUG_GOGG = $DEBUG_MODE
-    & $GOGG download --id=$game_id --dir="./games" --platform=$PLATFORM --lang=$LANG `
-        --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS
+    & $GOGG download $game_id $OUTPUT_DIR --platform=$PLATFORM --lang=$LANG `
+        --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS `
+        --flatten=$FLATTEN
     Start-Sleep -Seconds 1
 }
 
