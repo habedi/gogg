@@ -10,23 +10,26 @@ import (
 	"strings"
 )
 
-// initCmd initializes Gogg for first-time use by saving the user credentials in the internal database.
-func initCmd() *cobra.Command {
+// loginCmd creates a new cobra.Command for logging into GOG.com.
+// It returns a pointer to the created cobra.Command.
+func loginCmd() *cobra.Command {
 	var gogUsername, gogPassword string
+	var headless bool
 
 	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Initialize Gogg for first-time use",
+		Use:   "login",
+		Short: "Login to GOG.com",
+		Long:  "Login to GOG.com using your username and password",
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Println("Please enter your GOG username and password.")
 			gogUsername = promptForInput("GOG username: ")
 			gogPassword = promptForPassword("GOG password: ")
 
 			if validateCredentials(gogUsername, gogPassword) {
-				if err := client.SaveUserCredentials(gogUsername, gogPassword); err != nil {
-					cmd.PrintErrln("Error: Failed to save the credentials.")
+				if err := client.Login(client.GOGLoginURL, gogUsername, gogPassword, headless); err != nil {
+					cmd.PrintErrln("Error: Failed to login to GOG.com.")
 				} else {
-					cmd.Println("Credentials saved successfully.")
+					cmd.Println("Login was successful.")
 				}
 			} else {
 				cmd.PrintErrln("Error: Username and password cannot be empty.")
@@ -34,10 +37,14 @@ func initCmd() *cobra.Command {
 		},
 	}
 
+	// Add flags for login options
+	cmd.Flags().BoolVarP(&headless, "headless", "n", true, "Login in headless mode without showing the browser window? [true, false]")
+
 	return cmd
 }
 
 // promptForInput prompts the user for input and returns the trimmed string.
+// It takes a prompt string as an argument.
 func promptForInput(prompt string) string {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print(prompt)
@@ -50,6 +57,7 @@ func promptForInput(prompt string) string {
 }
 
 // promptForPassword prompts the user for a password securely and returns the trimmed string.
+// It takes a prompt string as an argument.
 func promptForPassword(prompt string) string {
 	fmt.Print(prompt)
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -62,6 +70,7 @@ func promptForPassword(prompt string) string {
 }
 
 // validateCredentials checks if the username and password are not empty.
+// It takes the username and password strings as arguments and returns a boolean.
 func validateCredentials(username, password string) bool {
 	return username != "" && password != ""
 }

@@ -1,31 +1,37 @@
 #!/bin/bash
 
-## Simple examples of using Gogg commands
+echo "Sample script to demonstrate Gogg's basic functionalities"
+sleep 1
 
-GOGG=$(command -v bin/gogg || command -v gogg)
+# Find the Gogg executable
+GOGG=$(command -v bin/gogg || command -v gogg || command -v ./gogg)
 
-# Show Gogg's commands
+echo "Show Gogg's top-level commands"
 $GOGG --help
+sleep 1
 
-# Show the Gogg version
+echo "Show the version"
 $GOGG version
+sleep 1
 
-# Initialize Gogg's internal database and ask for user's credentials
-$GOGG init
+#echo "Login to GOG.com"
+#$GOGG login
+#sleep 1
 
-# Login to GOG.com (headless mode; no browser window is opened)
-$GOGG auth --show=false
+echo "Update game catalogue with the data from GOG.com"
+$GOGG catalogue refresh
+sleep 1
 
-# Update game catalogue with the data from GOG.com
-$GOGG catalogue refresh --threads=10
+echo "Search for games with specific terms in their titles"
+$GOGG catalogue search "Witcher"
+$GOGG catalogue search "mess"
 
-# Search for games with specific terms in their titles
-$GOGG catalogue search --term "Witcher"
-$GOGG catalogue search --term "mess"
+echo "Download a specific game (\"The Messenger\") with the given options"
+$GOGG download 1433116924 ./games --platform=all --lang=en --threads=4 \
+    --dlcs=true --extras=false --resume=true --flatten=true
 
-# Download a specific game ("The Messenger") with the given options
-$GOGG download --id=1433116924 --dir=./games --platform=all --lang=en --threads=3 \
-    --dlcs=false --extras=false --resume=true
-
-# Show the downloaded game files
+echo "Show the downloaded game files"
 tree ./games
+
+echo "Display hash values of the downloaded game files"
+$GOGG file hash ./games --algo=md5

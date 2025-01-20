@@ -10,6 +10,7 @@ import (
 )
 
 // FetchGameData retrieves the game data for the specified game from GOG.
+// It takes an access token and a URL as parameters and returns a Game struct, the raw response body as a string, and an error if the operation fails.
 func FetchGameData(accessToken string, url string) (Game, string, error) {
 	//url := fmt.Sprintf("https://embed.gog.com/account/gameDetails/%d.json", gameID)
 	req, err := createRequest("GET", url, accessToken)
@@ -37,6 +38,7 @@ func FetchGameData(accessToken string, url string) (Game, string, error) {
 }
 
 // FetchIdOfOwnedGames retrieves the list of game IDs that the user owns from GOG.
+// It takes an access token and an API URL as parameters and returns a slice of integers representing the game IDs and an error if the operation fails.
 func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
 	//apiURL := "https://embed.gog.com/user/data/games"
 	req, err := createRequest("GET", apiURL, accessToken)
@@ -59,6 +61,7 @@ func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
 }
 
 // createRequest creates an HTTP request with the specified method, URL, and access token from GOG.
+// It returns a pointer to the http.Request object and an error if the request creation fails.
 func createRequest(method, url, accessToken string) (*http.Request, error) {
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
@@ -70,6 +73,7 @@ func createRequest(method, url, accessToken string) (*http.Request, error) {
 }
 
 // sendRequest sends an HTTP request and returns the response.
+// It takes a pointer to the http.Request object as a parameter and returns a pointer to the http.Response object and an error if the request fails.
 func sendRequest(req *http.Request) (*http.Response, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -85,6 +89,7 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 }
 
 // readResponseBody reads the response body and returns it as a byte slice.
+// It takes a pointer to the http.Response object as a parameter and returns the response body as a byte slice and an error if the reading fails.
 func readResponseBody(resp *http.Response) ([]byte, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -95,6 +100,7 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 }
 
 // parseGameData parses the game data from the response body.
+// It takes the response body as a byte slice and a pointer to the Game struct as parameters and returns an error if the parsing fails.
 func parseGameData(body []byte, game *Game) error {
 	if err := json.Unmarshal(body, game); err != nil {
 		log.Error().Err(err).Msg("Failed to parse game data")
@@ -104,6 +110,7 @@ func parseGameData(body []byte, game *Game) error {
 }
 
 // parseOwnedGames parses the list of owned game IDs from the response body.
+// It takes the response body as a byte slice and returns a slice of integers representing the game IDs and an error if the parsing fails.
 func parseOwnedGames(body []byte) ([]int, error) {
 	var response struct {
 		Owned []int `json:"owned"`

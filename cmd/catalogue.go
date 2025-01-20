@@ -11,16 +11,19 @@ import (
 	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 // catalogueCmd represents the base command when called without any subcommands
+// It returns a pointer to the created cobra.Command.
 func catalogueCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "catalogue",
 		Short: "Manage the game catalogue",
+		Long:  "Manage the game catalogue by listing and searching for games, etc.",
 	}
 
 	// Add subcommands to the catalogue command
@@ -36,14 +39,18 @@ func catalogueCmd() *cobra.Command {
 }
 
 // listCmd shows the list of games in the catalogue
+// It returns a pointer to the created cobra.Command.
 func listCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "Show the list all games in the catalogue",
+		Short: "Show the list of games in the catalogue",
+		Long:  "Show the list of all games in the catalogue in a tabular format",
 		Run:   listGames,
 	}
 }
 
+// listGames fetches and displays the list of games in the catalogue
+// It takes a cobra.Command and a slice of strings as arguments.
 func listGames(cmd *cobra.Command, args []string) {
 	log.Info().Msg("Listing all games in the catalogue...")
 
@@ -90,27 +97,27 @@ func listGames(cmd *cobra.Command, args []string) {
 }
 
 // infoCmd shows detailed information about a specific game, given its ID or title
+// It returns a pointer to the created cobra.Command.
 func infoCmd() *cobra.Command {
-	var gameID int
 	cmd := &cobra.Command{
-		Use:   "info",
-		Short: "Show information about a specific game",
+		Use:   "info [gameID]",
+		Short: "Show the information about a game in the catalogue",
+		Long:  "Given a game ID, show detailed information about the game with the specified ID in JSON format",
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			gameID, err := strconv.Atoi(args[0])
+			if err != nil {
+				cmd.PrintErrln("Error: Invalid game ID. It must be a number.")
+				return
+			}
 			showGameInfo(cmd, gameID)
 		},
 	}
-
-	// Define the flag for the command
-	cmd.Flags().IntVarP(&gameID, "id", "i", 0, "ID of the game to show its information")
-
-	// Mark the flag as required and handle any errors
-	if err := cmd.MarkFlagRequired("id"); err != nil {
-		log.Error().Err(err).Msg("Failed to mark 'id' flag as required")
-	}
-
 	return cmd
 }
 
+// showGameInfo fetches and displays detailed information about a game with the specified ID
+// It takes a cobra.Command and an integer representing the game ID as arguments.
 func showGameInfo(cmd *cobra.Command, gameID int) {
 	if gameID == 0 {
 		cmd.PrintErrln("Error: ID of the game is required to fetch information.")
@@ -134,14 +141,28 @@ func showGameInfo(cmd *cobra.Command, gameID int) {
 		return
 	}
 
-	// Display the game information
-	cmd.Println("Game Information:")
-	cmd.Printf("ID: %d\n", game.ID)
-	cmd.Printf("Title: %s\n", game.Title)
-	cmd.Printf("Data: %s\n", game.Data)
+	// Unmarshal the nested JSON data
+	var nestedData map[string]interface{}
+	if err := json.Unmarshal([]byte(game.Data), &nestedData); err != nil {
+		log.Error().Err(err).Msg("Failed to unmarshal nested game data")
+		cmd.PrintErrln("Error: Failed to parse nested game data.")
+		return
+	}
+
+	// Pretty print the nested JSON data
+	nestedDataPretty, err := json.MarshalIndent(nestedData, "", "  ")
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to marshal nested game data")
+		cmd.PrintErrln("Error: Failed to format nested game data.")
+		return
+	}
+
+	// Print the nested JSON data
+	cmd.Println(string(nestedDataPretty))
 }
 
 // refreshCmd refreshes the game catalogue with the latest data from the user's account
+// It returns a pointer to the created cobra.Command.
 func refreshCmd() *cobra.Command {
 
 	// Define the number of threads to use for fetching game data
@@ -149,17 +170,21 @@ func refreshCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "refresh",
-		Short: "Update the catalogue with the latest data from the GOG account",
+		Short: "Update the catalogue with the latest data from GOG",
+		Long:  "Update the game catalogue with the latest data for the games owned by the user on GOG",
 		Run: func(cmd *cobra.Command, args []string) {
 			refreshCatalogue(cmd, numThreads)
 		},
 	}
 
 	// Define the flag for the command
-	cmd.Flags().IntVarP(&numThreads, "threads", "t", 5, "Number of threads to use for fetching game data from the GOG")
+	cmd.Flags().IntVarP(&numThreads, "threads", "t", 10,
+		"Number of worker threads to use for fetching game data [1-20]")
 	return cmd
 }
 
+// refreshCatalogue updates the game catalogue with the latest data from GOG
+// It takes a cobra.Command and an integer representing the number of threads as arguments.
 func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 	log.Info().Msg("Refreshing the game catalogue...")
 
@@ -170,28 +195,28 @@ func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 	}
 
 	// Try to refresh the access token
-	user, err := authenticateUser(false)
+	token, err := client.RefreshToken()
 	if err != nil {
-		cmd.PrintErrln("Error: Failed to authenticate. Please check your credentials and try again.")
+		cmd.PrintErrln("Error: Failed to refresh the access token. Please login again.")
 	}
 
-	if user == nil {
-		cmd.PrintErrln("Error: No user data found. Please run 'gogg init' to enter your username and password.")
+	if token == nil {
+		cmd.PrintErrln("Error: Failed to refresh the access token. Did you login?")
 		return
 	}
 
-	games, err := client.FetchIdOfOwnedGames(user.AccessToken, "https://embed.gog.com/user/data/games")
+	games, err := client.FetchIdOfOwnedGames(token.AccessToken, "https://embed.gog.com/user/data/games")
 	if err != nil {
 		if strings.Contains(err.Error(), "401") {
-			cmd.PrintErrln("Error: Failed to fetch the list of owned games. Please use `auth` command to re-authenticate.")
+			cmd.PrintErrln("Error: Failed to fetch the list of owned games. Please use `login` command to login.")
 		}
 		log.Info().Msgf("Failed to fetch owned games: %v\n", err)
 		return
 	} else if len(games) == 0 {
-		log.Info().Msg("No games found in your GOG account.")
+		log.Info().Msg("No games found in the GOG account.")
 		return
 	} else {
-		log.Info().Msgf("Found %d games IDs in your GOG account.\n", len(games))
+		log.Info().Msgf("Found %d games IDs in the GOG account.\n", len(games))
 	}
 
 	if err := db.EmptyCatalogue(); err != nil {
@@ -226,7 +251,7 @@ func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 			defer wg.Done()
 			for task := range taskChan {
 				url := fmt.Sprintf("https://embed.gog.com/account/gameDetails/%d.json", task.gameID)
-				task.details, task.rawDetails, task.err = client.FetchGameData(user.AccessToken, url)
+				task.details, task.rawDetails, task.err = client.FetchGameData(token.AccessToken, url)
 				if task.err != nil {
 					log.Info().Msgf("Failed to fetch game details for game ID %d: %v\n", task.gameID, task.err)
 				}
@@ -234,7 +259,8 @@ func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 				if task.err == nil && task.details.Title != "" {
 					err = db.PutInGame(task.gameID, task.details.Title, task.rawDetails)
 					if err != nil {
-						log.Info().Msgf("Failed to insert game details for game ID %d: %v in the catalogue\n", task.gameID, err)
+						log.Info().Msgf("Failed to insert game details for game ID %d: %v in the catalogue\n",
+							task.gameID, err)
 					}
 				}
 				_ = bar.Add(1)
@@ -251,45 +277,44 @@ func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 
 	wg.Wait()
 	bar.Finish()
-	cmd.Printf("Refreshing completed successfully.")
+	cmd.Println("Refreshed the game catalogue successfully.")
 }
 
-// searchCmd searches for games in the catalogue by ID or title
+// searchCmd searches for games in the catalogue by ID or title.
+// It returns a pointer to the created cobra.Command.
 func searchCmd() *cobra.Command {
-	var gameID int
-	var searchTerm string
+	var searchByIDFlag bool
+
 	cmd := &cobra.Command{
-		Use:   "search",
-		Short: "Search for games in the catalogue by ID or title",
+		Use:   "search [query]",
+		Short: "Search for games in the catalogue",
+		Long:  "Search for games in the catalogue given a query string, which can be a term in the title or a game ID",
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			searchGames(cmd, gameID, searchTerm)
+			query := args[0]
+			searchGames(cmd, query, searchByIDFlag)
 		},
 	}
 
-	// Flags for search
-	cmd.Flags().IntVarP(&gameID, "id", "i", 0, "ID of the game to search")
-	cmd.Flags().StringVarP(&searchTerm, "term", "t", "", "Search term to search for;"+
-		" search is case-insensitive and does partial matching of the term with the game title")
+	// Flag to determine the type of search
+	cmd.Flags().BoolVarP(&searchByIDFlag, "id", "i", false,
+		"Search by game ID instead of title? [true, false]")
+
 	return cmd
 }
 
-func searchGames(cmd *cobra.Command, gameID int, searchTerm string) {
-	if gameID == 0 && searchTerm == "" {
-		cmd.PrintErrln("Error: one of the flags --id or --term is required. Use `gogg catalogue search -h` for more information.")
-		return
-	}
-
-	// Check not both flags are provided
-	if gameID != 0 && searchTerm != "" {
-		cmd.PrintErrln("Error: only one of the flags --id or --term is required. Use `gogg catalogue search -h` for more information.")
-		return
-	}
-
+// searchGames searches for games in the catalogue by ID or title and displays the results in a table.
+// It takes a cobra.Command, a string representing the query, and a boolean indicating whether to search by ID as arguments.
+func searchGames(cmd *cobra.Command, query string, searchByID bool) {
 	var games []db.Game
 	var err error
 
-	// Search by game ID
-	if gameID != 0 {
+	if searchByID {
+		gameID, err := strconv.Atoi(query)
+		if err != nil {
+			cmd.PrintErrln("Error: Invalid game ID. It must be a number.")
+			return
+		}
 		log.Info().Msgf("Searching for game with ID=%d", gameID)
 		game, err := db.GetGameByID(gameID)
 		if err != nil {
@@ -300,78 +325,67 @@ func searchGames(cmd *cobra.Command, gameID int, searchTerm string) {
 		if game != nil {
 			games = append(games, *game)
 		}
-	}
-
-	// Search by search term
-	if searchTerm != "" {
-		log.Info().Msgf("Searching for games with term=%s in its title", searchTerm)
-		games, err = db.SearchGamesByName(searchTerm)
+	} else {
+		log.Info().Msgf("Searching for games with term=%s in their title", query)
+		games, err = db.SearchGamesByName(query)
 		if err != nil {
-			log.Error().Err(err).Msgf("Failed to search games with term=%s in its title", searchTerm)
+			log.Error().Err(err).Msgf("Failed to search games with term=%s in their title", query)
 			cmd.PrintErrln("Error:", err)
 			return
 		}
 	}
 
-	// Check if any games were found
 	if len(games) == 0 {
-		cmd.Printf("No game(s) found matching the search criteria.\n")
+		cmd.Println("No game(s) found matching the query. Please check the search term or ID.")
 		return
 	}
 
-	// Display the search results in a table format
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Row ID", "Game ID", "Title"})
-	table.SetColMinWidth(2, 50)                      // Set minimum width for the Title column
-	table.SetAlignment(tablewriter.ALIGN_LEFT)       // Align all columns to the left
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT) // Align headers to the left
-	table.SetAutoWrapText(false)                     // Disable text wrapping in all columns
-	table.SetRowLine(false)                          // Disable row line breaks
+	table.SetColMinWidth(2, 50)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
+	table.SetAutoWrapText(false)
+	table.SetRowLine(false)
 
 	for i, game := range games {
 		table.Append([]string{
-			fmt.Sprintf("%d", i+1),     // Row ID
-			fmt.Sprintf("%d", game.ID), // Game ID
-			game.Title,                 // Game Title
+			fmt.Sprintf("%d", i+1),
+			fmt.Sprintf("%d", game.ID),
+			game.Title,
 		})
 	}
 
 	table.Render()
 }
 
-// exportCmd exports the game catalogue to a file in JSON or CSV format based on the user's choice
+// exportCmd creates a new cobra.Command for exporting the game catalogue to a file.
+// It returns a pointer to the created cobra.Command.
 func exportCmd() *cobra.Command {
-	exportPath := ""
-	exportFormat := ""
+	var exportFormat string
 
 	cmd := &cobra.Command{
-		Use:   "export",
+		Use:   "export [exportDir]",
 		Short: "Export the game catalogue to a file",
+		Long:  "Export the game catalogue to a file in the specified path in the specified format",
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			exportPath := args[0]
 			exportCatalogue(cmd, exportPath, exportFormat)
 		},
 	}
 
-	// Add flags for export path and format
-	cmd.Flags().StringVarP(&exportPath, "dir", "d", "", "Directory to export the file (required)")
-	cmd.Flags().StringVarP(&exportFormat, "format", "f", "", "Export format: json or csv (required)")
-
-	// Mark flags as required
-	cmd.MarkFlagRequired("path")
-	cmd.MarkFlagRequired("format")
+	// Add flag for export format
+	cmd.Flags().StringVarP(&exportFormat, "format", "f", "csv",
+		"Format of the exported file [csv, json]")
 
 	return cmd
 }
 
+// exportCatalogue handles the export logic for the game catalogue.
+// It takes a cobra.Command, a string representing the export path, and a string representing the export format as arguments.
 func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 	log.Info().Msg("Exporting the game catalogue...")
-
-	// Validate the export path
-	if exportPath == "" {
-		log.Error().Msg("Export path is required.")
-		cmd.PrintErrln("Error: Export path is required.")
-		return
-	}
 
 	// Ensure the directory exists or create it
 	if err := os.MkdirAll(exportPath, os.ModePerm); err != nil {
@@ -417,6 +431,7 @@ func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 }
 
 // exportCatalogueToCSV exports the game catalogue to a CSV file.
+// It takes a string representing the file path as an argument and returns an error if any.
 func exportCatalogueToCSV(path string) error {
 
 	// Fetch all games from the catalogue
@@ -457,6 +472,7 @@ func exportCatalogueToCSV(path string) error {
 }
 
 // exportCatalogueToJSON exports the game catalogue to a JSON file.
+// It takes a string representing the file path as an argument and returns an error if any.
 func exportCatalogueToJSON(path string) error {
 
 	// Fetch all games from the catalogue

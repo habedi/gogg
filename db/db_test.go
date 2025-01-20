@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+// TestInitDB tests the initialization of the database.
+// It sets up a temporary directory, initializes the database, and checks if the database file is created successfully.
 func TestInitDB(t *testing.T) {
 	tempDir := t.TempDir()
 	os.Setenv("HOME", tempDir)
@@ -24,6 +26,8 @@ func TestInitDB(t *testing.T) {
 	assert.NoError(t, closeErr, "CloseDB should not return an error")
 }
 
+// TestCloseDB tests the closing of the database connection.
+// It ensures that the CloseDB function does not return an error.
 func TestCloseDB(t *testing.T) {
 	err := db.CloseDB()
 	assert.NoError(t, err, "CloseDB should not return an error")

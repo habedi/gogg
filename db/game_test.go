@@ -9,6 +9,8 @@ import (
 	"testing"
 )
 
+// setupTestDBForGames sets up an in-memory SQLite database for testing purposes.
+// It returns a pointer to the gorm.DB instance.
 func setupTestDBForGames(t *testing.T) *gorm.DB {
 	dBOject, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -16,6 +18,7 @@ func setupTestDBForGames(t *testing.T) *gorm.DB {
 	return dBOject
 }
 
+// TestPutInGame_InsertsNewGame tests the insertion of a new game into the database.
 func TestPutInGame_InsertsNewGame(t *testing.T) {
 	testDB := setupTestDBForGames(t)
 	db.Db = testDB
@@ -30,6 +33,7 @@ func TestPutInGame_InsertsNewGame(t *testing.T) {
 	assert.Equal(t, "Test Data", game.Data)
 }
 
+// TestPutInGame_UpdatesExistingGame tests the update of an existing game in the database.
 func TestPutInGame_UpdatesExistingGame(t *testing.T) {
 	testDB := setupTestDBForGames(t)
 	db.Db = testDB
@@ -47,6 +51,7 @@ func TestPutInGame_UpdatesExistingGame(t *testing.T) {
 	assert.Equal(t, "Updated Data", game.Data)
 }
 
+// TestEmptyCatalogue_RemovesAllGames tests the removal of all games from the database.
 func TestEmptyCatalogue_RemovesAllGames(t *testing.T) {
 	testDB := setupTestDBForGames(t)
 	db.Db = testDB
@@ -63,6 +68,7 @@ func TestEmptyCatalogue_RemovesAllGames(t *testing.T) {
 	assert.Empty(t, games)
 }
 
+// TestGetCatalogue_ReturnsAllGames tests the retrieval of all games from the database.
 func TestGetCatalogue_ReturnsAllGames(t *testing.T) {
 	testDB := setupTestDBForGames(t)
 	db.Db = testDB
@@ -77,6 +83,7 @@ func TestGetCatalogue_ReturnsAllGames(t *testing.T) {
 	assert.Len(t, games, 2)
 }
 
+// TestGetGameByID_ReturnsGame tests the retrieval of a game by its ID from the database.
 func TestGetGameByID_ReturnsGame(t *testing.T) {
 	testDB := setupTestDBForGames(t)
 	db.Db = testDB
@@ -91,6 +98,7 @@ func TestGetGameByID_ReturnsGame(t *testing.T) {
 	assert.Equal(t, "Test Data", game.Data)
 }
 
+// TestGetGameByID_ReturnsNilForNonExistentGame tests that a non-existent game returns nil.
 func TestGetGameByID_ReturnsNilForNonExistentGame(t *testing.T) {
 	testDB := setupTestDBForGames(t)
 	db.Db = testDB
@@ -100,6 +108,7 @@ func TestGetGameByID_ReturnsNilForNonExistentGame(t *testing.T) {
 	assert.Nil(t, game)
 }
 
+// TestSearchGamesByName_ReturnsMatchingGames tests the search functionality for games by name.
 func TestSearchGamesByName_ReturnsMatchingGames(t *testing.T) {
 	testDB := setupTestDBForGames(t)
 	db.Db = testDB
@@ -115,6 +124,7 @@ func TestSearchGamesByName_ReturnsMatchingGames(t *testing.T) {
 	assert.Equal(t, "Test Game 1", games[0].Title)
 }
 
+// TestSearchGamesByName_ReturnsEmptyForNoMatches tests that no matches return an empty result.
 func TestSearchGamesByName_ReturnsEmptyForNoMatches(t *testing.T) {
 	testDB := setupTestDBForGames(t)
 	db.Db = testDB

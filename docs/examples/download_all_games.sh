@@ -19,6 +19,8 @@ INCLUDE_DLC=1 # Include DLCs
 INCLUDE_EXTRA_CONTENT=1 # Include extra content
 RESUME_DOWNLOAD=1 # Resume download
 NUM_THREADS=4 # Number of worker threads for downloading
+FLATTEN=1 # Flatten the directory structure
+OUTPUT_DIR=./games # Output directory
 
 # Function to clean up the CSV file
 cleanup() {
@@ -34,8 +36,8 @@ cleanup() {
 trap cleanup SIGINT
 
 # Update game catalogue and export it to a CSV file
-$GOGG catalogue refresh --threads=10
-$GOGG catalogue export --format=csv --dir=./
+$GOGG catalogue refresh
+$GOGG catalogue export ./ --format=csv
 
 # Find the newest catalogue file
 latest_csv=$(ls -t gogg_catalogue_*.csv 2>/dev/null | head -n 1)
@@ -51,8 +53,9 @@ echo -e "${GREEN}Using catalogue file: $latest_csv${NC}"
 # Download each game listed in catalogue file, skipping the first line
 tail -n +2 "$latest_csv" | while IFS=, read -r game_id game_title; do
     echo -e "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
-    DEBUG_GOGG=$DEBUG_MODE $GOGG download --id=$game_id --dir=./games --platform=$PLATFORM --lang=$LANG \
-        --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS
+    DEBUG_GOGG=$DEBUG_MODE $GOGG download "$game_id" $OUTPUT_DIR --platform=$PLATFORM --lang=$LANG \
+        --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS \
+        --flatten=$FLATTEN
     sleep 1
     #break # Comment out this line to download all games
 done

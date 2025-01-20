@@ -15,6 +15,7 @@ var (
 )
 
 // InitDB initializes the database and creates the tables if they don't exist.
+// It returns an error if any step in the initialization process fails.
 func InitDB() error {
 	if err := createDBDirectory(); err != nil {
 		return err
@@ -35,6 +36,7 @@ func InitDB() error {
 }
 
 // createDBDirectory checks if the database path exists and creates it if it doesn't.
+// It returns an error if the directory creation fails.
 func createDBDirectory() error {
 	if _, err := os.Stat(filepath.Dir(Path)); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(Path), 0755); err != nil {
@@ -46,6 +48,7 @@ func createDBDirectory() error {
 }
 
 // openDatabase opens the database connection.
+// It returns an error if the database connection fails to open.
 func openDatabase() error {
 	var err error
 	Db, err = gorm.Open(sqlite.Open(Path), &gorm.Config{})
@@ -57,20 +60,22 @@ func openDatabase() error {
 }
 
 // migrateTables creates the tables if they don't exist.
+// It returns an error if the table migration fails.
 func migrateTables() error {
 	if err := Db.AutoMigrate(&Game{}); err != nil {
 		log.Error().Err(err).Msg("Failed to auto-migrate database")
 		return err
 	}
 
-	if err := Db.AutoMigrate(&User{}); err != nil {
+	if err := Db.AutoMigrate(&Token{}); err != nil {
 		log.Error().Err(err).Msg("Failed to auto-migrate database")
 		return err
 	}
 	return nil
 }
 
-// configureLogger configures the GORM logger based on environment variable.
+// configureLogger configures the GORM logger based on the environment variable.
+// It sets the logger to silent mode if the DEBUG_GOGG environment variable is not set, otherwise it sets it to debug mode.
 func configureLogger() {
 	if os.Getenv("DEBUG_GOGG") == "" {
 		Db.Logger = Db.Logger.LogMode(0) // Silent mode
@@ -80,6 +85,7 @@ func configureLogger() {
 }
 
 // CloseDB closes the database connection.
+// It returns an error if the database connection fails to close.
 func CloseDB() error {
 	sqlDB, err := Db.DB()
 	if err != nil {
