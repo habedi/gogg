@@ -65,7 +65,8 @@ Additionally, it allows users to perform the following actions:
 - Download game files (like installers, patches, and bonus content)
 - Filter files to be downloaded by platform, language, and other attributes like content type
 - Download files using multiple threads to speed up the process
-- Resume interrupted downloads
+- Resume interrupted downloads and only download missing or newer files
+- Verify the integrity of downloaded files by calculating their hashes
 
 ## Getting Started
 

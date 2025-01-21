@@ -37,16 +37,19 @@ func Login(loginURL string, username string, password string, headless bool) err
 	ctx, cancel := createChromeContext(headless)
 	defer cancel()
 
+	log.Info().Msg("Trying to login to GOG.com.")
+
 	// Perform the login
-	finalURL, err := performLogin(ctx, loginURL, username, password)
+	finalURL, err := performLogin(ctx, loginURL, username, password, headless)
 	if err != nil {
 		if headless {
-			log.Warn().Err(err).Msg("Headless login failed, retrying with window mode")
+			log.Warn().Err(err).Msg("Headless login failed, retrying with window mode.")
+			fmt.Println("Headless login failed, retrying with window mode.")
 			// Retry with window mode if headless login fails
 			ctx, cancel = createChromeContext(false)
 			defer cancel()
 
-			finalURL, err = performLogin(ctx, loginURL, username, password)
+			finalURL, err = performLogin(ctx, loginURL, username, password, false)
 			if err != nil {
 				return fmt.Errorf("failed to login: %w", err)
 			}
@@ -86,7 +89,11 @@ func RefreshToken() (*db.Token, error) {
 		return nil, fmt.Errorf("failed to retrieve token record: %w", err)
 	}
 
-	if !isTokenValid(token) {
+	// Check if the token is valid and refresh it if necessary
+	tokenStatus, err := isTokenValid(token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check token validity: %w", err)
+	} else if !tokenStatus {
 		if err := refreshAccessToken(token); err != nil {
 			return nil, fmt.Errorf("failed to refresh token: %w", err)
 		}
@@ -135,23 +142,24 @@ func refreshAccessToken(token *db.Token) error {
 
 // isTokenValid checks if the access token (stored in the database) is still valid.
 // It takes a pointer to the token record and returns a boolean indicating whether the token is valid.
-func isTokenValid(token *db.Token) bool {
+func isTokenValid(token *db.Token) (bool, error) {
 
 	if token == nil {
-		return false
+		return false, fmt.Errorf("access token data does not exist in the database. Please login first")
 	}
 
-	if token.AccessToken == "" || token.ExpiresAt == "" {
-		return false
+	// Check if the token fields are empty (needs refresh)
+	if token.AccessToken == "" || token.RefreshToken == "" || token.ExpiresAt == "" {
+		return false, nil
 	}
 
 	expiresAt, err := time.Parse(time.RFC3339, token.ExpiresAt)
 	if err != nil {
-		log.Error().Err(err).Msg("Invalid expiration time format")
-		return false
+		log.Error().Msgf("Failed to parse expiration time: %s", token.ExpiresAt)
+		return false, err
+	} else {
+		return time.Now().Before(expiresAt), nil
 	}
-
-	return time.Now().Before(expiresAt)
 }
 
 // createChromeContext creates a new ChromeDP context with the specified option to run Chrome in headless mode or not.
@@ -188,12 +196,27 @@ func createChromeContext(headless bool) (context.Context, context.CancelFunc) {
 }
 
 // performLogin performs the login process using the provided username and password and returns the final URL after successful login.
-// It takes the ChromeDP context, login URL, username, and password as parameters and returns the final URL and an error if the login process fails.
-func performLogin(ctx context.Context, loginURL string, username string, password string) (string, error) {
-	timeoutCtx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+// It takes the ChromeDP context, login URL, username, password, and a boolean indicating whether to use headless mode as parameters, and returns the final URL and an error if the login process fails.
+func performLogin(ctx context.Context, loginURL string, username string, password string,
+	headlessMode bool) (string, error) {
+
+	var timeoutCtx context.Context
+	var cancel context.CancelFunc
+	var finalURL string
+
+	if headlessMode {
+		// Timeout for login in headless mode 30
+		timeoutCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	} else {
+		// Timeout for login in window mode 4 minutes
+		timeoutCtx, cancel = context.WithTimeout(ctx, 4*time.Minute)
+	}
+
+	// Close the context when the function returns
 	defer cancel()
 
-	var finalURL string
+	// Start the login process
 	err := chromedp.Run(timeoutCtx,
 		chromedp.Navigate(loginURL),
 		chromedp.WaitVisible(`#login_username`, chromedp.ByID),
