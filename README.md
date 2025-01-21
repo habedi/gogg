@@ -20,6 +20,9 @@
   <a href="https://github.com/habedi/gogg/actions/workflows/build_macos.yml">
     <img src="https://github.com/habedi/gogg/actions/workflows/build_macos.yml/badge.svg" alt="MacOS Build">
   </a>
+  <a href="https://snapcraft.io/gogg">
+  <img src="https://snapcraft.io/gogg/badge.svg" alt="Snap Store">
+  </a>
   <br>
   <a href="https://goreportcard.com/report/github.com/habedi/gogg">
   <img src="https://goreportcard.com/badge/github.com/habedi/gogg" alt="Go Report Card">

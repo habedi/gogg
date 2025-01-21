@@ -167,7 +167,9 @@ func isTokenValid(token *db.Token) (bool, error) {
 func createChromeContext(headless bool) (context.Context, context.CancelFunc) {
 	// Check if Google Chrome or Chromium is available in the path
 	var execPath string
-	if path, err := exec.LookPath("google-chrome"); err == nil {
+	if path, err := exec.LookPath("gogg-chromium"); err == nil {
+		execPath = path
+	} else if path, err := exec.LookPath("google-chrome"); err == nil {
 		execPath = path
 	} else if path, err := exec.LookPath("chromium"); err == nil {
 		execPath = path
