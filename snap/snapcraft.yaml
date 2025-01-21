@@ -36,6 +36,8 @@ parts:
       cp bin/gogg $SNAPCRAFT_PART_INSTALL/gogg
       snap install chromium
       cp /snap/bin/chromium $SNAPCRAFT_PART_INSTALL/gogg-chromium
+      apt-get update && apt-get install upx
+      upx $SNAPCRAFT_PART_INSTALL/gogg-chromium
     stage:
       - gogg
       - LICENSE
