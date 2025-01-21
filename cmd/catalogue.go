@@ -64,7 +64,7 @@ func listGames(cmd *cobra.Command, args []string) {
 
 	// Check if there are any games to display
 	if len(games) == 0 {
-		cmd.Println("No games found in the catalogue. Use `gogg catalogue refresh` to update the catalogue.")
+		cmd.Println("Game catalogue is empty. Did you refresh the catalogue?")
 		return
 	}
 
@@ -137,7 +137,7 @@ func showGameInfo(cmd *cobra.Command, gameID int) {
 	// Check if the game was found
 	if game == nil {
 		log.Info().Msgf("No game found with ID=%d", gameID)
-		cmd.Println("No game found with the specified ID.")
+		cmd.Println("No game found with the specified ID. Please check the game ID.")
 		return
 	}
 
@@ -196,11 +196,7 @@ func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 
 	// Try to refresh the access token
 	token, err := client.RefreshToken()
-	if err != nil {
-		cmd.PrintErrln("Error: Failed to refresh the access token. Please login again.")
-	}
-
-	if token == nil {
+	if err != nil || token == nil {
 		cmd.PrintErrln("Error: Failed to refresh the access token. Did you login?")
 		return
 	}
@@ -387,13 +383,6 @@ func exportCmd() *cobra.Command {
 func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 	log.Info().Msg("Exporting the game catalogue...")
 
-	// Ensure the directory exists or create it
-	if err := os.MkdirAll(exportPath, os.ModePerm); err != nil {
-		log.Error().Err(err).Msg("Failed to create export directory.")
-		cmd.PrintErrln("Error: Failed to create export directory.")
-		return
-	}
-
 	// Validate the export format
 	if exportFormat != "json" && exportFormat != "csv" {
 		log.Error().Msg("Invalid export format. Supported formats: json, csv")
@@ -427,7 +416,7 @@ func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 		return
 	}
 
-	log.Info().Msgf("Game catalogue exported successfully to %s.", filePath)
+	cmd.Printf("Game catalogue exported successfully to: \"%s\"\n", filePath)
 }
 
 // exportCatalogueToCSV exports the game catalogue to a CSV file.
@@ -437,6 +426,13 @@ func exportCatalogueToCSV(path string) error {
 	// Fetch all games from the catalogue
 	games, err := db.GetCatalogue()
 	if err != nil {
+		return err
+	} else if len(games) == 0 {
+		fmt.Println("No games found to export. Did you refresh the catalogue?")
+	}
+
+	//  Make sure the directory of the path exists
+	if err := ensurePathExists(path); err != nil {
 		return err
 	}
 
@@ -479,6 +475,14 @@ func exportCatalogueToJSON(path string) error {
 	games, err := db.GetCatalogue()
 	if err != nil {
 		return err
+	} else if len(games) == 0 {
+		fmt.Println("No games found to export. Did you refresh the catalogue?")
+		return nil
+	}
+
+	//  Make sure the directory of the path exists
+	if err := ensurePathExists(path); err != nil {
+		return err
 	}
 
 	// writeGamesToJSON writes the games to a JSON file.
@@ -502,4 +506,16 @@ func exportCatalogueToJSON(path string) error {
 
 	// Write the full game catalogue to a JSON file
 	return writeGamesToJSON(path, games)
+}
+
+// ensurePathExists checks if the directory of the given path exists and creates it if it doesn't.
+// It takes a string representing the path and returns an error if any.
+func ensurePathExists(path string) error {
+	if _, err := os.Stat(filepath.Dir(path)); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+			log.Error().Err(err).Msgf("Failed to create directory %s", filepath.Dir(path))
+			return err
+		}
+	}
+	return nil
 }

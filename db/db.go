@@ -29,6 +29,7 @@ func InitDB() error {
 		return err
 	}
 
+	// Configure the GORM logger
 	configureLogger()
 
 	log.Info().Msg("Database initialized successfully")
@@ -39,7 +40,7 @@ func InitDB() error {
 // It returns an error if the directory creation fails.
 func createDBDirectory() error {
 	if _, err := os.Stat(filepath.Dir(Path)); os.IsNotExist(err) {
-		if err := os.MkdirAll(filepath.Dir(Path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(Path), 0750); err != nil {
 			log.Error().Err(err).Msg("Failed to create database directory")
 			return err
 		}
@@ -94,3 +95,5 @@ func CloseDB() error {
 	}
 	return sqlDB.Close()
 }
+
+//

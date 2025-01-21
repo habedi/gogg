@@ -80,7 +80,7 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 
 	// Try to refresh the access token
 	if _, err := client.RefreshToken(); err != nil {
-		log.Error().Msg("Failed to refresh the access token. Please login again.")
+		fmt.Println("Failed to find or refresh the access token. Did you login?")
 		return
 	}
 

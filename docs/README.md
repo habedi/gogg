@@ -102,7 +102,8 @@ gogg download <game_id> <download_dir>
 The `download` command supports the following additional options:
 
 - `--platform`: Filter the files to be downloaded by platform (all, windows, mac, linux) (default is windows)
-- `--lang`: Filter the files to be downloaded by language (all, en, fr, de, es, it, pl, ru, zh) (default is en)
+- `--lang`: Filter the files to be downloaded by language (en, fr, de, es, it, ru, pl, pt-BR, zh-Hans, ja, ko) (default
+  is en)
 - `--dlcs`: Include DLC files in the download (default is true)
 - `--extras`: Include extra files in the download like soundtracks, wallpapers, etc. (default is true)
 - `--resume`: Resume interrupted downloads (default is true)
@@ -110,8 +111,7 @@ The `download` command supports the following additional options:
 - `--flatten`: Flatten the directory structure of the downloaded files (default is true)
 
 For example, to download all files (English language) of a game with the ID `<game_id>` to the directory
-`<download_dir>`
-with the specified options:
+`<download_dir>` with the specified options:
 
 ```sh
 gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --extras=true \
@@ -123,7 +123,15 @@ gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --ex
 To enable debug mode, set the `DEBUG_GOGG` environment variable to `true` or `1` when running Gogg.
 In debug mode, Gogg will be much more verbose and print a lot of information to the console.
 
+#### Linux and macOS
+
 ```sh
 DEBUG_GOGG=true gogg <command>
+```
+
+#### Windows (PowerShell)
+
+```powershell
+$env:DEBUG_GOGG = "true"; gogg <command>
 ```
 
