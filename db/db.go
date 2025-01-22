@@ -97,5 +97,3 @@ func CloseDB() error {
 	}
 	return sqlDB.Close()
 }
-
-//
