@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -71,11 +70,10 @@ func Login(loginURL string, username string, password string, headless bool) err
 	}
 
 	// Print the access token, refresh token, and expiration if debug mode is enabled
-	if os.Getenv("DEBUG_GOGG") != "" {
-		log.Info().Msgf("Access token: %s", token[:10])
-		log.Info().Msgf("Refresh token: %s", refreshToken[:10])
-		log.Info().Msgf("Expires at: %s", expiresAt)
-	}
+
+	log.Info().Msgf("Access token: %s", token[:10])
+	log.Info().Msgf("Refresh token: %s", refreshToken[:10])
+	log.Info().Msgf("Expires at: %s", expiresAt)
 
 	// Save the token record in the database
 	return db.UpsertTokenRecord(&db.Token{AccessToken: token, RefreshToken: refreshToken, ExpiresAt: expiresAt})

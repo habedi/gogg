@@ -1,6 +1,7 @@
 package db
 
 import (
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -78,7 +79,8 @@ func migrateTables() error {
 // configureLogger configures the GORM logger based on the environment variable.
 // It sets the logger to silent mode if the DEBUG_GOGG environment variable is not set, otherwise it sets it to debug mode.
 func configureLogger() {
-	if os.Getenv("DEBUG_GOGG") == "" {
+
+	if zerolog.GlobalLevel() == zerolog.Disabled {
 		Db.Logger = Db.Logger.LogMode(0) // Silent mode
 	} else {
 		Db.Logger = Db.Logger.LogMode(4) // Debug mode
@@ -95,5 +97,3 @@ func CloseDB() error {
 	}
 	return sqlDB.Close()
 }
-
-//

@@ -35,3 +35,6 @@ tree ./games
 
 echo "Display hash values of the downloaded game files"
 $GOGG file hash ./games --algo=md5
+
+echo "Calculate the total size of (\"The Messenger\") game files in MB"
+$GOGG file size 1433116924 --platform=windows --lang=en --dlcs=true --extras=false

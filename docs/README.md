@@ -10,6 +10,20 @@ You can download the binary builds of Gogg for your operating system
 from the [releases page](https://github.com/habedi/gogg/releases).
 You might want to add the binary to your system's PATH to use it from anywhere on your system.
 
+### Installation from Source
+
+Alternatively, you can install Gogg from source using Go toolchain.
+To do that, you need to have [Go](https://golang.org/) installed on your machine.
+
+```bash
+go install github.com/habedi/gogg@latest # Replace `latest` with the desired version (e.g., v0.4.0)
+```
+
+```bash
+# Running Gogg
+$GOPATH/bin/gogg <command>
+```
+
 ## Usage
 
 ### Login to GOG
