@@ -5,6 +5,7 @@ import (
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -14,11 +15,12 @@ import (
 // starts a goroutine to listen for interrupt signals, and executes the main command.
 func main() {
 
-	// If the DEBUG_GOGG environment variable is set, enable debug logging to stdout, otherwise disable logging
-	if os.Getenv("DEBUG_GOGG") != "" {
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	} else {
+	// If the DEBUG_GOGG environment variable is set to false or 0, or not set at all, disable logging, otherwise enable it.
+	debugMode := strings.TrimSpace(strings.ToLower(os.Getenv("DEBUG_GOGG")))
+	if debugMode == "false" || debugMode == "0" || debugMode == "" {
 		zerolog.SetGlobalLevel(zerolog.Disabled)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	}
 
 	// This block sets up a go routine to listen for an interrupt signal which will immediately exit the program

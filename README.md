@@ -24,9 +24,6 @@
   <a href="https://goreportcard.com/report/github.com/habedi/gogg">
   <img src="https://goreportcard.com/badge/github.com/habedi/gogg" alt="Go Report Card">
   </a>
-  <a href="https://pkg.go.dev/github.com/habedi/gogg">
-    <img src="https://pkg.go.dev/badge/github.com/habedi/gogg.svg" alt="Go Reference">
-  </a>
   <a href="https://codecov.io/gh/habedi/gogg">
     <img src="https://codecov.io/gh/habedi/gogg/graph/badge.svg?token=1RUL13T0VE" alt="Code Coverage">
   </a>
@@ -67,6 +64,7 @@ Additionally, it allows users to perform the following actions:
 - Download files using multiple threads to speed up the process
 - Resume interrupted downloads and only download missing or newer files
 - Verify the integrity of downloaded files by calculating their hashes
+- Calculate the total size of the files to be downloaded (for storage planning)
 
 ## Getting Started
 
@@ -76,7 +74,7 @@ Run `gogg -h` to see the available commands and options.
 
 ### Examples
 
-For more detailed examples, see the content of the [examples](docs/examples/) directory.
+**For more detailed examples, see the content of the [examples](docs/examples/) directory.**
 
 #### Login to GOG
 
@@ -117,6 +115,14 @@ gogg download 1207658924 ./games --platform=windows --lang=en --dlcs=true --extr
 ```bash
 # Will show the SHA1 hash of the downloaded files for `The Witcher: Enhanced Edition`
 gogg file hash ./games/the-witcher-enhanced-edition --algo=sha1
+```
+
+#### Storage Size Calculation
+
+```bash
+# Will show the total size of the files to be downloaded for `The Witcher: Enhanced Edition`
+DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=true \
+ --extras=false --unit=GB
 ```
 
 ## Demo

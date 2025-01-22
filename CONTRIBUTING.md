@@ -31,3 +31,7 @@ Contributions are always welcome and appreciated.
 ## Miscellaneous
 
 - Run `make help` to see all available commands to manage different tasks.
+
+## Code of Conduct
+
+We adhere to the [Go Community Code of Conduct](https://go.dev/conduct).

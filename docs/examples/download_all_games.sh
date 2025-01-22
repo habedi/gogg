@@ -13,6 +13,7 @@ echo -e "${GREEN}===============================================================
 DEBUG_MODE=1 # Debug mode enabled
 GOGG=$(command -v bin/gogg || command -v gogg)
 
+# Download options
 LANG=en # Language English
 PLATFORM=windows # Platform Windows
 INCLUDE_DLC=1 # Include DLCs

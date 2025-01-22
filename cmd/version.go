@@ -6,7 +6,7 @@ import (
 
 var (
 	// version holds the current version of the Gogg.
-	version = "0.3.1"
+	version = "0.4.0"
 )
 
 // versionCmd creates a new cobra.Command that shows the version of Gogg.

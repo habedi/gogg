@@ -9,22 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
-
-// Map of supported game languages and their native names
-var gameLanguages = map[string]string{
-	"en":      "English",
-	"fr":      "Français",            // French
-	"de":      "Deutsch",             // German
-	"es":      "Español",             // Spanish
-	"it":      "Italiano",            // Italian
-	"ru":      "Русский",             // Russian
-	"pl":      "Polski",              // Polish
-	"pt-BR":   "Português do Brasil", // Portuguese (Brazil)
-	"zh-Hans": "简体中文",                // Simplified Chinese
-	"ja":      "日本語",                 // Japanese
-	"ko":      "한국어",                 // Korean
-}
 
 // downloadCmd creates a new cobra.Command for downloading a selected game from GOG.
 // It returns a pointer to the created cobra.Command.
@@ -49,7 +35,8 @@ func downloadCmd() *cobra.Command {
 				return
 			}
 			downloadDir := args[1]
-			executeDownload(gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads)
+			executeDownload(gameID, downloadDir, strings.ToLower(language), platformName, extrasFlag, dlcFlag,
+				resumeFlag, flattenFlag, numThreads)
 		},
 	}
 
@@ -76,6 +63,17 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	if numThreads < 1 || numThreads > 20 {
 		fmt.Println("Number of threads must be between 1 and 20.")
 		return
+	}
+
+	// Check if the language is valid
+	if !isValidLanguage(language) {
+		fmt.Println("Invalid language code. Supported languages are:")
+		for langCode, langName := range gameLanguages {
+			fmt.Printf("'%s' for %s\n", langCode, langName)
+		}
+		return
+	} else {
+		language = gameLanguages[language]
 	}
 
 	// Try to refresh the access token
@@ -122,7 +120,7 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 		flattenFlag, numThreads)
 
 	// Download the game files
-	err = client.DownloadGameFiles(user.AccessToken, parsedGameData, downloadPath, gameLanguages[language],
+	err = client.DownloadGameFiles(user.AccessToken, parsedGameData, downloadPath, language,
 		platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to download game files.")
@@ -137,7 +135,7 @@ func logDownloadParameters(game client.Game, gameID int, downloadPath, language,
 	extrasFlag, dlcFlag, resumeFlag bool, flattenFlag bool, numThreads int) {
 	fmt.Println("================================= Download Parameters =====================================")
 	fmt.Printf("Downloading \"%v\" (with game ID=\"%d\") to \"%v\"\n", game.Title, gameID, downloadPath)
-	fmt.Printf("Platform: \"%v\", Language: '%v'\n", platformName, gameLanguages[language])
+	fmt.Printf("Platform: \"%v\", Language: '%v'\n", platformName, language)
 	fmt.Printf("Include Extras: \"%v, Include DLCs: \"%v\", Resume enabled: \"%v\"\n", extrasFlag, dlcFlag, resumeFlag)
 	fmt.Printf("Number of worker threads for download: \"%d\"\n", numThreads)
 	fmt.Printf("Flatten directory structure: \"%v\"\n", flattenFlag)
