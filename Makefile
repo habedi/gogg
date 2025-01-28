@@ -79,6 +79,6 @@ install-deps: ## Install development dependencies on Debian-based systems
 	go mod download
 
 .PHONY: lint
-lint: ## Run linters on Go files
+lint: format ## Run linters on Go files
 	@echo "Linting Go files..."
 	golangci-lint run ./...
