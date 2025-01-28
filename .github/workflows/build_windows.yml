@@ -22,7 +22,6 @@ jobs:
             -   name: Install Dependencies
                 run: |
                     choco install make -y
-                    make format
                     make test
                 continue-on-error: false
 

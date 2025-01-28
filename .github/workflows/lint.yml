@@ -11,7 +11,7 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
-                # Checkout code from repository
+            # Checkout code from repository
             -   name: Checkout code
                 uses: actions/checkout@v4
 
@@ -24,6 +24,8 @@ jobs:
                 # Install golangci-lint
             -   name: Install dependencies
                 run: |
+                    sudo apt-get update
+                    sudo apt-get install -y make
                     make install-deps
 
                 # Run linters

@@ -2,6 +2,9 @@ name: Tests
 
 on:
     workflow_dispatch: # Only enable manual runs for now
+    push:
+        tags:
+            - 'v*' # Trigger on version tags
 
 jobs:
     build:
@@ -21,13 +24,15 @@ jobs:
                 with:
                     go-version: ${{ matrix.go-version }}
 
-            # Install dependencies and run the tests
+            # Install dependencies
             -   name: Install Dependencies
                 run: |
+                    sudo apt-get update
                     sudo apt-get install -y make
-                    make format
+                    make install-deps
                 continue-on-error: false
 
+            # Run tests
             -   name: Run Tests and Generate Coverage Report
                 run: |
                     make test # Generates a coverage.txt file for Codecov
@@ -38,3 +43,4 @@ jobs:
                 uses: codecov/codecov-action@v5
                 with:
                     token: ${{ secrets.CODECOV_TOKEN }}
+                continue-on-error: false
