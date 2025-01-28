@@ -30,10 +30,6 @@ func GetTokenRecord() (*Token, error) {
 		return nil, err
 	}
 
-	if &token == nil {
-		return nil, fmt.Errorf("no token data found. Please try logging in first")
-	}
-
 	return &token, nil
 }
 

@@ -142,7 +142,7 @@ func generateHashFiles(dir string, algo string, recursive bool, saveToFile bool,
 
 	// Walk through the directory
 	go func() {
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				log.Error().Msgf("Error accessing path %q: %v", path, err)
 				return err
@@ -168,6 +168,9 @@ func generateHashFiles(dir string, algo string, recursive bool, saveToFile bool,
 			fileChan <- path
 			return nil
 		})
+		if err != nil {
+			log.Error().Msgf("Error walking the path %q: %v", dir, err)
+		}
 		close(fileChan)
 	}()
 
@@ -344,7 +347,9 @@ func estimateStorageSize(gameID string, language string, platformName string, ex
 
 	// Calculate the size of downloads
 	for _, download := range nestedData.Downloads {
-		if strings.ToLower(download.Language) != strings.ToLower(language) {
+
+		// Skip downloads with different language than specified
+		if !strings.EqualFold(download.Language, language) {
 			log.Info().Msgf("Skipping language %s", download.Language)
 			continue
 		}
@@ -395,7 +400,9 @@ func estimateStorageSize(gameID string, language string, platformName string, ex
 	if dlcFlag {
 		for _, dlc := range nestedData.DLCs {
 			for _, download := range dlc.ParsedDownloads {
-				if strings.ToLower(download.Language) != strings.ToLower(language) {
+
+				// Skip downloads with different language than specified
+				if !strings.EqualFold(download.Language, language) {
 					log.Info().Msgf("DLC %s: Skipping language %s", dlc.Title, download.Language)
 					continue
 				}
