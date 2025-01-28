@@ -31,7 +31,7 @@ jobs:
             -   name: Run Tests and Generate Coverage Report
                 run: |
                     make test
-                    make codecov
+                    make coverage # Generates a coverage.txt file
                 continue-on-error: false
 
             # Upload the coverage report to Codecov

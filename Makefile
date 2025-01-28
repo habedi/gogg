@@ -2,7 +2,7 @@
 PKG = github.com/habedi/gogg
 BINARY_NAME = $(or $(GOGG_BINARY), $(notdir $(PKG)))
 BINARY = bin/$(BINARY_NAME)
-COVER_PROFILE = cover.out
+COVER_PROFILE = coverage.txt
 GO_FILES = $(shell find . -type f -name '*.go')
 COVER_FLAGS = --cover --coverprofile=$(COVER_PROFILE)
 CUSTOM_SNAPCRAFT_BUILD_ENVIRONMENT = $(or $(SNAP_BACKEND), multipass)
@@ -39,17 +39,13 @@ coverage: ## Run tests with coverage and show the coverage report in output
 	@echo "Displaying coverage report as a table..."
 	go tool cover -func=$(COVER_PROFILE)
 
-.PHONY: codecov
-codecov: format ## Create test coverage report for Codecov
-	@echo "Uploading coverage report to Codecov..."
-	go test -coverprofile=coverage.txt ./...
-
 .PHONY: clean
 clean: ## Remove generated and temporary files
 	@echo "Cleaning up..."
 	find . -type f -name '*.got.*' -delete
 	find . -type f -name '*.out' -delete
 	find . -type f -name '*.snap' -delete
+	rm -f $(COVER_PROFILE)
 	rm -rf bin/
 
 .PHONY: run

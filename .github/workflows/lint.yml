@@ -11,18 +11,23 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
+                # Checkout code from repository
             -   name: Checkout code
                 uses: actions/checkout@v4
 
+                # Set up Go environment
             -   name: Set up Go
                 uses: actions/setup-go@v5
                 with:
                     go-version: '1.23'
 
-            -   name: Install golangci-lint
+                # Install golangci-lint
+            -   name: Install dependencies
                 run: |
                     make install-deps
 
-            -   name: Run golangci-lint
+                # Run linters
+            -   name: Run linters
                 run: |
                     make lint
+                continue-on-error: false
