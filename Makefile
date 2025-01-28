@@ -30,13 +30,11 @@ format: ## Format Go files
 .PHONY: test
 test: format ## Run tests
 	@echo "Running tests..."
-	go test -v ./... --race
+	go test -v ./... $(COVER_FLAGS) --race
 
-.PHONY: coverage
-coverage: ## Run tests with coverage and show the coverage report in output
-	@echo "Running tests with coverage..."
-	go test -v ./... $(COVER_FLAGS)
-	@echo "Displaying coverage report as a table..."
+.PHONY: showcov
+showcov: test ## Display test coverage report
+	@echo "Displaying test coverage report..."
 	go tool cover -func=$(COVER_PROFILE)
 
 .PHONY: clean
