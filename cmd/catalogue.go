@@ -271,8 +271,14 @@ func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 		close(taskChan)
 	}()
 
+	// Wait for all workers to finish
 	wg.Wait()
-	bar.Finish()
+
+	// Finish the progress bar and check for any errors
+	if err := bar.Finish(); err != nil {
+		log.Error().Err(err).Msg("Failed to finish progress bar")
+	}
+
 	cmd.Println("Refreshed the game catalogue successfully.")
 }
 
