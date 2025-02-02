@@ -1,7 +1,7 @@
 name: Tests
 
 on:
-  workflow_dispatch: # Only enable manual runs for now
+  workflow_dispatch: # Allow manual execution
   push:
     tags:
       - 'v*' # Trigger on version tags
