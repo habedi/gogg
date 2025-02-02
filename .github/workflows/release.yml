@@ -1,137 +1,134 @@
 name: Build and Release
 
 on:
-    workflow_dispatch: # Allow manual execution
-    push:
-        tags:
-            - 'v*' # Trigger on version tags
+  workflow_dispatch: # Allow manual execution
+  push:
+    tags:
+      - 'v*' # Trigger on version tags
 
 jobs:
-    build-windows:
-        runs-on: windows-latest
-        steps:
-            -   name: Checkout Repository
-                uses: actions/checkout@v4
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-            -   name: Set up Go
-                uses: actions/setup-go@v5
-                with:
-                    go-version: 1.23
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
 
-            -   name: Install Dependencies
-                run: |
-                    choco install make -y
-                    make format
-                    make test
+      - name: Install Dependencies
+        run: |
+          choco install make -y
+          make test
 
-            -   name: Build Windows Binary
-                run: |
-                    make build GOGG_BINARY=gogg.exe
+      - name: Build Windows Binary
+        run: |
+          make build GOGG_BINARY=gogg.exe
 
-            -   name: Upload Windows Artifact
-                uses: actions/upload-artifact@v4
-                with:
-                    name: gogg-windows
-                    path: bin/gogg.exe
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gogg-windows
+          path: bin/gogg.exe
 
-    build-linux:
-        runs-on: ubuntu-latest
-        steps:
-            -   name: Checkout Repository
-                uses: actions/checkout@v4
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-            -   name: Set up Go
-                uses: actions/setup-go@v5
-                with:
-                    go-version: 1.23
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
 
-            -   name: Install Dependencies
-                run: |
-                    sudo apt-get update
-                    sudo apt-get install -y make
-                    make format
-                    make test
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make
+          make test
 
-            -   name: Build Linux Binary
-                run: |
-                    make build
+      - name: Build Linux Binary
+        run: |
+          make build
 
-            -   name: Upload Linux Artifact
-                uses: actions/upload-artifact@v4
-                with:
-                    name: gogg-linux
-                    path: bin/gogg
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gogg-linux
+          path: bin/gogg
 
-    build-macos:
-        runs-on: macos-latest
-        steps:
-            -   name: Checkout Repository
-                uses: actions/checkout@v4
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-            -   name: Set up Go
-                uses: actions/setup-go@v5
-                with:
-                    go-version: 1.23
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
 
-            -   name: Install Dependencies
-                run: |
-                    brew install make
-                    make format
-                    make test
+      - name: Install Dependencies
+        run: |
+          brew install make
+          make test
 
-            -   name: Build macOS Binary
-                run: |
-                    make build-macos
+      - name: Build macOS Binary
+        run: |
+          make build-macos
 
-            -   name: Upload macOS Artifact
-                uses: actions/upload-artifact@v4
-                with:
-                    name: gogg-macos
-                    path: bin/gogg
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gogg-macos
+          path: bin/gogg
 
-    release:
-        runs-on: ubuntu-latest
-        needs: [ build-windows, build-linux, build-macos ]
-        steps:
-            -   name: Download Windows Artifact
-                uses: actions/download-artifact@v4
-                with:
-                    name: gogg-windows
-                    path: ./windows
+  release:
+    runs-on: ubuntu-latest
+    needs: [ build-windows, build-linux, build-macos ]
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gogg-windows
+          path: ./windows
 
-            -   name: Download Linux Artifact
-                uses: actions/download-artifact@v4
-                with:
-                    name: gogg-linux
-                    path: ./linux
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gogg-linux
+          path: ./linux
 
-            -   name: Download macOS Artifact
-                uses: actions/download-artifact@v4
-                with:
-                    name: gogg-macos
-                    path: ./macos
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gogg-macos
+          path: ./macos
 
-            -   name: List Downloaded Files (for debugging)
-                run: ls -R .
+      - name: List Downloaded Files (for debugging)
+        run: ls -R .
 
-            -   name: Rename Extracted Binaries
-                run: |
-                    cd windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ..
-                    cd linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ..
-                    cd macos && zip -r9 ../gogg-macos-universal.zip gogg && cd ..
+      - name: Rename Extracted Binaries
+        run: |
+          cd windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ..
+          cd linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ..
+          cd macos && zip -r9 ../gogg-macos-universal.zip gogg && cd ..
 
-            -   name: Create GitHub Release
-                uses: ncipollo/release-action@v1
-                with:
-                    token: ${{ secrets.GITHUB_TOKEN }}
-                    name: ${{ github.ref_name }}
-                    tag: ${{ github.ref_name }}
-                    body: |
-                        Release version ${{ github.ref_name }}
-                        - Binary builds for Windows, Linux, and macOS
-                    artifacts: |
-                        gogg-windows-amd64.zip
-                        gogg-linux-amd64.zip
-                        gogg-macos-universal.zip
-                    draft: false
-                    prerelease: false
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ github.ref_name }}
+          tag: ${{ github.ref_name }}
+          body: |
+            Release version ${{ github.ref_name }}
+            - Binary builds for Windows, Linux, and macOS
+          artifacts: |
+            gogg-windows-amd64.zip
+            gogg-linux-amd64.zip
+            gogg-macos-universal.zip
+          draft: false
+          prerelease: false

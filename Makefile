@@ -1,79 +1,66 @@
-# Declare PHONY targets
-.PHONY: build format test test-cover clean run build-macos help snap-deps snap install-deps
-
 # Variables
 PKG = github.com/habedi/gogg
 BINARY_NAME = $(or $(GOGG_BINARY), $(notdir $(PKG)))
 BINARY = bin/$(BINARY_NAME)
-COVER_PROFILE = cover.out
+COVER_PROFILE = coverage.txt
 GO_FILES = $(shell find . -type f -name '*.go')
 COVER_FLAGS = --cover --coverprofile=$(COVER_PROFILE)
 CUSTOM_SNAPCRAFT_BUILD_ENVIRONMENT = $(or $(SNAP_BACKEND), multipass)
+PATH := /snap/bin:$(PATH)
 
-# Help target
-help:
-	@echo "Available targets:"
-	@echo ""
-	@echo "  build            Build the Go project"
-	@echo "  format           Format Go files"
-	@echo "  test             Run tests"
-	@echo "  test-cover       Run tests with coverage report"
-	@echo "  clean            Clean generated and temporary files"
-	@echo "  run              Build and run the project"
-	@echo "  build-macos      Build a universal binary for macOS"
-	@echo "  snap-deps        Install Snapcraft dependencies"
-	@echo "  snap             Build the Snap package"
-	@echo "  install-deps     Install development dependencies on Debian-based systems"
-	@echo "  lint             Lint Go files to check for potential errors"
-	@echo "  codecov          Create test coverage report for Codecov"
-	@echo "  help             Show this help message"
+# Default target
+.DEFAULT_GOAL := help
 
-# Building the project
-build: format
+.PHONY: help
+help: ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+
+.PHONY: build
+build: format ## Build the binary for the current platform
 	@echo "Tidying dependencies..."
 	go mod tidy
 	@echo "Building the project..."
 	go build -o $(BINARY)
 
-# Formatting Go files
-format:
+.PHONY: format
+format: ## Format Go files
 	@echo "Formatting Go files..."
 	go fmt ./...
 
-# Running tests
-test: format
+.PHONY: test
+test: format ## Run tests
 	@echo "Running tests..."
-	go test -v ./... --race
+	go test -v ./... $(COVER_FLAGS) --race
 
-test-cover: format
-	@echo "Running tests with coverage..."
-	go test -v ./... --race $(COVER_FLAGS)
-	@echo "Generating HTML coverage report..."
-	go tool cover -html=$(COVER_PROFILE)
+.PHONY: showcov
+showcov: test ## Display test coverage report
+	@echo "Displaying test coverage report..."
+	go tool cover -func=$(COVER_PROFILE)
 
-# Cleaning generated and temporary files
-clean:
+.PHONY: clean
+clean: ## Remove generated and temporary files
 	@echo "Cleaning up..."
 	find . -type f -name '*.got.*' -delete
 	find . -type f -name '*.out' -delete
 	find . -type f -name '*.snap' -delete
+	rm -f $(COVER_PROFILE)
 	rm -rf bin/
 
-# Running the built executable
-run: build
-	@echo "Running the project..."
+.PHONY: run
+run: build ## Build and run the binary
+	@echo "Running the $(BINARY) binary..."
 	./$(BINARY)
 
-# Custom build for macOS
-build-macos: format
+.PHONY: build-macos
+build-macos: format ## Build a universal binary for macOS (x86_64 and arm64)
 	@echo "Building universal binary for macOS..."
 	mkdir -p bin
 	GOARCH=amd64 go build -o bin/$(BINARY_NAME)-x86_64 ./main.go
 	GOARCH=arm64 go build -o bin/$(BINARY_NAME)-arm64 ./main.go
 	lipo -create -output $(BINARY) bin/$(BINARY_NAME)-x86_64 bin/$(BINARY_NAME)-arm64
 
-# Install Snapcraft Dependencies
-snap-deps:
+.PHONY: snap-deps
+snap-deps: ## Install Snapcraft dependencies
 	@echo "Installing Snapcraft dependencies..."
 	sudo apt-get update
 	sudo apt-get install -y snapd
@@ -81,26 +68,17 @@ snap-deps:
 	sudo snap install snapcraft --classic
 	sudo snap install multipass --classic
 
-# Build Snap package
-snap: build # snap-deps
-	@echo "Building Snap package..."
-	SNAPCRAFT_BUILD_ENVIRONMENT=$(CUSTOM_SNAPCRAFT_BUILD_ENVIRONMENT) snapcraft
-
-# Install Dependencies on Debian-based systems like Ubuntu
-install-deps:
+.PHONY: install-deps
+install-deps: ## Install development dependencies on Debian-based systems
 	@echo "Installing dependencies..."
 	make snap-deps
-	sudo apt-get install -y chromium-browser build-essential
+	sudo apt-get install -y chromium-browser build-essential chromium || true # ignore errors
 	sudo snap install chromium
 	sudo snap install go --classic
 	sudo snap install golangci-lint --classic
+	go mod download
 
-# Linting Go files
-lint:
+.PHONY: lint
+lint: format ## Run linters on Go files
 	@echo "Linting Go files..."
 	golangci-lint run ./...
-
-# Create Test Coverage Report for Codecov
-codecov: format
-	@echo "Uploading coverage report to Codecov..."
-	go test -coverprofile=coverage.txt ./...

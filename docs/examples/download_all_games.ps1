@@ -27,14 +27,14 @@ $OUTPUT_DIR = "./games" # Output directory
 # Function to clean up the CSV file
 function Cleanup
 {
-    if ($latest_csv)
+  if ($latest_csv)
+  {
+    Remove-Item -Force $latest_csv
+    if ($?)
     {
-        Remove-Item -Force $latest_csv
-        if ($?)
-        {
-            Write-Host "${RED}Cleanup: removed $latest_csv${NC}"
-        }
+      Write-Host "${RED}Cleanup: removed $latest_csv${NC}"
     }
+  }
 }
 
 # Update game catalogue and export it to a CSV file
@@ -47,22 +47,22 @@ $latest_csv = Get-ChildItem -Path . -Filter "gogg_catalogue_*.csv" | Sort-Object
 # Check if the catalogue file exists
 if (-not $latest_csv)
 {
-    Write-Host "${RED}No CSV file found.${NC}"
-    exit 1
+  Write-Host "${RED}No CSV file found.${NC}"
+  exit 1
 }
 
 Write-Host "${GREEN}Using catalogue file: $( $latest_csv.Name )${NC}"
 
 # Download each game listed in catalogue file, skipping the first line
 Get-Content $latest_csv.FullName | Select-Object -Skip 1 | ForEach-Object {
-    $fields = $_ -split ","
-    $game_id = $fields[0]
-    $game_title = $fields[1]
-    Write-Host "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
-    & $GOGG download $game_id $OUTPUT_DIR --platform=$PLATFORM --lang=$LANG `
+  $fields = $_ -split ","
+  $game_id = $fields[0]
+  $game_title = $fields[1]
+  Write-Host "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
+  & $GOGG download $game_id $OUTPUT_DIR --platform=$PLATFORM --lang=$LANG `
         --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS `
         --flatten=$FLATTEN
-    Start-Sleep -Seconds 1
+  Start-Sleep -Seconds 1
 }
 
 # Clean up

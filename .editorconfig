@@ -13,7 +13,7 @@ insert_final_newline = true # Make sure files end with a newline
 trim_trailing_whitespace = true # Remove trailing whitespace
 
 # Go files
-[*.Go]
+[*.go]
 max_line_length = 100
 
 # Markdown files
@@ -25,8 +25,10 @@ trim_trailing_whitespace = false # Don't remove trailing whitespace in Markdown 
 [*.sh]
 indent_size = 2
 
-# YAML files
-[*.yaml]
+# PowerShell scripts
+[*.ps1]
 indent_size = 2
 
-
+# YAML files
+[*.{yaml,yml}]
+indent_size = 2

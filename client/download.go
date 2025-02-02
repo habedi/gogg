@@ -157,26 +157,36 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 			return err
 		}
 
+		// Check if resuming is enabled; and if file already exists and is fully downloaded
 		var file *os.File
 		var startOffset int64
 
-		// Check if resuming is enabled and the file already exists
 		if resume {
 			fileInfo, err := os.Stat(filePath)
 			if err == nil {
 				startOffset = fileInfo.Size()
 				log.Info().Msgf("Resuming download for %s from offset %d", fileName, startOffset)
 				file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+				if err != nil {
+					log.Error().Err(err).Msgf("Failed to open file %s for appending", filePath)
+					return err
+				}
 			} else if os.IsNotExist(err) {
 				file, err = os.Create(filePath)
+				if err != nil {
+					log.Error().Err(err).Msgf("Failed to create file %s", filePath)
+					return err
+				}
+			} else {
+				log.Error().Err(err).Msgf("Failed to stat file %s", filePath)
+				return err
 			}
 		} else {
 			file, err = os.Create(filePath)
-		}
-
-		if err != nil {
-			log.Error().Err(err).Msgf("Failed to create or open file %s", filePath)
-			return err
+			if err != nil {
+				log.Error().Err(err).Msgf("Failed to create file %s", filePath)
+				return err
+			}
 		}
 		defer file.Close()
 
@@ -245,7 +255,9 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 			}),
 		)
 		// Set progress bar to the starting point (resume offset)
-		progressBar.Set64(startOffset)
+		if err := progressBar.Set64(startOffset); err != nil {
+			return fmt.Errorf("failed to set progress bar start offset: %w", err)
+		}
 
 		// Wrap response body with progress bar
 		progressReader := io.TeeReader(resp.Body, progressBar)
@@ -277,7 +289,9 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 
 	// Enqueue download tasks
 	for _, download := range game.Downloads {
-		if strings.ToLower(download.Language) != strings.ToLower(gameLanguage) {
+
+		// Check if the language of the download matches the selected language
+		if !strings.EqualFold(download.Language, gameLanguage) {
 			log.Info().Msgf("Skipping download for language %s because it doesn't match selected language %s", download.Language, gameLanguage)
 			fmt.Printf("Skipping downloading game files for %s\n", download.Language)
 			continue
@@ -328,9 +342,11 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 			log.Info().Msgf("Processing DLC: %s", dlc.Title)
 
 			for _, download := range dlc.ParsedDownloads {
-				if strings.ToLower(download.Language) != strings.ToLower(gameLanguage) {
-					log.Info().Msgf("Skipping DLC download for language %s because it doesn't match selected language %s", download.Language, gameLanguage)
-					fmt.Printf("Skipping downloading DLC files for %s\n", download.Language)
+
+				// Check if the language of the download matches the selected language
+				if !strings.EqualFold(download.Language, gameLanguage) {
+					log.Info().Msgf("Skipping download for language %s because it doesn't match selected language %s", download.Language, gameLanguage)
+					fmt.Printf("Skipping downloading game files for %s\n", download.Language)
 					continue
 				}
 
