@@ -9,32 +9,35 @@
 
 <p align="center">
   <a href="https://github.com/habedi/gogg/actions/workflows/tests.yml">
-    <img src="https://github.com/habedi/gogg/actions/workflows/tests.yml/badge.svg" alt="Tests">
+    <img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/tests.yml?label=Tests&style=flat&labelColor=555555&logo=github">
   </a>
   <a href="https://github.com/habedi/gogg/actions/workflows/build_linux.yml">
-    <img src="https://github.com/habedi/gogg/actions/workflows/build_linux.yml/badge.svg" alt="Linux Build">
+    <img alt="Linux Build" src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_linux.yml?label=Linux%20Build&style=flat&labelColor=555555&logo=linux">
   </a>
   <a href="https://github.com/habedi/gogg/actions/workflows/build_windows.yml">
-    <img src="https://github.com/habedi/gogg/actions/workflows/build_windows.yml/badge.svg" alt="Windows Build">
+    <img alt="Windows Build" src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_windows.yml?label=Windows%20Build&style=flat&labelColor=555555&logo=github">
   </a>
   <a href="https://github.com/habedi/gogg/actions/workflows/build_macos.yml">
-    <img src="https://github.com/habedi/gogg/actions/workflows/build_macos.yml/badge.svg" alt="MacOS Build">
+    <img alt="MacOS Build" src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_macos.yml?label=MacOS%20Build&style=flat&labelColor=555555&logo=apple">
   </a>
   <br>
-  <a href="https://goreportcard.com/report/github.com/habedi/gogg">
-  <img src="https://goreportcard.com/badge/github.com/habedi/gogg" alt="Go Report Card">
+  <a href="docs">
+    <img alt="Docs" src="https://img.shields.io/badge/docs-latest-3776ab?style=flat&labelColor=555555&logo=readthedocs">
+  </a>
+  <a href="https://github.com/habedi/gogg">
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-007ec6?style=flat&labelColor=555555&logo=open-source-initiative">
   </a>
   <a href="https://codecov.io/gh/habedi/gogg">
-    <img src="https://codecov.io/gh/habedi/gogg/graph/badge.svg?token=1RUL13T0VE" alt="Code Coverage">
+    <img alt="Code Coverage" src="https://img.shields.io/codecov/c/github/habedi/gogg?style=flat&labelColor=555555&logo=codecov">
   </a>
   <a href="https://www.codefactor.io/repository/github/habedi/gogg">
-    <img src="https://www.codefactor.io/repository/github/habedi/gogg/badge" alt="CodeFactor">
+    <img alt="CodeFactor" src="https://img.shields.io/codefactor/grade/github/habedi/gogg?style=flat&labelColor=555555&logo=codefactor">
   </a>
   <a href="https://github.com/habedi/gogg/releases/latest">
-    <img src="https://img.shields.io/github/release/habedi/gogg.svg?style=flat-square" alt="Release">
+    <img alt="Release" src="https://img.shields.io/github/release/habedi/gogg.svg?style=flat&labelColor=555555&logo=github">
   </a>
   <a href="https://github.com/habedi/gogg/releases">
-  <img src="https://img.shields.io/github/downloads/habedi/gogg/total.svg" alt="Total Downloads">
+    <img alt="Total Downloads" src="https://img.shields.io/github/downloads/habedi/gogg/total.svg?style=flat&labelColor=555555&logo=github">
   </a>
 </p>
 
