@@ -1,43 +1,37 @@
 name: MacOS Build
 
 on:
-    workflow_dispatch: # Enable manual execution
+  workflow_dispatch: # Allow manual execution
 
 jobs:
-    build:
-        runs-on: macos-latest
+  build:
+    runs-on: macos-latest
 
-        steps:
-            # Checkout the repository
-            -   name: Checkout Repository
-                uses: actions/checkout@v4
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-            # Set up Go
-            -   name: Set up Go
-                uses: actions/setup-go@v5
-                with:
-                    go-version: 1.23
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
 
-            # Install dependencies and run the tests
-            -   name: Install Dependencies
-                run: |
-                    brew install make
-                    make test
-                continue-on-error: false
+      - name: Install Dependencies
+        run: |
+          brew install make
+          make test
+        continue-on-error: false
 
-            # Build the application
-            -   name: Build for MacOS
-                run: |
-                    make build-macos
-                continue-on-error: false
+      - name: Build for MacOS
+        run: |
+          make build-macos
+        continue-on-error: false
 
-            # Debug: List Build Directory
-            -   name: List Build Directory
-                run: ls -R bin
+      - name: List Build Directory
+        run: ls -R bin
 
-            # Upload Build Artifact
-            -   name: Upload Build Artifact
-                uses: actions/upload-artifact@v4
-                with:
-                    name: gogg-macos-universal
-                    path: 'bin/gogg'
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gogg-macos-universal
+          path: 'bin/gogg'

@@ -24,3 +24,11 @@ trim_trailing_whitespace = false # Don't remove trailing whitespace in Markdown 
 # Bash scripts
 [*.sh]
 indent_size = 2
+
+# PowerShell scripts
+[*.ps1]
+indent_size = 2
+
+# YAML files
+[*.{yaml,yml}]
+indent_size = 2
