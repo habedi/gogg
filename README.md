@@ -7,39 +7,18 @@
 </div>
 <br>
 
-<p align="center">
-  <a href="https://github.com/habedi/gogg/actions/workflows/tests.yml">
-    <img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/tests.yml?label=Tests&style=flat&labelColor=555555&logo=github">
-  </a>
-  <a href="https://github.com/habedi/gogg/actions/workflows/build_linux.yml">
-    <img alt="Linux Build" src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_linux.yml?label=Linux%20Build&style=flat&labelColor=555555&logo=linux">
-  </a>
-  <a href="https://github.com/habedi/gogg/actions/workflows/build_windows.yml">
-    <img alt="Windows Build" src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_windows.yml?label=Windows%20Build&style=flat&labelColor=555555&logo=github">
-  </a>
-  <a href="https://github.com/habedi/gogg/actions/workflows/build_macos.yml">
-    <img alt="MacOS Build" src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_macos.yml?label=MacOS%20Build&style=flat&labelColor=555555&logo=apple">
-  </a>
-  <br>
-  <a href="docs">
-    <img alt="Docs" src="https://img.shields.io/badge/docs-latest-3776ab?style=flat&labelColor=555555&logo=readthedocs">
-  </a>
-  <a href="https://github.com/habedi/gogg">
-    <img alt="License" src="https://img.shields.io/badge/license-MIT-007ec6?style=flat&labelColor=555555&logo=open-source-initiative">
-  </a>
-  <a href="https://codecov.io/gh/habedi/gogg">
-    <img alt="Code Coverage" src="https://img.shields.io/codecov/c/github/habedi/gogg?style=flat&labelColor=555555&logo=codecov">
-  </a>
-  <a href="https://www.codefactor.io/repository/github/habedi/gogg">
-    <img alt="CodeFactor" src="https://img.shields.io/codefactor/grade/github/habedi/gogg?style=flat&labelColor=555555&logo=codefactor">
-  </a>
-  <a href="https://github.com/habedi/gogg/releases/latest">
-    <img alt="Release" src="https://img.shields.io/github/release/habedi/gogg.svg?style=flat&labelColor=555555&logo=github">
-  </a>
-  <a href="https://github.com/habedi/gogg/releases">
-    <img alt="Total Downloads" src="https://img.shields.io/github/downloads/habedi/gogg/total.svg?style=flat&labelColor=555555&logo=github">
-  </a>
-</p>
+[![Tests](https://img.shields.io/github/actions/workflow/status/habedi/gogg/tests.yml?label=tests&style=flat&labelColor=555555&logo=github)](https://github.com/habedi/gogg/actions/workflows/tests.yml)
+[![Linters](https://img.shields.io/github/actions/workflow/status/habedi/gogg/linters.yml?label=lintss&style=flat&labelColor=555555&logo=github)](https://github.com/habedi/gogg/actions/workflows/lints.yml)
+[![Linux Build](https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_linux.yml?label=linux%20build&style=flat&labelColor=555555&logo=linux)](https://github.com/habedi/gogg/actions/workflows/build_linux.yml)
+[![Windows Build](https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_windows.yml?label=windows%20build&style=flat&labelColor=555555&logo=github)](https://github.com/habedi/gogg/actions/workflows/build_windows.yml)
+[![MacOS Build](https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_macos.yml?label=macos%20build&style=flat&labelColor=555555&logo=apple)](https://github.com/habedi/gogg/actions/workflows/build_macos.yml)
+<br>
+[![Docs](https://img.shields.io/badge/docs-latest-3776ab?style=flat&labelColor=555555&logo=readthedocs)](docs)
+[![License](https://img.shields.io/badge/license-MIT-007ec6?style=flat&labelColor=555555&logo=open-source-initiative)](https://github.com/habedi/gogg)
+[![Code Coverage](https://img.shields.io/codecov/c/github/habedi/gogg?style=flat&labelColor=555555&logo=codecov)](https://codecov.io/gh/habedi/gogg)
+[![CodeFactor](https://img.shields.io/codefactor/grade/github/habedi/gogg?style=flat&labelColor=555555&logo=codefactor)](https://www.codefactor.io/repository/github/habedi/gogg)
+[![Release](https://img.shields.io/github/release/habedi/gogg.svg?style=flat&labelColor=555555&logo=github)](https://github.com/habedi/gogg/releases/latest)
+[![Total Downloads](https://img.shields.io/github/downloads/habedi/gogg/total.svg?style=flat&labelColor=555555&logo=github)](https://github.com/habedi/gogg/releases)
 
 # Gogg
 
