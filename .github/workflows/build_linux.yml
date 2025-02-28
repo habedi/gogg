@@ -1,4 +1,4 @@
-name: Linux Build
+name: Build for Linux
 
 on:
   workflow_dispatch: # Allow manual execution

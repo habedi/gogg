@@ -1,4 +1,4 @@
-name: Build and Release
+name: Make a Release
 
 on:
   workflow_dispatch: # Allow manual execution

@@ -1,4 +1,4 @@
-name: MacOS Build
+name: Build for MacOS
 
 on:
   workflow_dispatch: # Allow manual execution
