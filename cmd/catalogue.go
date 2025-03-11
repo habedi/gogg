@@ -300,7 +300,7 @@ func searchCmd() *cobra.Command {
 
 	// Flag to determine the type of search
 	cmd.Flags().BoolVarP(&searchByIDFlag, "id", "i", false,
-		"Search by game ID instead of title? [true, false]")
+		"Search by game ID instead of title?")
 
 	return cmd
 }

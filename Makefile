@@ -1,6 +1,6 @@
 # Variables
-PKG = github.com/habedi/gogg
-BINARY_NAME = $(or $(GOGG_BINARY), $(notdir $(PKG)))
+REPO = github.com/habedi/gogg
+BINARY_NAME = $(or $(GOGG_BINARY), $(notdir $(REPO)))
 BINARY = bin/$(BINARY_NAME)
 COVER_PROFILE = coverage.txt
 GO_FILES = $(shell find . -type f -name '*.go')
@@ -16,8 +16,9 @@ PATH := /snap/bin:$(PATH)
 .DEFAULT_GOAL := help
 
 .PHONY: help
-help: ## Show this help message
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+help: ## Show the help message for each target
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; \
+	{printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: build
 build: format ## Build the binary for the current platform
@@ -34,7 +35,7 @@ format: ## Format Go files
 .PHONY: test
 test: format ## Run the tests
 	@echo "Running tests..."
-	@go test -v ./... $(COVER_FLAGS) --race
+	@go test -v ./... $(COVER_FLAGS) --race --count=1
 
 .PHONY: showcov
 showcov: test ## Display test coverage report

@@ -30,7 +30,7 @@ func createRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "gogg",
 		Short: "A downloader for GOG",
-		Long:  "Gogg is a minimalistic command-line tool to download games files from GOG",
+		Long:  "Gogg is a minimalistic command-line tool to download game files from GOG",
 	}
 
 	// Add subcommands to the root command

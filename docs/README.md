@@ -71,7 +71,7 @@ gogg catalogue search <search_term>
 
 ```sh
 # Search by the game ID (use the --id flag)
-gogg catalogue search --id=true <game_id>
+gogg catalogue search --id <game_id>
 ```
 
 ##### Game Details
