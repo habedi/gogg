@@ -1,10 +1,11 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 // Execute runs the root command of Gogg.

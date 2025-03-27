@@ -3,11 +3,12 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/habedi/gogg/client"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	"os"
-	"strings"
 )
 
 // loginCmd creates a new cobra.Command for logging into GOG.com.

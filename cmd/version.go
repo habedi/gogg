@@ -4,10 +4,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	// version holds the current version of the Gogg.
-	version = "0.4.1"
-)
+// version holds the current version of the Gogg.
+var version = "0.5.0"
 
 // versionCmd creates a new cobra.Command that shows the version of Gogg.
 // It returns a pointer to the created cobra.Command.

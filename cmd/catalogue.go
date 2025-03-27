@@ -3,18 +3,19 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
-	"github.com/olekukonko/tablewriter"
-	"github.com/rs/zerolog/log"
-	"github.com/schollz/progressbar/v3"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/db"
+	"github.com/olekukonko/tablewriter"
+	"github.com/rs/zerolog/log"
+	"github.com/schollz/progressbar/v3"
+	"github.com/spf13/cobra"
 )
 
 // catalogueCmd represents the base command when called without any subcommands
@@ -164,7 +165,6 @@ func showGameInfo(cmd *cobra.Command, gameID int) {
 // refreshCmd refreshes the game catalogue with the latest data from the user's account
 // It returns a pointer to the created cobra.Command.
 func refreshCmd() *cobra.Command {
-
 	// Define the number of threads to use for fetching game data
 	var numThreads int
 
@@ -474,7 +474,6 @@ func exportCatalogueToCSV(path string) error {
 // exportCatalogueToJSON exports the game catalogue to a JSON file.
 // It takes a string representing the file path as an argument and returns an error if any.
 func exportCatalogueToJSON(path string) error {
-
 	// Fetch all games from the catalogue
 	games, err := db.GetCatalogue()
 	if err != nil {
@@ -516,7 +515,7 @@ func exportCatalogueToJSON(path string) error {
 // It takes a string representing the path and returns an error if any.
 func ensurePathExists(path string) error {
 	if _, err := os.Stat(filepath.Dir(path)); os.IsNotExist(err) {
-		if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			log.Error().Err(err).Msgf("Failed to create directory %s", filepath.Dir(path))
 			return err
 		}

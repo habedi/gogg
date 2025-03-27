@@ -25,6 +25,16 @@ Contributions are always welcome and appreciated.
 
 ## Development Workflow
 
+### Prerequisites
+
+Install system dependencies (Go and GNU Make).
+
+```shell
+sudo apt-get install -y golang-go make
+```
+
+- Use the `make install-deps` command to install the development dependencies.
+
 ### Code Style
 
 - Use the `make format` command to format the code.

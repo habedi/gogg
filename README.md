@@ -83,7 +83,7 @@ Run `gogg -h` to see the available commands and options.
 ##### Login to GOG
 
 ```bash
-# First-time using Gogg, you need to login to GOG to authenticate
+# First-time using Gogg, you need to log in to GOG to authenticate
 gogg login
 ```
 
