@@ -42,7 +42,7 @@
     </a>
 </div>
 
-## Gogg
+---
 
 Gogg is a minimalistic command-line tool for downloading game files from [GOG.com](https://www.gog.com/).
 It is written in [Go](https://golang.org/) and uses the
@@ -140,3 +140,7 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
 ### Contributing
 
 Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for information on how to contribute to Gogg.
+
+### License
+
+Gogg is licensed under the [MIT License](LICENSE).

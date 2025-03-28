@@ -1,4 +1,3 @@
-// cli_test.go
 package cmd
 
 import (

@@ -1,4 +1,3 @@
-// catalogue_test.go
 package cmd
 
 import (
