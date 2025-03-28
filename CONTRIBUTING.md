@@ -1,6 +1,6 @@
 # Contributing to Gogg
 
-Thank you for considering contributing to Gogg.
+Thank you for considering contributing to this project!
 Contributions are always welcome and appreciated.
 
 ## How to Contribute
@@ -24,6 +24,16 @@ Contributions are always welcome and appreciated.
 > It's assumed that by submitting a pull request, you agree to license your contributions under the project's license.
 
 ## Development Workflow
+
+### Prerequisites
+
+Install system dependencies (Go and GNU Make).
+
+```shell
+sudo apt-get install -y golang-go make
+```
+
+- Use the `make install-deps` command to install the development dependencies.
 
 ### Code Style
 

@@ -2,14 +2,15 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
-	"github.com/rs/zerolog/log"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/db"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/cobra"
 )
 
 // downloadCmd creates a new cobra.Command for downloading a selected game from GOG.
@@ -55,7 +56,8 @@ func downloadCmd() *cobra.Command {
 // executeDownload handles the download logic for a specified game.
 // It takes the game ID, download path, language, platform name, and various flags as parameters.
 func executeDownload(gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag bool,
-	flattenFlag bool, numThreads int) {
+	flattenFlag bool, numThreads int,
+) {
 	log.Info().Msgf("Downloading games to %s...\n", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v\n", language, platformName, extrasFlag, dlcFlag)
 
@@ -132,7 +134,8 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 // logDownloadParameters logs the download parameters to the console.
 // It takes the game object, game ID, download path, language, platform name, and various flags as parameters.
 func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string,
-	extrasFlag, dlcFlag, resumeFlag bool, flattenFlag bool, numThreads int) {
+	extrasFlag, dlcFlag, resumeFlag bool, flattenFlag bool, numThreads int,
+) {
 	fmt.Println("================================= Download Parameters =====================================")
 	fmt.Printf("Downloading \"%v\" (with game ID=\"%d\") to \"%v\"\n", game.Title, gameID, downloadPath)
 	fmt.Printf("Platform: \"%v\", Language: '%v'\n", platformName, language)

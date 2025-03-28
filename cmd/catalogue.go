@@ -3,18 +3,19 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
-	"github.com/olekukonko/tablewriter"
-	"github.com/rs/zerolog/log"
-	"github.com/schollz/progressbar/v3"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/db"
+	"github.com/olekukonko/tablewriter"
+	"github.com/rs/zerolog/log"
+	"github.com/schollz/progressbar/v3"
+	"github.com/spf13/cobra"
 )
 
 // catalogueCmd represents the base command when called without any subcommands
@@ -164,7 +165,6 @@ func showGameInfo(cmd *cobra.Command, gameID int) {
 // refreshCmd refreshes the game catalogue with the latest data from the user's account
 // It returns a pointer to the created cobra.Command.
 func refreshCmd() *cobra.Command {
-
 	// Define the number of threads to use for fetching game data
 	var numThreads int
 
@@ -300,7 +300,7 @@ func searchCmd() *cobra.Command {
 
 	// Flag to determine the type of search
 	cmd.Flags().BoolVarP(&searchByIDFlag, "id", "i", false,
-		"Search by game ID instead of title? [true, false]")
+		"Search by game ID instead of title?")
 
 	return cmd
 }
@@ -390,7 +390,10 @@ func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 	log.Info().Msg("Exporting the game catalogue...")
 
 	// Validate the export format
-	if exportFormat != "json" && exportFormat != "csv" {
+	switch exportFormat {
+	case "json", "csv":
+		// Valid formats
+	default:
 		log.Error().Msg("Invalid export format. Supported formats: json, csv")
 		cmd.PrintErrln("Error: Invalid export format. Supported formats: json, csv")
 		return
@@ -399,9 +402,10 @@ func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 	// Generate a timestamped filename
 	timestamp := time.Now().Format("20060102_150405")
 	var fileName string
-	if exportFormat == "json" {
+	switch exportFormat {
+	case "json":
 		fileName = fmt.Sprintf("gogg_full_catalogue_%s.json", timestamp)
-	} else if exportFormat == "csv" {
+	case "csv":
 		fileName = fmt.Sprintf("gogg_catalogue_%s.csv", timestamp)
 	}
 
@@ -409,9 +413,10 @@ func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 
 	// Export the catalogue based on the format
 	var err error
-	if exportFormat == "json" {
+	switch exportFormat {
+	case "json":
 		err = exportCatalogueToJSON(filePath)
-	} else if exportFormat == "csv" {
+	case "csv":
 		err = exportCatalogueToCSV(filePath)
 	}
 
@@ -428,7 +433,6 @@ func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 // exportCatalogueToCSV exports the game catalogue to a CSV file.
 // It takes a string representing the file path as an argument and returns an error if any.
 func exportCatalogueToCSV(path string) error {
-
 	// Fetch all games from the catalogue
 	games, err := db.GetCatalogue()
 	if err != nil {
@@ -437,46 +441,39 @@ func exportCatalogueToCSV(path string) error {
 		fmt.Println("No games found to export. Did you refresh the catalogue?")
 	}
 
-	//  Make sure the directory of the path exists
+	// Make sure the directory of the path exists
 	if err := ensurePathExists(path); err != nil {
 		return err
 	}
 
-	// writeGamesToCSV writes the games to a CSV file.
-	writeGamesToCSV := func(path string, games []db.Game) error {
-		file, err := os.Create(path)
-		if err != nil {
-			log.Error().Err(err).Msgf("Failed to create CSV file %s", path)
-			return err
-		}
-		defer file.Close()
+	file, err := os.Create(path)
+	if err != nil {
+		log.Error().Err(err).Msgf("Failed to create CSV file %s", path)
+		return err
+	}
+	defer file.Close()
 
-		// Write the header
-		if _, err := file.WriteString("ID,Title\n"); err != nil {
-			log.Error().Err(err).Msg("Failed to write CSV header to file")
-			return err
-		}
-
-		// Write the games
-		for _, game := range games {
-			if _, err := file.WriteString(fmt.Sprintf("%d,\"%s\"\n", game.ID, game.Title)); err != nil {
-				log.Error().Err(err).Msgf("Failed to write game %d to CSV file", game.ID)
-				return err
-			}
-		}
-
-		log.Info().Msgf("Game catalogue exported to CSV file: %s", path)
-		return nil
+	// Write the header
+	if _, err := fmt.Fprintln(file, "ID,Title"); err != nil {
+		log.Error().Err(err).Msg("Failed to write CSV header to file")
+		return err
 	}
 
-	// Write the game catalogue to a CSV file
-	return writeGamesToCSV(path, games)
+	// Write the games
+	for _, game := range games {
+		if _, err := fmt.Fprintf(file, "%d,\"%s\"\n", game.ID, game.Title); err != nil {
+			log.Error().Err(err).Msgf("Failed to write game %d to CSV file", game.ID)
+			return err
+		}
+	}
+
+	log.Info().Msgf("Game catalogue exported to CSV file: %s", path)
+	return nil
 }
 
 // exportCatalogueToJSON exports the game catalogue to a JSON file.
 // It takes a string representing the file path as an argument and returns an error if any.
 func exportCatalogueToJSON(path string) error {
-
 	// Fetch all games from the catalogue
 	games, err := db.GetCatalogue()
 	if err != nil {
@@ -518,7 +515,7 @@ func exportCatalogueToJSON(path string) error {
 // It takes a string representing the path and returns an error if any.
 func ensurePathExists(path string) error {
 	if _, err := os.Stat(filepath.Dir(path)); os.IsNotExist(err) {
-		if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			log.Error().Err(err).Msgf("Failed to create directory %s", filepath.Dir(path))
 			return err
 		}

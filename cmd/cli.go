@@ -1,10 +1,11 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 // Execute runs the root command of Gogg.
@@ -30,7 +31,7 @@ func createRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "gogg",
 		Short: "A downloader for GOG",
-		Long:  "Gogg is a minimalistic command-line tool to download games files from GOG",
+		Long:  "Gogg is a minimalistic command-line tool to download game files from GOG",
 	}
 
 	// Add subcommands to the root command

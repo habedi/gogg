@@ -1,8 +1,6 @@
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="logo.jpeg">
-    <source media="(prefers-color-scheme: dark)" srcset="logo.jpeg">
-    <img alt="Gogg logo" src="logo.jpeg" height="40%" width="40%">
+    <img alt="Gogg Logo" src="logo.jpeg" height="40%" width="40%">
   </picture>
 </div>
 <br>
@@ -85,7 +83,7 @@ Run `gogg -h` to see the available commands and options.
 ##### Login to GOG
 
 ```bash
-# First-time using Gogg, you need to login to GOG to authenticate
+# First-time using Gogg, you need to log in to GOG to authenticate
 gogg login
 ```
 

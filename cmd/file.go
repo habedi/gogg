@@ -8,10 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
-	"github.com/rs/zerolog/log"
-	"github.com/spf13/cobra"
 	"hash"
 	"io"
 	"os"
@@ -20,6 +16,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/db"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/cobra"
 )
 
 // List of supported hash algorithms
@@ -120,9 +121,11 @@ func removeHashFiles(dir string, recursive bool) {
 // It takes a string representing the directory, a string representing the algorithm, a boolean indicating whether to process subdirectories,
 // a boolean indicating whether to save the hash to files, and a boolean indicating whether to remove old hash files before generating new ones.
 func generateHashFiles(dir string, algo string, recursive bool, saveToFile bool, clean bool) {
-	exclusionList := []string{".git", ".gitignore", ".DS_Store", "Thumbs.db",
+	exclusionList := []string{
+		".git", ".gitignore", ".DS_Store", "Thumbs.db",
 		"desktop.ini", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm",
-		"*.md5", "*.sha1", "*.sha256", "*.sha512", "*.cksum", "*.sum", "*.sig", "*.asc", "*.gpg"}
+		"*.md5", "*.sha1", "*.sha256", "*.sha512", "*.cksum", "*.sum", "*.sig", "*.asc", "*.gpg",
+	}
 
 	var hashFiles []string
 	var wg sync.WaitGroup
@@ -189,7 +192,7 @@ func generateHashFiles(dir string, algo string, recursive bool, saveToFile bool,
 				if saveToFile {
 					// Write the hash to a file with .algo-name extension
 					hashFilePath := path + "." + algo
-					err = os.WriteFile(hashFilePath, []byte(hash), 0644)
+					err = os.WriteFile(hashFilePath, []byte(hash), 0o644)
 					if err != nil {
 						log.Error().Msgf("Error writing hash to file %s: %v", hashFilePath, err)
 						continue
@@ -278,7 +281,6 @@ func sizeCmd() *cobra.Command {
 // estimateStorageSize estimates the total storage size needed to download game files.
 // It takes the game ID, language, platform name, flags for including extras and DLCs, and the size unit (MB or GB).
 func estimateStorageSize(gameID string, language string, platformName string, extrasFlag bool, dlcFlag bool, sizeUnit string) error {
-
 	// Check if the sizeUnit is valid
 	sizeUnit = strings.ToLower(sizeUnit)
 	if sizeUnit != "mb" && sizeUnit != "gb" {
