@@ -16,7 +16,7 @@ func Execute() {
 	defer closeDatabase()
 
 	// Add a global flag to the root command
-	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show help for the command")
+	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show help for a command")
 
 	// Execute the root command
 	if err := rootCmd.Execute(); err != nil {
@@ -30,8 +30,7 @@ func Execute() {
 func createRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "gogg",
-		Short: "A downloader for GOG",
-		Long:  "Gogg is a minimalistic command-line tool to download game files from GOG",
+		Short: "A Downloader for GOG",
 	}
 
 	// Add subcommands to the root command
@@ -41,6 +40,7 @@ func createRootCmd() *cobra.Command {
 		versionCmd(),
 		loginCmd(),
 		fileCmd(),
+		guiCmd(),
 	)
 
 	// Hide the completion command and replace the help command

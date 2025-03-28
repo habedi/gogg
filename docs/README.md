@@ -1,14 +1,10 @@
-> [!IMPORTANT]
-> The current Gogg release needs [Google Chrome](https://www.google.com/chrome/) or
-[Chromium](https://www.chromium.org/) as a dependency for the first-time authentication (logging into the GOG website
-> using username and password).
-> So, make sure you have one of them installed on your machine.
-
 ### Installation
 
 You can download the binary builds of Gogg for your operating system
 from the [release page](https://github.com/habedi/gogg/releases).
 You might want to add the binary to your system's PATH to use it from anywhere on your system.
+
+---
 
 ### Usage
 
@@ -19,6 +15,12 @@ Use the `login` command to log in to your GOG account the first time you use Gog
 ```sh
 gogg login
 ```
+
+> [!IMPORTANT]
+> The current Gogg release needs [Google Chrome](https://www.google.com/chrome/) or
+[Chromium](https://www.chromium.org/) as a dependency for the first-time authentication (logging into the GOG website
+> using username and password).
+> So, make sure you have one of them installed on your machine.
 
 #### Game Catalogue
 
@@ -118,7 +120,9 @@ gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --ex
 --resume=true --threads=5 --flatten=true
 ```
 
-### Enabling Debug Mode
+---
+
+### Debug Mode
 
 To enable debug mode, set the `DEBUG_GOGG` environment variable to `true` or `1` when running Gogg.
 In debug mode, Gogg will be much more verbose and print a lot of information to the console.

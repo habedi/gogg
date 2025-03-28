@@ -1,7 +1,16 @@
-## Variables
+# Load environment variables from .env file
+ifneq (,$(wildcard ./.env))
+    include .env
+    export $(shell sed 's/=.*//' .env)
+else
+    $(warning .env file not found. Environment variables not loaded.)
+endif
+
+# Variables
 REPO := github.com/habedi/gogg
 BINARY_NAME := $(or $(GOGG_BINARY), $(notdir $(REPO)))
 BINARY := bin/$(BINARY_NAME)
+MAKEFILE_LIST = Makefile
 COVER_PROFILE := coverage.txt
 GO_FILES := $(shell find . -type f -name '*.go')
 COVER_FLAGS := --cover --coverprofile=$(COVER_PROFILE)

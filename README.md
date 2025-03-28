@@ -80,7 +80,12 @@ Run `gogg -h` to see the available commands and options.
 
 #### Examples
 
-**For more detailed examples, see the content of the [examples](docs/examples/) directory.**
+| File                                                                                     | Description                                                         |
+|------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| [calculate_storage_for_all_games.ps1](docs/examples/calculate_storage_for_all_games.ps1) | PowerShell script to calculate storage size for all games user owns |
+| [download_all_games.ps1](docs/examples/download_all_games.ps1)                           | PowerShell script to download all games user owns                   |
+| [download_all_games.sh](docs/examples/download_all_games.sh)                             | Bash script to download all games user owns                         |
+| [simple_example.sh](docs/examples/simple_example.sh)                                     | Simple examples of how to use Gogg from the command line            |
 
 ##### Login to GOG
 
