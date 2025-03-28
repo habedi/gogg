@@ -70,6 +70,8 @@ Additionally, it allows users to perform the following actions:
 - Verify the integrity of downloaded files by calculating their hashes
 - Calculate the total size of the files to be downloaded (for storage planning)
 
+---
+
 ### Getting Started
 
 See the [documentation](docs/README.md) for how to install and use Gogg.
@@ -132,6 +134,8 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
 ### Demo
 
 [![asciicast](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI.svg)](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI)
+
+---
 
 ### Contributing
 
