@@ -46,10 +46,18 @@ format: ## Format Go files
 
 .PHONY: test
 test: format ## Run the tests
+	# First, run tests for all packages *except* the UI package.
 	$(ECHO) "Running non-UI tests..."
 	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/ui') $(COVER_FLAGS) --race
-	$(ECHO) "Running UI tests..."
-	@$(GO) test -v  -p 1 ./ui/... $(COVER_FLAGS) --race
+	$(ECHO) "Running UI tests (individually to avoid race conditions)..."
+	@export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
+	 $(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./ui/... $(COVER_FLAGS) --race
+	@export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
+	 $(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
+	@export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
+	 $(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
+	@export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
+	 $(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
 
 .PHONY: showcov
 showcov: test ## Display test coverage report

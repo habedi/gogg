@@ -30,9 +30,10 @@ func TestCatalogueListUI(t *testing.T) {
 
 	// Create a temporary Fyne app and window.
 	app := test.NewApp()
-	defer app.Quit()
+	t.Cleanup(app.Quit)
+
 	w := app.NewWindow("Test CatalogueListUI")
-	defer w.Close()
+	t.Cleanup(w.Close)
 
 	// Call CatalogueListUI and verify it returns a non-nil CanvasObject.
 	co := ui.CatalogueListUI(w)
@@ -45,9 +46,10 @@ func TestSearchCatalogueUI(t *testing.T) {
 	initDBForTest(t)
 
 	app := test.NewApp()
-	defer app.Quit()
+	t.Cleanup(app.Quit)
+
 	w := app.NewWindow("Test SearchCatalogueUI")
-	defer w.Close()
+	t.Cleanup(w.Close)
 
 	// Test search by title.
 	co := ui.SearchCatalogueUI(w, "Test", false)
@@ -66,9 +68,10 @@ func TestRefreshCatalogueUI(t *testing.T) {
 	initDBForTest(t)
 
 	app := test.NewApp()
-	defer app.Quit()
+	t.Cleanup(app.Quit)
+
 	w := app.NewWindow("Test RefreshCatalogueUI")
-	defer w.Close()
+	t.Cleanup(w.Close)
 
 	// Call RefreshCatalogueUI; we simply check that it runs without panic.
 	// (This function opens a dialog and runs asynchronously.)
@@ -80,9 +83,10 @@ func TestExportCatalogueUI(t *testing.T) {
 	initDBForTest(t)
 
 	app := test.NewApp()
-	defer app.Quit()
+	t.Cleanup(app.Quit)
+
 	w := app.NewWindow("Test ExportCatalogueUI")
-	defer w.Close()
+	t.Cleanup(w.Close)
 
 	// Call ExportCatalogueUI for both supported formats.
 	// Since the export function opens a file save dialog,
