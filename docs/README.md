@@ -22,6 +22,25 @@ gogg login
 > using username and password).
 > So, make sure you have one of them installed on your machine.
 
+> [!NOTE]
+> On Windows, you might need to temporarily update your `PATH` in PowerShell so `gogg` can find the
+> Google Chrome or Chromium browser when `gogg login` is run.
+> This is needed if the browser isn't already in your system `PATH`.
+>
+>**For Chrome:**
+>```powershell
+>$env:PATH += ";C:\Program Files\Google\Chrome\Application\"
+>$env:DEBUG_GOGG = 1
+>gogg.exe login
+>```
+> **For Chromium:**
+>```powershell
+>$env:PATH += ";c:\Program Files\Chromium\Application\"
+>$env:DEBUG_GOGG = 1
+>gogg.exe login
+>```
+>If Chrome or Chromium is installed elsewhere, update the path accordingly.
+
 #### Game Catalogue
 
 Gogg stores information about the games you own on GOG in a local database called the (game) catalogue.
@@ -138,4 +157,3 @@ DEBUG_GOGG=true gogg <command>
 ```powershell
 $env:DEBUG_GOGG = "true"; gogg <command>
 ```
-

@@ -142,23 +142,22 @@ jobs:
           cd dist/windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ../..
           cd dist/linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ../..
           cd dist/macos && zip -r9 ../gogg-macos-arm64.zip gogg && cd ../..
-        working-directory: .
 
       - name: List Archives (for debugging)
-        run: ls -l gogg-*.zip
+        run: ls -l dist/gogg-*.zip
 
-#      # Create GitHub Release
-#      - name: Create GitHub Release
-#        uses: ncipollo/release-action@v1
-#        with:
-#          token: ${{ secrets.GITHUB_TOKEN }}
-#          name: ${{ github.ref_name }}
-#          tag: ${{ github.ref_name }}
-#          body: |
-#            Release version ${{ github.ref_name }}
-#          artifacts: |
-#            gogg-windows-amd64.zip
-#            gogg-linux-amd64.zip
-#            gogg-macos-arm64.zip
-#          draft: false      # Set to true to create a draft release
-#          prerelease: false # Set to true to mark as pre-release
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        if: github.ref == 'refs/heads/main' && startsWith(github.ref_name, 'v')
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ github.ref_name }}
+          tag: ${{ github.ref_name }}
+          body: |
+            Release version ${{ github.ref_name }}
+          artifacts: |
+            dist/gogg-windows-amd64.zip
+            dist/gogg-linux-amd64.zip
+            dist/gogg-macos-arm64.zip
+          draft: false
+          prerelease: false

@@ -46,7 +46,6 @@ format: ## Format Go files
 
 .PHONY: test
 test: format ## Run the tests
-	# First, run tests for all packages *except* the UI package.
 	$(ECHO) "Running non-UI tests..."
 	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/ui') $(COVER_FLAGS) --race
 	$(ECHO) "Running UI tests (individually to avoid race conditions)..."
@@ -61,7 +60,7 @@ showcov: test ## Display test coverage report
 	@$(GO) tool cover -func=$(COVER_PROFILE)
 
 .PHONY: build
-build: format ## Build the binary for the current platform (Linux/Windows)
+build: format ## Build the binary for the current platform (Linux and Windows)
 	$(ECHO) "Tidying dependencies..."
 	@$(GO) mod tidy
 	$(ECHO) "Building the binary..."
