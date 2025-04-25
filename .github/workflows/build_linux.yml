@@ -23,13 +23,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y make libgl1-mesa-dev libx11-dev xorg-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config
+
+      - name: Run Tests
+        run: |
           make test
-        continue-on-error: false
 
       - name: Build for Linux
         run: |
           make build
-        continue-on-error: false
 
       - name: List Build Directory (for Debugging)
         run: ls -R bin

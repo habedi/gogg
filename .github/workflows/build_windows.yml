@@ -3,6 +3,9 @@ name: Build for Windows
 on:
   workflow_dispatch: # Allow manual execution
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
@@ -16,25 +19,30 @@ jobs:
         with:
           go-version: stable
 
-      - name: Install Dependencies
+      # Use setup-msys2 action for installing MSYS2/MinGW components
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64 # Use the MinGW-w64 64-bit environment
+          update: true      # Update MSYS2 database and packages
+          install: >-       # Install required packages using pacman
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-freeglut # This package usually provides the OpenGL headers
+
+      - name: Run Tests
+        shell: msys2 {0}
         run: |
-          choco install make -y
-          # Install MSYS2 which provides MinGW toolchain with OpenGL headers
-          choco install msys2 -y
-          # Update MSYS2 and install required packages
-          C:\tools\msys64\usr\bin\bash -lc "pacman --noconfirm -Syu"
-          C:\tools\msys64\usr\bin\bash -lc "pacman --noconfirm -S mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-opengl-headers"
-          # Add MinGW to PATH
-          echo "C:\tools\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           make test
-        continue-on-error: false
 
       - name: Build for Windows
+        shell: msys2 {0}
         run: |
           make build GOGG_BINARY=gogg.exe
-        continue-on-error: false
 
       - name: List Build Directory (for Debugging)
+        shell: msys2 {0}
         run: ls -R bin
 
       - name: Upload Build Artifact

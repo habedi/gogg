@@ -3,6 +3,9 @@ name: Build for MacOS
 on:
   workflow_dispatch: # Allow manual execution
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: macos-latest
@@ -24,13 +27,14 @@ jobs:
           # macOS already includes OpenGL framework
           # Install additional X11-related dependencies that might be needed
           brew install glfw
+
+      - name: Run Tests
+        run: |
           make test
-        continue-on-error: false
 
       - name: Build for MacOS
         run: |
           make build-macos
-        continue-on-error: false
 
       - name: List Build Directory (for Debugging)
         run: ls -R bin
