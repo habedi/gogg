@@ -173,7 +173,7 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 
 	// --- Build results table (same as before) ---
 	data := [][]string{
-		{"Row ID", "Game ID", "Title"},
+		{"Row ID", "Game ID", "Game Title"},
 	}
 	for i, game := range games {
 		data = append(data, []string{
@@ -245,7 +245,12 @@ func RefreshCatalogueUI(win fyne.Window) {
 		progress,
 		cancelButton,
 	)
-	dlg := dialog.NewCustom("Refreshing Catalogue", "", content, win)
+	dlg := dialog.NewCustom(
+		"Refreshing Catalogue",
+		"OK",
+		content,
+		win,
+	)
 	dlg.Show()
 
 	go func() {

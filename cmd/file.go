@@ -66,7 +66,7 @@ func hashCmd() *cobra.Command {
 	}
 
 	// Add flags for hash options
-	cmd.Flags().StringVarP(&algo, "algo", "a", "sha256", "Hash algorithm to use [md5, sha1, sha256, sha512]")
+	cmd.Flags().StringVarP(&algo, "algo", "a", "md5", "Hash algorithm to use [md5, sha1, sha256, sha512]")
 	cmd.Flags().BoolVarP(&recursiveFlag, "recursive", "r", true, "Process files in subdirectories? [true, false]")
 	cmd.Flags().BoolVarP(&saveToFileFlag, "save", "s", false, "Save hash to files? [true, false]")
 	cmd.Flags().BoolVarP(&cleanFlag, "clean", "c", false, "Remove old hash files before generating new ones? [true, false]")
@@ -137,7 +137,7 @@ func generateHashFiles(dir string, algo string, recursive bool, saveToFile bool,
 		numWorkers = 2
 	}
 
-	// Remove old hash files if clean flag is set
+	// Remove old hash files if the clean flag is set
 	if clean {
 		log.Info().Msgf("Cleaning old hash files from %s and its subdirectories", dir)
 		removeHashFiles(dir, true)
@@ -167,7 +167,7 @@ func generateHashFiles(dir string, algo string, recursive bool, saveToFile bool,
 				}
 			}
 
-			// Send file path to channel
+			// Send the file path to channel
 			fileChan <- path
 			return nil
 		})
