@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -65,28 +64,6 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 	return body, nil
 }
 
-// parseGameData specific helper used by FetchGameData
-func parseGameDataInternal(body []byte, game *Game) error {
-	if err := json.Unmarshal(body, game); err != nil {
-		// Log the problematic body content (or part of it) for debugging if log level allows
-		log.Error().Err(err).Str("body_preview", string(body[:min(len(body), 200)])).Msg("Failed to parse game data JSON")
-		return err
-	}
-	return nil
-}
-
-// parseOwnedGames specific helper used by FetchIdOfOwnedGames
-func parseOwnedGames(body []byte) ([]int, error) {
-	var response struct {
-		Owned []int `json:"owned"`
-	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		log.Error().Err(err).Str("body_preview", string(body[:min(len(body), 200)])).Msg("Failed to parse owned games JSON")
-		return nil, err
-	}
-	return response.Owned, nil
-}
-
 // --- GOG API Interaction Functions ---
 
 // FetchGameData retrieves and parses game details data from GOG API.
@@ -145,12 +122,4 @@ func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
 
 	log.Info().Int("count", len(ids)).Msg("Successfully fetched owned game IDs")
 	return ids, nil
-}
-
-// min helper function
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

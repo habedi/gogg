@@ -100,7 +100,7 @@ func parseRawDownloads(rawDownloads [][]interface{}) []Downloadable {
 	return downloads
 }
 
-// parsePlatforms decodes the platforms object.
+// parsePlatforms decodes the platform object.
 func parsePlatforms(data interface{}) (Platform, error) {
 	platformsData, err := json.Marshal(data)
 	if err != nil {
@@ -121,4 +121,26 @@ func ParseGameData(data string) (Game, error) {
 		return Game{}, err
 	}
 	return rawResponse, nil
+}
+
+// parseGameData specific helper used by FetchGameData
+func parseGameDataInternal(body []byte, game *Game) error {
+	if err := json.Unmarshal(body, game); err != nil {
+		// Log the problematic body content (or part of it) for debugging if log level allows
+		log.Error().Err(err).Str("body_preview", string(body[:min(len(body), 200)])).Msg("Failed to parse game data JSON")
+		return err
+	}
+	return nil
+}
+
+// parseOwnedGames specific helper used by FetchIdOfOwnedGames
+func parseOwnedGames(body []byte) ([]int, error) {
+	var response struct {
+		Owned []int `json:"owned"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		log.Error().Err(err).Str("body_preview", string(body[:min(len(body), 200)])).Msg("Failed to parse owned games JSON")
+		return nil, err
+	}
+	return response.Owned, nil
 }

@@ -72,7 +72,6 @@ poetry.lock
 *.test
 *.prof
 *.exe
-#go.sum
 
 # Miscellaneous files and directories to ignore
 # Add any additional file patterns a directory names that should be ignored down here
