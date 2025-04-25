@@ -1,3 +1,4 @@
+// ui/catalogue.go
 package ui
 
 import (
@@ -19,62 +20,81 @@ import (
 	"github.com/habedi/gogg/db"
 )
 
-// CopyableLabel is a label that copies its text to the clipboard when tapped.
+// CopyableLabel definition remains the same...
 type CopyableLabel struct {
 	widget.Label
 	win fyne.Window
 }
 
-// NewCopyableLabel creates a new CopyableLabel.
 func NewCopyableLabel(win fyne.Window) *CopyableLabel {
 	cl := &CopyableLabel{win: win}
 	cl.ExtendBaseWidget(cl)
 	return cl
 }
 
-// Tapped is called when the label is tapped.
 func (cl *CopyableLabel) Tapped(_ *fyne.PointEvent) {
 	cl.win.Clipboard().SetContent(cl.Text)
-	// Optionally, you could show a brief notification here.
 }
 
-// TappedSecondary is required to implement Tappable but does nothing.
 func (cl *CopyableLabel) TappedSecondary(_ *fyne.PointEvent) {}
 
-// CatalogueListUI shows a table of all games plus a "Copy All" button at the top.
+// CatalogueListUI definition remains the same...
 func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
-	games, err := db.GetCatalogue()
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("unable to list games: %v", err), win)
-		return widget.NewLabel("Error loading catalogue")
-	}
-	if len(games) == 0 {
-		return widget.NewLabel("Game catalogue is empty. Did you refresh the catalogue?")
+	var games []db.Game
+	var data [][]string // Declare data slice here to be accessible in callbacks
+	var table *widget.Table
+
+	// Function to populate the data slice from the games list
+	populateData := func() {
+		data = [][]string{
+			{"Row ID", "Game ID", "Game Title"}, // Header row
+		}
+		for i, game := range games {
+			cleanedTitle := strings.ReplaceAll(game.Title, "\n", " ")
+			data = append(data, []string{
+				strconv.Itoa(i + 1),
+				strconv.Itoa(game.ID),
+				cleanedTitle,
+			})
+		}
 	}
 
-	// Prepare table data with headers.
-	data := [][]string{
-		{"Row ID", "Game ID", "Game Title"},
+	// Initial fetch and data population
+	var initialErr error
+	games, initialErr = db.GetCatalogue()
+	if initialErr != nil {
+		// Show error but still return a placeholder label
+		dialog.ShowError(fmt.Errorf("initial catalogue load failed: %v", initialErr), win)
+		return widget.NewLabel("Error loading catalogue. Try refreshing.")
 	}
-	for i, game := range games {
-		cleanedTitle := strings.ReplaceAll(game.Title, "\n", " ")
-		data = append(data, []string{
-			strconv.Itoa(i + 1),
-			strconv.Itoa(game.ID),
-			cleanedTitle,
-		})
+	if len(games) == 0 {
+		// If initially empty, data will just contain the header
+		populateData()
+		// We'll still create the table structure below, but it will show "empty"
+	} else {
+		populateData()
 	}
 
 	// Create a table widget using CopyableLabel for each cell.
-	table := widget.NewTable(
+	// The data functions now reference the 'data' slice in the outer scope.
+	table = widget.NewTable(
 		func() (int, int) {
+			// Check if data is initialized and has at least one row (header)
+			if len(data) == 0 || len(data[0]) == 0 {
+				return 0, 0 // Return 0 rows/cols if data is empty or malformed
+			}
 			return len(data), len(data[0])
 		},
 		func() fyne.CanvasObject {
 			return NewCopyableLabel(win)
 		},
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			cell.(*CopyableLabel).SetText(data[id.Row][id.Col])
+			// Add bounds checking for safety
+			if id.Row >= 0 && id.Row < len(data) && id.Col >= 0 && id.Col < len(data[id.Row]) {
+				cell.(*CopyableLabel).SetText(data[id.Row][id.Col])
+			} else {
+				cell.(*CopyableLabel).SetText("") // Set empty text if out of bounds
+			}
 		},
 	)
 	// Manually set column widths (Fyne’s Table doesn’t auto-size columns).
@@ -85,54 +105,74 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 	scroll := container.NewScroll(table)
 
 	copyButton := widget.NewButton("Copy All", func() {
+		// This now uses the potentially updated 'data' slice
 		text := formatTableData(data)
 		win.Clipboard().SetContent(text)
 		dialog.ShowInformation("Copied", "Table data copied successfully.", win)
 	})
 
-	// Put the copy button at the top, table in the center so it expands.
+	refreshButton := widget.NewButton("Refresh", func() {
+		// Re-fetch games from the database
+		newGames, err := db.GetCatalogue()
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("failed to refresh catalogue: %v", err), win)
+			return
+		}
+		// Update the games list and repopulate the data slice
+		games = newGames
+		populateData() // This updates the 'data' slice
+
+		// Refresh the table widget to reflect the changes
+		table.Refresh()
+		dialog.ShowInformation("Refreshed", "Game list updated.", win)
+
+	})
+
+	// Put the buttons at the top, table in the center so it expands.
+	topButtons := container.NewHBox(copyButton, refreshButton)
 	return container.NewBorder(
-		container.NewHBox(copyButton), // top
-		nil,                           // bottom
-		nil,                           // left
-		nil,                           // right
-		scroll,                        // center
+		topButtons, // top
+		nil,        // bottom
+		nil,        // left
+		nil,        // right
+		scroll,     // center
 	)
 }
 
-// SearchCatalogueUI shows a table of search results plus a "Copy All" button at the top.
-func SearchCatalogueUI(win fyne.Window, query string, searchByID bool) fyne.CanvasObject {
+// SearchCatalogueUI shows a table of search results plus "Copy All" and "Clear" buttons.
+// *** MODIFIED SIGNATURE to accept onClear callback ***
+func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear func()) fyne.CanvasObject {
 	var games []db.Game
 	var err error
 
-	// Check if the query is empty.
-	if query == "" {
-		return widget.NewLabel("Please enter a game title or ID to search.")
-	}
+	// NOTE: Query validation happens in the caller (CatalogueTabUI)
 
 	if searchByID {
 		gameID, convErr := strconv.Atoi(query)
 		if convErr != nil {
+			// This case should ideally be caught earlier, but handle defensively
 			return widget.NewLabel("Error: Invalid game ID. It must be a number.")
 		}
-		game, err := db.GetGameByID(gameID)
-		if err != nil {
-			return widget.NewLabel(fmt.Sprintf("Error: %v", err))
-		}
-		if game != nil {
+		game, dbErr := db.GetGameByID(gameID)
+		err = dbErr // Assign potential DB error
+		if err == nil && game != nil {
 			games = append(games, *game)
 		}
 	} else {
 		games, err = db.SearchGamesByName(query)
-		if err != nil {
-			return widget.NewLabel(fmt.Sprintf("Error: %v", err))
-		}
 	}
 
+	// Handle database errors after the search attempt
+	if err != nil {
+		return widget.NewLabel(fmt.Sprintf("Database Error: %v", err))
+	}
+
+	// Handle no results found
 	if len(games) == 0 {
 		return widget.NewLabel("No game(s) found matching the query.")
 	}
 
+	// --- Build results table (same as before) ---
 	data := [][]string{
 		{"Row ID", "Game ID", "Title"},
 	}
@@ -151,27 +191,33 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool) fyne.Canv
 			cell.(*CopyableLabel).SetText(data[id.Row][id.Col])
 		},
 	)
-	// Manually set column widths.
 	table.SetColumnWidth(0, 60)
 	table.SetColumnWidth(1, 130)
 	table.SetColumnWidth(2, 400)
 
 	scroll := container.NewScroll(table)
 
+	// --- Add buttons ---
 	copyButton := widget.NewButton("Copy All", func() {
 		text := formatTableData(data)
 		win.Clipboard().SetContent(text)
 		dialog.ShowInformation("Copied", "Table data copied successfully.", win)
 	})
 
+	// *** ADDED Clear Button - Calls the passed-in onClear callback ***
+	clearButton := widget.NewButton("Clear", onClear)
+
+	// Place buttons together at the top
+	topButtons := container.NewHBox(copyButton, clearButton) // Add clearButton here
+
 	return container.NewBorder(
-		container.NewHBox(copyButton), // top
+		topButtons, // top
 		nil, nil, nil,
-		scroll,
+		scroll, // center (results table)
 	)
 }
 
-// formatTableData converts a 2D string slice into a tab-separated string for copying.
+// formatTableData definition remains the same...
 func formatTableData(data [][]string) string {
 	var sb strings.Builder
 	for _, row := range data {
@@ -181,8 +227,7 @@ func formatTableData(data [][]string) string {
 	return sb.String()
 }
 
-// RefreshCatalogueUI refreshes the game catalogue while showing a progress dialog.
-// It now supports cancellation via the cancel button.
+// RefreshCatalogueUI definition remains the same...
 func RefreshCatalogueUI(win fyne.Window) {
 	progress := widget.NewProgressBar()
 	progress.Min = 0
@@ -266,7 +311,10 @@ func RefreshCatalogueUI(win fyne.Window) {
 							_ = db.PutInGame(gameID, details.Title, rawDetails)
 						}
 						mu.Lock()
-						progress.SetValue(progress.Value + (1.0 / total))
+						// Check if progress bar is still valid before updating
+						if progress != nil {
+							progress.SetValue(progress.Value + (1.0 / total))
+						}
 						mu.Unlock()
 					}
 				}
@@ -276,13 +324,16 @@ func RefreshCatalogueUI(win fyne.Window) {
 		for _, gameID := range games {
 			select {
 			case <-ctx.Done():
-				break
+				break // Stop feeding tasks if cancelled
 			case taskChan <- gameID:
 			}
 		}
-		close(taskChan)
-		wg.Wait()
-		progress.SetValue(1)
+		close(taskChan) // Close channel once all tasks are sent or cancellation occurred
+		wg.Wait()       // Wait for workers to finish processing remaining tasks or exit due to context cancellation
+		// Check if progress bar is still valid before setting final value
+		if progress != nil {
+			progress.SetValue(1)
+		}
 		dlg.Hide()
 		if ctx.Err() == context.Canceled {
 			dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
@@ -292,7 +343,7 @@ func RefreshCatalogueUI(win fyne.Window) {
 	}()
 }
 
-// ExportCatalogueUI exports the catalogue using a file save dialog.
+// ExportCatalogueUI definition remains the same...
 func ExportCatalogueUI(win fyne.Window, exportFormat string) {
 	var defaultFileName string
 	switch exportFormat {
@@ -311,7 +362,7 @@ func ExportCatalogueUI(win fyne.Window, exportFormat string) {
 			return
 		}
 		if uc == nil {
-			return
+			return // User cancelled
 		}
 		defer uc.Close()
 
@@ -328,6 +379,7 @@ func ExportCatalogueUI(win fyne.Window, exportFormat string) {
 	fileDialog.Show()
 }
 
+// exportCatalogueToWriter definition remains the same...
 func exportCatalogueToWriter(w io.Writer, exportFormat string) error {
 	switch exportFormat {
 	case "json":
@@ -339,6 +391,7 @@ func exportCatalogueToWriter(w io.Writer, exportFormat string) error {
 	}
 }
 
+// exportCatalogueToCSV definition remains the same...
 func exportCatalogueToCSV(w io.Writer) error {
 	games, err := db.GetCatalogue()
 	if err != nil {
@@ -360,6 +413,7 @@ func exportCatalogueToCSV(w io.Writer) error {
 	return nil
 }
 
+// exportCatalogueToJSON definition remains the same...
 func exportCatalogueToJSON(w io.Writer) error {
 	games, err := db.GetCatalogue()
 	if err != nil {
@@ -368,5 +422,7 @@ func exportCatalogueToJSON(w io.Writer) error {
 	if len(games) == 0 {
 		return fmt.Errorf("no games found to export; did you refresh the catalogue")
 	}
-	return json.NewEncoder(w).Encode(games)
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ") // Pretty print the JSON
+	return encoder.Encode(games)
 }

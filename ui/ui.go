@@ -5,10 +5,11 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog" // Added for dialog inside search button
 	"fyne.io/fyne/v2/widget"
 )
 
-// Run starts the Gogg GUI with Catalogue, Download, and File tabs.
+// Run function remains the same...
 func Run() {
 	myApp := app.NewWithID("com.habedi.gogg")
 	myWindow := myApp.NewWindow("Gogg GUI")
@@ -30,22 +31,41 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 	// Game List tab.
 	listTab := CatalogueListUI(win)
 
-	// Search tab.
+	// --- Search tab ---
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Enter game title or ID to search...")
 	searchByIDCheck := widget.NewCheck("Search by ID", nil)
-	searchScroll := container.NewScroll(widget.NewLabel("Search results will appear here..."))
+	initialResultsLabel := widget.NewLabel("Search results will appear here...") // Store initial label
+	searchScroll := container.NewScroll(initialResultsLabel)                     // Use initial label here
+
+	// Define the clear action here, so it can be passed to SearchCatalogueUI
+	clearSearch := func() {
+		searchEntry.SetText("")                    // Clear the search entry
+		searchByIDCheck.SetChecked(false)          // Uncheck the ID box
+		searchScroll.Content = initialResultsLabel // Reset scroll content to the initial label
+		searchScroll.Refresh()                     // Refresh the scroll container
+	}
+
 	searchButton := widget.NewButton("Search", func() {
 		query := searchEntry.Text
 		searchByID := searchByIDCheck.Checked
-		results := SearchCatalogueUI(win, query, searchByID)
-		searchScroll.Content = results
+		// Don't perform search if query is empty
+		if query == "" {
+			dialog.ShowInformation("Search", "Please enter a search query.", win)
+			return
+		}
+		// *** Call SearchCatalogueUI and pass the clearSearch function ***
+		results := SearchCatalogueUI(win, query, searchByID, clearSearch)
+		searchScroll.Content = results // Update scroll content with results table or error message
 		searchScroll.Refresh()
 	})
+
+	// *** REMOVED the Clear button from here ***
+	// *** Grid is back to 3 columns ***
 	searchBar := container.NewGridWithColumns(3, searchEntry, searchByIDCheck, searchButton)
 	searchTab := container.NewBorder(searchBar, nil, nil, nil, searchScroll)
 
-	// Refresh tab.
+	// --- Refresh tab (remains the same) ---
 	refreshButton := widget.NewButton("Refresh Catalogue", func() {
 		RefreshCatalogueUI(win)
 	})
@@ -54,7 +74,7 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 		refreshButton,
 	)
 
-	// Export tab.
+	// --- Export tab (remains the same) ---
 	exportJSONButton := widget.NewButton("Export full catalogue", func() {
 		ExportCatalogueUI(win, "json")
 	})
@@ -66,6 +86,7 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 		container.NewHBox(exportJSONButton, exportCSVButton),
 	)
 
+	// --- Main Catalogue Tabs (remains the same) ---
 	catalogueTabs := container.NewAppTabs(
 		container.NewTabItem("Search", searchTab),
 		container.NewTabItem("Refresh", refreshTab),
@@ -73,16 +94,17 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 		container.NewTabItem("Export", exportTab),
 	)
 	catalogueTabs.SetTabLocation(container.TabLocationTop)
+	// Set Search tab as default
+	catalogueTabs.SelectIndex(0)
 	return catalogueTabs
 }
 
-// DownloadTabUI returns the download UI content.
+// DownloadTabUI function remains the same...
 func DownloadTabUI(win fyne.Window) fyne.CanvasObject {
-	// DownloadUI is defined in ui/download.go.
 	return DownloadUI(win)
 }
 
-// FileTabUI returns the file operations UI content with sub-tabs for Hash and Size.
+// FileTabUI function remains the same...
 func FileTabUI(win fyne.Window) fyne.CanvasObject {
 	hashTab := HashUI(win)
 	sizeTab := SizeUI(win)
