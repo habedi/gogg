@@ -1,3 +1,4 @@
+// client/download.go
 package client
 
 import (
@@ -19,7 +20,7 @@ import (
 // downloadTask represents a file download job.
 type downloadTask struct {
 	url      string
-	fileName string
+	fileName string // This should be the *intended* final filename
 	subDir   string
 	resume   bool
 	flatten  bool
@@ -68,6 +69,7 @@ func findRedirectLocation(accessToken, urlStr string, client *http.Client) (stri
 	if err != nil {
 		return "", err
 	}
+	// Authorization *is* needed for embed.gog.com URLs
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
 	resp, err := client.Do(req)
 	if err != nil {
@@ -75,15 +77,22 @@ func findRedirectLocation(accessToken, urlStr string, client *http.Client) (stri
 	}
 	defer resp.Body.Close()
 
-	// GOG uses 302 Found for download redirects
+	// GOG uses 302 Found for download redirects primarily
 	if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusMovedPermanently {
 		location := resp.Header.Get("Location")
 		if location != "" {
 			log.Debug().Str("from", urlStr).Str("to", location).Msg("Download URL redirected")
-			return location, nil
+			// Ensure the redirect location is absolute
+			redirectURL, parseErr := resp.Request.URL.Parse(location) // Use parseErr
+			if parseErr != nil {
+				log.Warn().Err(parseErr).Str("base", resp.Request.URL.String()).Str("location", location).Msg("Failed to parse relative redirect URL")
+				return "", fmt.Errorf("failed to parse redirect URL: %w", parseErr)
+			}
+			return redirectURL.String(), nil // Return absolute URL
 		}
 		log.Warn().Str("url", urlStr).Msg("Redirect status received but Location header is missing")
 	} else if resp.StatusCode != http.StatusOK {
+		// Only log warning, main GET will confirm error
 		log.Warn().Str("url", urlStr).Int("status", resp.StatusCode).Msg("Unexpected status code when checking for redirect")
 	}
 	return "", nil // No redirect found or needed
@@ -91,233 +100,239 @@ func findRedirectLocation(accessToken, urlStr string, client *http.Client) (stri
 
 // processDownloadTask handles a single download task.
 func processDownloadTask(task downloadTask, accessToken, downloadPath, gameTitle string, client, clientNoRedirect *http.Client) error {
-	urlStr := task.url
-	fileName := task.fileName
+	urlStr := task.url        // This is the embed.gog.com URL or the redirected URL
+	fileName := task.fileName // Use the filename passed in the task
 	subDir := task.subDir
 	resume := task.resume
 	flatten := task.flatten
 
-	log.Debug().Str("url", urlStr).Str("original_filename", fileName).Msg("Processing download task")
+	log.Debug().Str("initial_url", task.url).Str("target_filename", fileName).Msg("Processing download task")
 
-	// Check for redirect location, update URL and potentially filename if redirected.
-	if redirectURL, err := findRedirectLocation(accessToken, urlStr, clientNoRedirect); err == nil && redirectURL != "" {
+	// Check for redirect location using the non-redirect client.
+	if redirectURL, errRedirect := findRedirectLocation(accessToken, urlStr, clientNoRedirect); errRedirect == nil && redirectURL != "" { // Use different var name for redirect error
 		log.Info().Str("from", urlStr).Str("to", redirectURL).Msg("Following download redirect")
 		urlStr = redirectURL
-		// Extract filename from the redirected URL as it might be different
-		if u, err := url.Parse(redirectURL); err == nil {
-			if base := filepath.Base(u.Path); base != "." && base != "/" {
-				fileName = base
-				log.Debug().Str("filename", fileName).Msg("Updated filename from redirect URL")
-			}
-		}
-	} else if err != nil {
-		log.Warn().Err(err).Str("url", urlStr).Msg("Failed to check for redirect")
-		// Proceed with original URL, might still work
+		// NOTE: We *keep* the original task.fileName, as the redirected URL might have
+		// an obscure CDN filename. The original ManualURL base name is usually desired.
+	} else if errRedirect != nil {
+		// Log only, proceed with original URL
+		log.Warn().Err(errRedirect).Str("url", urlStr).Msg("Failed to check for redirect, proceeding with original URL")
 	}
 
-	decodedFileName, err := url.QueryUnescape(fileName)
-	if err != nil {
-		log.Warn().Err(err).Str("filename", fileName).Msg("Failed to URL decode filename, using original")
-		// Use the potentially encoded filename if decoding fails
-	} else {
-		fileName = decodedFileName
-	}
-	log.Debug().Str("filename", fileName).Msg("Using decoded filename")
+	// Filename is already set from the task (and was decoded before task creation).
 
 	// Determine final subdirectory path
 	if flatten {
-		subDir = "" // No subdirectory if flattening
+		subDir = ""
 	} else {
-		subDir = SanitizePath(subDir) // Sanitize subdirectory name if not flattening
+		subDir = SanitizePath(subDir)
 	}
 
 	gameDir := SanitizePath(gameTitle)
 	finalDirPath := filepath.Join(downloadPath, gameDir, subDir)
-	filePath := filepath.Join(finalDirPath, fileName)
+	filePath := filepath.Join(finalDirPath, fileName) // Use the intended filename
 
 	if err := createDirIfNotExist(finalDirPath); err != nil {
 		log.Error().Err(err).Str("path", finalDirPath).Msg("Failed to create directory")
-		return err
+		return err // Return error creating directory
 	}
 
 	var file *os.File
 	var startOffset int64 = 0
+	var err error // Declare err here for the whole block
 
 	// Handle file creation/resume logic
 	if resume {
-		if fileInfo, err := os.Stat(filePath); err == nil {
+		var fileInfo os.FileInfo          // Declare fileInfo here
+		fileInfo, err = os.Stat(filePath) // Assign to outer err
+		if err == nil {
 			startOffset = fileInfo.Size()
 			log.Info().Str("file", fileName).Int64("offset", startOffset).Msg("Resuming download")
+			// Assign result of OpenFile to outer err
 			file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0o644)
-			if err != nil {
+			if err != nil { // Check the OpenFile error
 				log.Error().Err(err).Str("path", filePath).Msg("Failed to open file for appending")
-				return err
+				return err // Return the OpenFile error
 			}
-		} else if os.IsNotExist(err) {
+		} else if os.IsNotExist(err) { // Check the Stat error
 			log.Info().Str("file", fileName).Msg("Starting new download (resume enabled, file not found)")
+			// Assign result of Create to outer err
 			file, err = os.Create(filePath)
-			if err != nil {
+			if err != nil { // Check the Create error
 				log.Error().Err(err).Str("path", filePath).Msg("Failed to create file")
-				return err
+				return err // Return the Create error
 			}
-		} else {
-			// Other error (e.g., permissions)
+		} else { // Handle other Stat errors
 			log.Error().Err(err).Str("path", filePath).Msg("Failed to stat file for resume")
-			return err
+			return err // Return the Stat error
 		}
 	} else {
 		log.Info().Str("file", fileName).Msg("Starting new download (resume disabled)")
+		// Assign result of Create to outer err
 		file, err = os.Create(filePath)
-		if err != nil {
+		if err != nil { // Check the Create error
 			log.Error().Err(err).Str("path", filePath).Msg("Failed to create file")
-			return err
+			return err // Return the Create error
 		}
+	}
+	// If file creation/opening succeeded, file is not nil here. Defer close.
+	if file == nil {
+		// This case should ideally not happen if error handling above is correct, but check defensively
+		return fmt.Errorf("internal error: file handle is nil after open/create logic for %s", filePath)
 	}
 	defer file.Close()
 
-	// Use HEAD request to get total file size for progress bar and completion check
-	headReq, err := http.NewRequest("HEAD", urlStr, nil)
-	if err != nil {
-		log.Error().Err(err).Str("url", urlStr).Msg("Failed to create HEAD request")
-		// Continue without HEAD, progress bar might be indeterminate
-	}
-	headReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
-	headResp, err := client.Do(headReq) // Use the client that follows redirects for HEAD
-	var totalSize int64 = -1            // Default to unknown size
-	if err != nil {
-		log.Warn().Err(err).Str("url", urlStr).Msg("HEAD request failed")
+	// Declare totalSize before the HEAD request block
+	var totalSize int64 = -1 // Initialize to -1 (unknown)
+
+	// Use HEAD request to get total file size
+	headReq, headErr := http.NewRequest("HEAD", urlStr, nil) // Use different var name for head error
+	if headErr != nil {
+		log.Error().Err(headErr).Str("url", urlStr).Msg("Failed to create HEAD request")
+		// Don't return yet, GET might still work
 	} else {
-		headResp.Body.Close()
-		if headResp.StatusCode == http.StatusOK {
-			totalSize = headResp.ContentLength
-			log.Debug().Str("file", fileName).Int64("size", totalSize).Msg("Got file size via HEAD")
+		// Auth required for HEAD on embed.gog.com/redirect target
+		headReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+		headResp, headRespErr := client.Do(headReq) // Use different var name for head response error
+		if headRespErr != nil {
+			log.Warn().Err(headRespErr).Str("url", urlStr).Msg("HEAD request failed")
 		} else {
-			log.Warn().Str("url", urlStr).Int("status", headResp.StatusCode).Msg("Unexpected status code from HEAD request")
+			// Only try to read body if there might be one (e.g., non-200 status)
+			var bodyBytes []byte
+			if headResp.StatusCode != http.StatusOK {
+				bodyBytes, _ = io.ReadAll(headResp.Body)
+			}
+			headResp.Body.Close() // Close body immediately after potential read or if status OK
+
+			if headResp.StatusCode == http.StatusOK {
+				// Assign to the outer totalSize
+				totalSize = headResp.ContentLength
+				log.Debug().Str("file", fileName).Int64("size", totalSize).Msg("Got file size via HEAD")
+			} else {
+				log.Warn().Str("url", urlStr).Int("status", headResp.StatusCode).Str("body", string(bodyBytes)).Msg("Unexpected status code from HEAD request")
+			}
 		}
 	}
 
-	// Check if file is already complete
-	if resume && totalSize > 0 && startOffset == totalSize {
-		log.Info().Str("file", fileName).Msg("File already fully downloaded. Skipping.")
+	// Check if file is already complete (use outer totalSize)
+	// Ensure totalSize was successfully determined (is >= 0) before comparing with startOffset
+	if resume && totalSize >= 0 && startOffset == totalSize {
+		log.Info().Str("file", fileName).Int64("size", totalSize).Msg("File already fully downloaded. Skipping.")
 		fmt.Printf("Skipping %s (already complete).\n", fileName)
 		return nil
 	}
-	if resume && totalSize > 0 && startOffset > totalSize {
+	// Check for oversized local file (use outer totalSize)
+	if resume && totalSize >= 0 && startOffset > totalSize {
 		log.Warn().Str("file", fileName).Int64("offset", startOffset).Int64("totalSize", totalSize).Msg("Local file larger than remote size. Restarting download.")
 		startOffset = 0
-		// Truncate the file before restarting
-		if err := file.Truncate(0); err != nil {
+		if err = file.Truncate(0); err != nil { // Assign truncate error to outer err
 			log.Error().Err(err).Str("path", filePath).Msg("Failed to truncate oversized file")
-			return err
+			return err // Return truncate error
 		}
-		if _, err := file.Seek(0, io.SeekStart); err != nil {
+		if _, err = file.Seek(0, io.SeekStart); err != nil { // Assign seek error to outer err
 			log.Error().Err(err).Str("path", filePath).Msg("Failed to seek to start after truncate")
-			return err
+			return err // Return seek error
 		}
 	}
 
 	// Prepare the GET request
-	getReq, err := http.NewRequest("GET", urlStr, nil)
+	getReq, err := http.NewRequest("GET", urlStr, nil) // Can redeclare err here or use outer one
 	if err != nil {
 		log.Error().Err(err).Str("url", urlStr).Msg("Failed to create GET request")
 		return err
 	}
+	// Auth required for GET on embed.gog.com/redirect target
 	getReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
 	if resume && startOffset > 0 {
 		getReq.Header.Set("Range", fmt.Sprintf("bytes=%d-", startOffset))
 		log.Debug().Str("file", fileName).Int64("offset", startOffset).Msg("Added Range header")
 	}
 
-	// Execute the GET request using the redirect-following client
-	getResp, err := client.Do(getReq)
+	// Execute the GET request
+	getResp, err := client.Do(getReq) // Can redeclare err here or use outer one
 	if err != nil {
 		log.Error().Err(err).Str("url", urlStr).Msg("GET request failed")
 		return err
 	}
 	defer getResp.Body.Close()
 
-	// Check response status for download
+	// Check response status
 	if getResp.StatusCode != http.StatusOK && getResp.StatusCode != http.StatusPartialContent {
-		err = fmt.Errorf("unexpected HTTP status: %s", getResp.Status)
+		bodyBytes, _ := io.ReadAll(getResp.Body)
+		err = fmt.Errorf("unexpected HTTP status: %s. Body: %s", getResp.Status, string(bodyBytes))
 		log.Error().Err(err).Str("url", urlStr).Int("status", getResp.StatusCode).Msg("Download request failed")
+		getResp.Body.Close() // Ensure body is closed after reading
 		return err
 	}
 
-	// If totalSize wasn't determined by HEAD, try ContentLength from GET response
-	if totalSize < 0 {
-		totalSize = getResp.ContentLength
-		if totalSize > 0 {
-			log.Debug().Str("file", fileName).Int64("size", totalSize).Msg("Got file size via GET ContentLength")
-			// If resuming, add the offset back to get the true total size
+	// Determine size for progress bar (use outer totalSize if known)
+	sizeForProgress := totalSize
+	if sizeForProgress < 0 { // If HEAD failed or didn't run
+		sizeForProgress = getResp.ContentLength
+		if sizeForProgress > 0 {
+			log.Debug().Str("file", fileName).Int64("size", sizeForProgress).Msg("Got file size via GET ContentLength")
+			// Add the offset back to get the true total size for the progress bar
 			if resume && startOffset > 0 {
-				totalSize += startOffset
+				sizeForProgress += startOffset
 			}
 		} else {
-			log.Warn().Str("file", fileName).Msg("Could not determine file size. Progress bar may be inaccurate.")
+			log.Warn().Str("file", fileName).Msg("Could not determine file size from GET ContentLength. Progress bar may be inaccurate.")
+			// Keep sizeForProgress as -1 if ContentLength is also unknown
 		}
 	}
 
 	// Setup progress bar
 	barDescription := fmt.Sprintf("Downloading %s", fileName)
-	// Truncate description if too long for terminal display
 	maxDescLen := 50
 	if len(barDescription) > maxDescLen {
 		barDescription = barDescription[:maxDescLen-3] + "..."
 	}
 
 	progressBar := progressbar.NewOptions64(
-		totalSize, // Use totalSize determined earlier, might be -1
+		sizeForProgress, // Use the determined size, could be -1
 		progressbar.OptionSetDescription(barDescription),
 		progressbar.OptionSetWidth(40),
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "#",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
+			Saucer: "#", SaucerPadding: " ", BarStart: "[", BarEnd: "]",
 		}),
 		progressbar.OptionSetPredictTime(false),
-		// progressbar.OptionClearOnFinish(), // Removed this line
-		progressbar.OptionThrottle(100*time.Millisecond), // Refresh rate
-		progressbar.OptionSpinnerType(14),                // Choose a spinner type
-		// Use unknown size indicator if totalSize is -1
-		progressbar.OptionSetVisibility(totalSize >= 0),
+		progressbar.OptionClearOnFinish(),
+		progressbar.OptionThrottle(100*time.Millisecond),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionSetVisibility(sizeForProgress >= 0), // Show only if size is known
 	)
 
 	// Set initial progress for resuming downloads
-	if err := progressBar.Set64(startOffset); err != nil {
+	if err = progressBar.Set64(startOffset); err != nil { // Assign progress bar error to outer err
 		log.Warn().Err(err).Msg("Failed to set progress bar offset")
 		// Continue without setting offset
 	}
 
-	// Create a reader that updates the progress bar
+	// Create progress reader and copy
 	progressReader := progressbar.NewReader(getResp.Body, progressBar)
-
-	// Copy data from response body to file via progress reader
-	written, err := io.Copy(file, &progressReader)
+	written, err := io.Copy(file, &progressReader) // Assign io.Copy error to outer err
 	if err != nil {
-		// io.Copy might return an error, but partial data might have been written
 		log.Error().Err(err).Str("file", fileName).Msg("Error during download stream copy")
-		// Attempt to clear the progress bar line on error
-		progressBar.Clear()
-		return fmt.Errorf("failed to save file %s: %w", filePath, err)
+		return fmt.Errorf("failed to save file %s: %w", filePath, err) // Return the copy error
 	}
 	log.Info().Str("file", fileName).Int64("bytes", written).Msg("Download stream finished")
 
-	// Final check: if resuming and the total bytes don't match, log warning
-	if totalSize > 0 && (startOffset+written) != totalSize {
+	// Final check (use sizeForProgress which includes the offset)
+	// Check only if size was known (sizeForProgress >= 0)
+	if sizeForProgress >= 0 && (startOffset+written) != sizeForProgress {
 		log.Warn().Str("file", fileName).
-			Int64("expected", totalSize).
+			Int64("expected", sizeForProgress). // Expected total including offset
 			Int64("actual", startOffset+written).
 			Msg("Downloaded size does not match expected size")
 	}
 
-	progressBar.Clear() // Ensure the bar is cleared on success too
 	fmt.Printf("Finished downloading %s\n", fileName)
-	return nil
+	return nil // Success
 }
 
 // DownloadGameFiles downloads game files, extras, and DLCs to the given path.
+// Signature uses Game struct, not gameID.
 func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 	gameLanguage string, platformName string, extrasFlag bool, dlcFlag bool, resumeFlag bool,
 	flattenFlag bool, numThreads int,
@@ -361,6 +376,17 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 	// --- Enqueue tasks ---
 	log.Info().Str("game", game.Title).Msg("Queueing download tasks")
 
+	// Helper to get decoded base filename from ManualURL
+	getDecodedBaseFilename := func(manualURL string) string {
+		fname := filepath.Base(manualURL)
+		decoded, err := url.QueryUnescape(fname)
+		if err != nil {
+			log.Warn().Err(err).Str("filename", fname).Msg("Failed to URL decode filename, using original")
+			return fname
+		}
+		return decoded
+	}
+
 	// Enqueue tasks for main game downloads
 	queuedGameFiles := 0
 	for _, download := range game.Downloads {
@@ -370,7 +396,7 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 		}
 		platformGroups := []struct {
 			files  []PlatformFile
-			subDir string // Relative sub-directory name (e.g., "windows")
+			subDir string
 		}{
 			{download.Platforms.Windows, "windows"},
 			{download.Platforms.Mac, "mac"},
@@ -386,15 +412,14 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 					log.Warn().Str("game", game.Title).Str("platform", group.subDir).Str("name", file.Name).Msg("Missing ManualURL for game file")
 					continue
 				}
-				rawURL := *file.ManualURL
-				// Prepend base URL if necessary (GOG often uses relative paths)
-				if !strings.HasPrefix(rawURL, "http") {
-					// This base URL might need verification, but seems plausible for installers
-					rawURL = "https://content-system.gog.com" + rawURL
+				manualURL := *file.ManualURL
+				// *** USE embed.gog.com ***
+				if !strings.HasPrefix(manualURL, "http") {
+					manualURL = fmt.Sprintf("https://embed.gog.com%s", manualURL)
 				}
 				tasks <- downloadTask{
-					url:      rawURL,
-					fileName: filepath.Base(rawURL), // Initial filename guess
+					url:      manualURL,
+					fileName: getDecodedBaseFilename(*file.ManualURL), // Use helper
 					subDir:   group.subDir,
 					resume:   resumeFlag,
 					flatten:  flattenFlag,
@@ -413,14 +438,15 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 				log.Warn().Str("game", game.Title).Str("name", extra.Name).Msg("Missing ManualURL for extra")
 				continue
 			}
-			rawURL := extra.ManualURL
-			if !strings.HasPrefix(rawURL, "http") {
-				rawURL = "https://content-system.gog.com" + rawURL
+			manualURL := extra.ManualURL
+			// *** USE embed.gog.com ***
+			if !strings.HasPrefix(manualURL, "http") {
+				manualURL = fmt.Sprintf("https://embed.gog.com%s", manualURL)
 			}
 			tasks <- downloadTask{
-				url:      rawURL,
-				fileName: filepath.Base(rawURL),
-				subDir:   "extras", // Standard sub-directory for extras
+				url:      manualURL,
+				fileName: getDecodedBaseFilename(extra.ManualURL), // Use helper
+				subDir:   "extras",
 				resume:   resumeFlag,
 				flatten:  flattenFlag,
 			}
@@ -458,18 +484,18 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 							log.Warn().Str("dlc", dlc.Title).Str("platform", group.subDir).Str("name", file.Name).Msg("Missing ManualURL for DLC file")
 							continue
 						}
-						rawURL := *file.ManualURL
-						if !strings.HasPrefix(rawURL, "http") {
-							rawURL = "https://content-system.gog.com" + rawURL
+						manualURL := *file.ManualURL
+						// *** USE embed.gog.com ***
+						if !strings.HasPrefix(manualURL, "http") {
+							manualURL = fmt.Sprintf("https://embed.gog.com%s", manualURL)
 						}
-						// Place DLCs in a structured path like 'dlcs/<dlc_title>/<platform>'
 						dlcSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title), group.subDir)
 						tasks <- downloadTask{
-							url:      rawURL,
-							fileName: filepath.Base(rawURL),
+							url:      manualURL,
+							fileName: getDecodedBaseFilename(*file.ManualURL), // Use helper
 							subDir:   dlcSubDir,
 							resume:   resumeFlag,
-							flatten:  flattenFlag, // Flatten applies relative to game dir
+							flatten:  flattenFlag,
 						}
 						queuedDLCFiles++
 					}
@@ -482,14 +508,15 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 						log.Warn().Str("dlc", dlc.Title).Str("name", extra.Name).Msg("Missing ManualURL for DLC extra")
 						continue
 					}
-					rawURL := extra.ManualURL
-					if !strings.HasPrefix(rawURL, "http") {
-						rawURL = "https://content-system.gog.com" + rawURL
+					manualURL := extra.ManualURL
+					// *** USE embed.gog.com ***
+					if !strings.HasPrefix(manualURL, "http") {
+						manualURL = fmt.Sprintf("https://embed.gog.com%s", manualURL)
 					}
 					dlcExtraSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title), "extras")
 					tasks <- downloadTask{
-						url:      rawURL,
-						fileName: filepath.Base(rawURL),
+						url:      manualURL,
+						fileName: getDecodedBaseFilename(extra.ManualURL), // Use helper
 						subDir:   dlcExtraSubDir,
 						resume:   resumeFlag,
 						flatten:  flattenFlag,
@@ -513,13 +540,13 @@ func DownloadGameFiles(accessToken string, game Game, downloadPath string,
 	metadata, err := json.MarshalIndent(game, "", "  ")
 	if err != nil {
 		log.Error().Err(err).Str("game", game.Title).Msg("Failed to marshal game metadata")
-		// Don't return error here, downloads might have partially succeeded
+		// Consider returning this error if critical
 	} else {
 		// Save metadata in the root of the sanitized game directory
 		metadataPath := filepath.Join(downloadPath, SanitizePath(game.Title), "metadata.json")
-		if err := createDirIfNotExist(filepath.Dir(metadataPath)); err != nil {
+		if err = createDirIfNotExist(filepath.Dir(metadataPath)); err != nil { // Assign error
 			log.Error().Err(err).Str("path", filepath.Dir(metadataPath)).Msg("Failed to create directory for metadata file")
-		} else if err := os.WriteFile(metadataPath, metadata, 0o644); err != nil {
+		} else if err = os.WriteFile(metadataPath, metadata, 0o644); err != nil { // Assign error
 			log.Error().Err(err).Str("path", metadataPath).Msg("Failed to save game metadata")
 			// Don't return error here either
 		} else {

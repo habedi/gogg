@@ -3,16 +3,17 @@ package ui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/rs/zerolog/log"
+	"os"
+	"path/filepath"
+	"strconv"
 )
 
 // DownloadUI builds a grid-based layout for downloading game files.
@@ -25,24 +26,46 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 	// 2) Download Dir widgets
 	downloadDirLabel := widget.NewLabel("Download Dir:")
 	downloadDirEntry := widget.NewEntry()
-	downloadDirEntry.SetPlaceHolder("Select download directory...")
+	downloadDirEntry.SetPlaceHolder("Select download directory...") // Placeholder is still useful
+
+	// --- Calculate and set default download directory ---
+	currentDir, err := os.Getwd()
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get current working directory for default download path")
+		// If we can't get the CWD, the field will just be empty initially
+	} else {
+		defaultDownloadPath := filepath.Join(currentDir, "games")
+		downloadDirEntry.SetText(defaultDownloadPath) // Set the default text
+	}
+	// ----------------------------------------------------
 
 	browseBtn := widget.NewButton("Browse", func() {
+		// Pre-populate the folder dialog with the current value if it's a valid dir
+		initialDir := downloadDirEntry.Text
+		if _, statErr := os.Stat(initialDir); os.IsNotExist(statErr) {
+			// If dir doesn't exist, maybe start browse from CWD or parent of default
+			initialDir, _ = os.Getwd() // Fallback to CWD if default path doesn't exist
+		}
+		dirURI, _ := storage.ParseURI("file://" + initialDir) // Convert path to URI for dialog
+		listableURI, _ := storage.ListerForURI(dirURI)        // Get Lister interface for dialog
+
 		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil {
 				dialog.ShowError(err, win)
 				return
 			}
 			if uri != nil {
-				downloadDirEntry.SetText(uri.Path())
+				downloadDirEntry.SetText(uri.Path()) // Use uri.Path() for file paths
 			}
 		}, win)
+
+		if listableURI != nil {
+			fd.SetLocation(listableURI) // Set starting location for the dialog
+		}
 		fd.Show()
 	})
 
-	// This row is split into two columns:
-	// Left: "Game ID" label + entry
-	// Right: "Download Dir" label + (entry + Browse button)
+	// Layout for Row 1 remains the same
 	row1 := container.NewGridWithColumns(2,
 		container.NewVBox(
 			gameIDLabel,
@@ -50,13 +73,11 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 		),
 		container.NewVBox(
 			downloadDirLabel,
-			// We use a Border layout so the Browse button stays on the right
-			// while the text entry expands in the middle.
 			container.NewBorder(nil, nil, nil, browseBtn, downloadDirEntry),
 		),
 	)
 
-	// 3) Language, Platform, Threads in one row
+	// Rows 2, 3, 4 remain the same
 	langLabel := widget.NewLabel("Language:")
 	langOptions := []string{"en", "fr", "de", "es", "it", "ru", "pl", "pt-BR", "zh-Hans", "ja", "ko"}
 	langSelect := widget.NewSelect(langOptions, nil)
@@ -78,7 +99,6 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 		container.NewVBox(threadsLabel, threadsEntry),
 	)
 
-	// 4) Checkboxes
 	extrasCheck := widget.NewCheck("Include Extras", nil)
 	extrasCheck.SetChecked(true)
 	dlcCheck := widget.NewCheck("Include DLCs", nil)
@@ -95,7 +115,6 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 		flattenCheck,
 	)
 
-	// 5) Download button (row 4)
 	downloadBtn := widget.NewButton("Download Game", nil)
 	row4 := container.NewGridWithColumns(1, downloadBtn)
 
@@ -117,7 +136,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 	split := container.NewVSplit(formGrid, logOutput)
 	split.SetOffset(0.35) // ~35% for form, ~65% for log
 
-	// Download button logic
+	// Download button logic remains the same
 	downloadBtn.OnTapped = func() {
 		gameIDStr := gameIDEntry.Text
 		downloadDir := downloadDirEntry.Text
@@ -142,7 +161,8 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 		resumeFlag := resumeCheck.Checked
 		flattenFlag := flattenCheck.Checked
 
-		runOnMain(func() { logOutput.SetText("") })
+		// Clear log and disable button while download runs
+		runOnMain(func() { logOutput.SetText("") }) // Ensure UI update runs on main thread
 		downloadBtn.Disable()
 		go func() {
 			executeDownloadUI(
@@ -150,22 +170,24 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 				extrasFlag, dlcFlag, resumeFlag, flattenFlag,
 				numThreads, win, logOutput,
 			)
-			runOnMain(func() { downloadBtn.Enable() })
+			runOnMain(func() { downloadBtn.Enable() }) // Ensure UI update runs on main thread
 		}()
 	}
 
 	return split
 }
 
-// ShowDownloadGUI creates and displays a window for downloading game files.
+// ShowDownloadGUI function remains the same...
 func ShowDownloadGUI(a fyne.App) {
+	// This function is likely not used if GUI is launched via cmd/gui.go
+	// but kept here for completeness or potential direct GUI launch.
 	win := a.NewWindow("Download Game Files")
 	win.SetContent(DownloadUI(win))
 	win.Resize(fyne.NewSize(900, 600))
 	win.Show()
 }
 
-// executeDownloadUI performs the download process and logs output to logOutput.
+// executeDownloadUI function remains the same...
 func executeDownloadUI(
 	gameID int,
 	downloadPath, language, platformName string,
@@ -174,28 +196,37 @@ func executeDownloadUI(
 	win fyne.Window,
 	logOutput *widget.Entry,
 ) {
-	appendLog(logOutput, fmt.Sprintf("Starting download for game ID %d...", gameID))
+	appendLog(logOutput, fmt.Sprintf("Starting download for game ID %d...", gameID)) // Use appendLog helper
 
 	if numThreads < 1 || numThreads > 20 {
 		appendLog(logOutput, "Number of threads must be between 1 and 20.")
 		return
 	}
 
+	// Validate language using the map from file.go (or move map to shared place)
 	langFull, ok := gameLanguages[language]
 	if !ok {
-		appendLog(logOutput, "Invalid language code. Supported languages are:")
+		logMsg := "Invalid language code. Supported languages are:\n"
 		for code, name := range gameLanguages {
-			appendLog(logOutput, fmt.Sprintf("'%s' for %s", code, name))
+			logMsg += fmt.Sprintf("'%s' for %s\n", code, name)
 		}
+		appendLog(logOutput, logMsg)
 		return
 	}
-	language = langFull
+	language = langFull // Use the full language name for the client call
 
-	if _, err := client.RefreshToken(); err != nil {
-		appendLog(logOutput, "Failed to refresh token. Did you login?")
+	// Check token
+	token, err := client.RefreshToken()
+	if err != nil {
+		appendLog(logOutput, fmt.Sprintf("Failed to refresh token. Did you login? Error: %v", err))
+		return
+	}
+	if token == nil {
+		appendLog(logOutput, "Failed to get token record after refresh. Did you login?")
 		return
 	}
 
+	// Check if download path exists, create if not
 	if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
 		appendLog(logOutput, fmt.Sprintf("Creating download directory: %s", downloadPath))
 		if err := os.MkdirAll(downloadPath, os.ModePerm); err != nil {
@@ -204,45 +235,47 @@ func executeDownloadUI(
 		}
 	}
 
+	// Fetch game data from DB
 	game, err := db.GetGameByID(gameID)
 	if err != nil {
-		appendLog(logOutput, fmt.Sprintf("Failed to get game by ID: %v", err))
+		appendLog(logOutput, fmt.Sprintf("Failed to get game by ID from DB: %v", err))
 		return
-	} else if game == nil {
-		appendLog(logOutput, "Game not found in the catalogue.")
+	}
+	if game == nil {
+		appendLog(logOutput, fmt.Sprintf("Game with ID %d not found in the local catalogue.", gameID))
 		return
 	}
 
+	// Parse game data
 	parsedGameData, err := client.ParseGameData(game.Data)
 	if err != nil {
 		appendLog(logOutput, fmt.Sprintf("Failed to parse game data: %v", err))
 		return
 	}
 
-	user, err := db.GetTokenRecord()
-	if err != nil {
-		appendLog(logOutput, fmt.Sprintf("Failed to retrieve user data: %v", err))
-		return
-	}
-
+	// Log parameters
 	logDownloadParametersUI(
 		parsedGameData, gameID, downloadPath, language, platformName,
 		extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads, logOutput,
 	)
 
+	// Execute download
 	err = client.DownloadGameFiles(
-		user.AccessToken, parsedGameData, downloadPath, language, platformName,
+		token.AccessToken, parsedGameData, downloadPath, language, platformName,
 		extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads,
 	)
 	if err != nil {
 		appendLog(logOutput, fmt.Sprintf("Download failed: %v", err))
+		// Even if download fails, the button should be re-enabled in the calling goroutine
 		return
 	}
+
+	// Success message
 	targetPath := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
 	appendLog(logOutput, fmt.Sprintf("Game files downloaded successfully to: \"%s\"", targetPath))
 }
 
-// logDownloadParametersUI logs the download parameters to the log output.
+// logDownloadParametersUI function remains the same...
 func logDownloadParametersUI(
 	game client.Game,
 	gameID int,
@@ -253,7 +286,7 @@ func logDownloadParametersUI(
 ) {
 	appendLog(logOutput, "================================= Download Parameters =====================================")
 	appendLog(logOutput, fmt.Sprintf("Downloading \"%v\" (Game ID: %d) to \"%v\"", game.Title, gameID, downloadPath))
-	appendLog(logOutput, fmt.Sprintf("Platform: \"%v\", Language: '%v'", platformName, language))
+	appendLog(logOutput, fmt.Sprintf("Platform: \"%v\", Language: '%v'", platformName, language)) // Use full language name here
 	appendLog(logOutput, fmt.Sprintf("Include Extras: %v, Include DLCs: %v, Resume: %v", extrasFlag, dlcFlag, resumeFlag))
 	appendLog(logOutput, fmt.Sprintf("Worker Threads: %d, Flatten Directory: %v", numThreads, flattenFlag))
 	appendLog(logOutput, "============================================================================================")
