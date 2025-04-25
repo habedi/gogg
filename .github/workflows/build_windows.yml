@@ -19,6 +19,13 @@ jobs:
       - name: Install Dependencies
         run: |
           choco install make -y
+          # Install MSYS2 which provides MinGW toolchain with OpenGL headers
+          choco install msys2 -y
+          # Update MSYS2 and install required packages
+          C:\tools\msys64\usr\bin\bash -lc "pacman --noconfirm -Syu"
+          C:\tools\msys64\usr\bin\bash -lc "pacman --noconfirm -S mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-opengl-headers"
+          # Add MinGW to PATH
+          echo "C:\tools\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           make test
         continue-on-error: false
 
