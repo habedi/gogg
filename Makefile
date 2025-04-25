@@ -50,14 +50,10 @@ test: format ## Run the tests
 	$(ECHO) "Running non-UI tests..."
 	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/ui') $(COVER_FLAGS) --race
 	$(ECHO) "Running UI tests (individually to avoid race conditions)..."
-	@export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
-	 $(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./ui/... $(COVER_FLAGS) --race
-	@export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
-	 $(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
-	@export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
-	 $(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
-	@export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
-	 $(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./ui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
 
 .PHONY: showcov
 showcov: test ## Display test coverage report
@@ -65,25 +61,23 @@ showcov: test ## Display test coverage report
 	@$(GO) tool cover -func=$(COVER_PROFILE)
 
 .PHONY: build
-build: format ## Build the binary for the current platform
+build: format ## Build the binary for the current platform (Linux/Windows)
 	$(ECHO) "Tidying dependencies..."
 	@$(GO) mod tidy
-	$(ECHO) "Building the project..."
+	$(ECHO) "Building the binary..."
 	@$(GO) build -o $(BINARY)
+	@$(ECHO) "Build complete: $(BINARY)"
 
 .PHONY: build-macos
-build-macos: format ## Build a universal binary for macOS (x86_64 and arm64)
-	$(ECHO) "Building universal binary for macOS..."
+build-macos: format ## Build binary for macOS (v14 and newer; arm64)
+	$(ECHO) "Tidying dependencies..."
+	@$(GO) mod tidy
+	$(ECHO) "Building arm64 binary for macOS..."
 	@mkdir -p bin
+	export CGO_ENABLED=1 ;\
 	export CGO_CFLAGS="$$(pkg-config --cflags glfw3)" ;\
 	export CGO_LDFLAGS="$$(pkg-config --libs glfw3)" ;\
-	echo "Building for amd64..." ;\
-	GOARCH=amd64 $(GO) build -ldflags="-s -w" -o bin/$(BINARY_NAME)-x86_64 $(MAIN) ;\
-	echo "Building for arm64..." ;\
-	GOARCH=arm64 $(GO) build -ldflags="-s -w" -o bin/$(BINARY_NAME)-arm64 $(MAIN) ;\
-	echo "Creating universal binary..." ;\
-	command -v lipo >/dev/null || { $(ECHO) "lipo not found. Please install Xcode command line tools."; exit 1; } ;\
-	lipo -create -output $(BINARY) bin/$(BINARY_NAME)-x86_64 bin/$(BINARY_NAME)-arm64 ;\
+	GOARCH=arm64 $(GO) build -v -tags desktop,gl -ldflags="-s -w" -o $(BINARY) $(MAIN) ;\
 	echo "Build complete: $(BINARY)"
 
 .PHONY: run

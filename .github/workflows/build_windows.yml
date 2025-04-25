@@ -27,9 +27,8 @@ jobs:
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-freeglut
 
-      # Subsequent steps run within the MSYS2 environment where 'go' is now installed
       - name: Run Tests
-        shell: msys2 {0} # Execute commands in the MSYS2 bash shell
+        shell: msys2 {0}
         run: |
           make test
 
@@ -43,6 +42,10 @@ jobs:
         run: ls -R bin
 
       - name: Test CLI API
+        shell: msys2 {0}
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
         run: bash test_gogg_cli.sh
 
       - name: Upload Build Artifact
