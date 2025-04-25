@@ -1,12 +1,8 @@
 package client
 
-import (
-	"encoding/json"
+import "encoding/json"
 
-	"github.com/rs/zerolog/log"
-)
-
-// Game contains information about a game and its downloadable content.
+// Game contains information about a game and its downloadable content like extras and DLCs.
 type Game struct {
 	Title           string         `json:"title"`
 	BackgroundImage *string        `json:"backgroundImage,omitempty"`
@@ -24,20 +20,20 @@ type PlatformFile struct {
 	Size      string  `json:"size"`
 }
 
-// Extra contains information about an extra file like a manual or soundtrack.
+// Extra contains information about an extra file like game manual and soundtracks.
 type Extra struct {
 	Name      string `json:"name"`
 	Size      string `json:"size"`
 	ManualURL string `json:"manualUrl"`
 }
 
-// DLC contains information about downloadable content like expansions.
+// DLC contains information about a downloadable content like expansions and updates.
 type DLC struct {
 	Title           string          `json:"title"`
 	BackgroundImage *string         `json:"backgroundImage,omitempty"`
-	Downloads       [][]interface{} `json:"downloads"` // Keep raw for initial parsing
+	Downloads       [][]interface{} `json:"downloads"`
 	Extras          []Extra         `json:"extras"`
-	ParsedDownloads []Downloadable  `json:"-"` // Store parsed downloads here
+	ParsedDownloads []Downloadable  `json:"-"`
 }
 
 // Platform contains information about platform-specific installation files.
@@ -53,7 +49,7 @@ type Downloadable struct {
 	Platforms Platform `json:"platforms"`
 }
 
-// UnmarshalJSON implements custom unmarshalling for Game to process downloads and DLCs.
+// UnmarshalJSON is a custom unmarshal function for Game to process downloads and DLCs correctly.
 func (gd *Game) UnmarshalJSON(data []byte) error {
 	type Alias Game
 	aux := &struct {
@@ -62,85 +58,64 @@ func (gd *Game) UnmarshalJSON(data []byte) error {
 	}{
 		Alias: (*Alias)(gd),
 	}
+
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 
-	// Process downloads for the game.
+	// Process RawDownloads for Game.
 	gd.Downloads = parseRawDownloads(aux.RawDownloads)
 
-	// Process downloads for each DLC.
+	// Process DLC downloads.
 	for i, dlc := range gd.DLCs {
-		gd.DLCs[i].ParsedDownloads = parseRawDownloads(dlc.Downloads)
+		parsedDLCDownloads := parseRawDownloads(dlc.Downloads)
+		gd.DLCs[i].ParsedDownloads = parsedDLCDownloads
 	}
+
 	return nil
 }
 
-// parseRawDownloads converts raw downloads data into a slice of Downloadable.
+// parseRawDownloads parses the raw downloads data into a slice of Downloadable.
 func parseRawDownloads(rawDownloads [][]interface{}) []Downloadable {
 	var downloads []Downloadable
+
 	for _, raw := range rawDownloads {
 		if len(raw) != 2 {
-			continue // Expecting [language, platforms]
+			continue
 		}
+
+		// First element is the language.
 		language, ok := raw[0].(string)
 		if !ok {
 			continue
 		}
+
+		// Second element is the platforms object.
 		platforms, err := parsePlatforms(raw[1])
 		if err != nil {
-			log.Warn().Err(err).Msgf("Failed to parse platforms for language %s", language)
 			continue
 		}
+
 		downloads = append(downloads, Downloadable{
 			Language:  language,
 			Platforms: platforms,
 		})
 	}
+
 	return downloads
 }
 
-// parsePlatforms decodes the platform object.
+// parsePlatforms parses the platforms data from an interface{}.
 func parsePlatforms(data interface{}) (Platform, error) {
 	platformsData, err := json.Marshal(data)
 	if err != nil {
 		return Platform{}, err
 	}
+
 	var platforms Platform
 	if err := json.Unmarshal(platformsData, &platforms); err != nil {
 		return Platform{}, err
 	}
+
 	return platforms, nil
-}
-
-// ParseGameData parses raw game data JSON into a Game struct.
-func ParseGameData(data string) (Game, error) {
-	var rawResponse Game
-	if err := json.Unmarshal([]byte(data), &rawResponse); err != nil {
-		log.Error().Err(err).Msg("Failed to parse game data")
-		return Game{}, err
-	}
-	return rawResponse, nil
-}
-
-// parseGameData specific helper used by FetchGameData
-func parseGameDataInternal(body []byte, game *Game) error {
-	if err := json.Unmarshal(body, game); err != nil {
-		// Log the problematic body content (or part of it) for debugging if log level allows
-		log.Error().Err(err).Str("body_preview", string(body[:min(len(body), 200)])).Msg("Failed to parse game data JSON")
-		return err
-	}
-	return nil
-}
-
-// parseOwnedGames specific helper used by FetchIdOfOwnedGames
-func parseOwnedGames(body []byte) ([]int, error) {
-	var response struct {
-		Owned []int `json:"owned"`
-	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		log.Error().Err(err).Str("body_preview", string(body[:min(len(body), 200)])).Msg("Failed to parse owned games JSON")
-		return nil, err
-	}
-	return response.Owned, nil
 }

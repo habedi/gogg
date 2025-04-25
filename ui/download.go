@@ -3,6 +3,10 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
@@ -11,9 +15,6 @@ import (
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
-	"os"
-	"path/filepath"
-	"strconv"
 )
 
 // DownloadUI builds a grid-based layout for downloading game files.

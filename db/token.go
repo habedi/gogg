@@ -16,6 +16,7 @@ type Token struct {
 }
 
 // GetTokenRecord retrieves the token record from the database.
+// It returns a pointer to the Token object and an error if the operation fails.
 func GetTokenRecord() (*Token, error) {
 	if Db == nil {
 		return nil, fmt.Errorf("database connection is not initialized")
@@ -30,10 +31,15 @@ func GetTokenRecord() (*Token, error) {
 		return nil, err
 	}
 
+	if &token == nil {
+		return nil, fmt.Errorf("no token data found. Please try logging in first")
+	}
+
 	return &token, nil
 }
 
 // UpsertTokenRecord inserts or updates the token record in the database.
+// It takes a pointer to the Token object as a parameter and returns an error if the operation fails.
 func UpsertTokenRecord(token *Token) error {
 	if Db == nil {
 		return fmt.Errorf("database connection is not initialized")
@@ -47,21 +53,23 @@ func UpsertTokenRecord(token *Token) error {
 	}
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Insert new token
 		if err := Db.Create(token).Error; err != nil {
-			log.Error().Err(err).Msg("Failed to insert new token")
+			log.Error().Err(err).Msgf("Failed to insert new token: %s", token.AccessToken[:10])
 			return err
 		}
-		log.Info().Msg("Token inserted successfully")
+		log.Info().Msgf("Token inserted successfully: %s", token.AccessToken[:10])
 	} else {
+		// Update existing token
 		if err := Db.Model(&existingToken).Where("1 = 1").Updates(Token{
 			AccessToken:  token.AccessToken,
 			RefreshToken: token.RefreshToken,
 			ExpiresAt:    token.ExpiresAt,
 		}).Error; err != nil {
-			log.Error().Err(err).Msg("Failed to update token")
+			log.Error().Err(err).Msgf("Failed to update token: %s", token.AccessToken[:10])
 			return err
 		}
-		log.Info().Msg("Token updated successfully")
+		log.Info().Msgf("Token updated successfully: %s", token.AccessToken[:10])
 	}
 
 	return nil

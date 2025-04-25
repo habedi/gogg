@@ -125,7 +125,6 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 		// Refresh the table widget to reflect the changes
 		table.Refresh()
 		dialog.ShowInformation("Refreshed", "Game list updated.", win)
-
 	})
 
 	// Put the buttons at the top, table in the center so it expands.
