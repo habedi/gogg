@@ -1,4 +1,3 @@
-// file: ui/catalogue_test.go
 package ui_test
 
 import (
