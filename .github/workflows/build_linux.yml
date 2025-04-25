@@ -3,6 +3,9 @@ name: Build for Linux
 on:
   workflow_dispatch: # Allow manual execution
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,7 +22,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y make
+          sudo apt-get install -y make libgl1-mesa-dev libx11-dev xorg-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config
           make test
         continue-on-error: false
 
