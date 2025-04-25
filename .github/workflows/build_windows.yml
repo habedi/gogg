@@ -14,25 +14,22 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-
-      # Use setup-msys2 action for installing MSYS2/MinGW components
-      - name: Setup MSYS2
+      # Setup MSYS2 and install ALL required tools (make, gcc, pkg-config, freeglut, AND go)
+      - name: Setup MSYS2 Environment
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64 # Use the MinGW-w64 64-bit environment
-          update: true      # Update MSYS2 database and packages
-          install: >-       # Install required packages using pacman
+          msystem: MINGW64
+          update: true
+          install: >-
             make
+            mingw-w64-x86_64-go
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-freeglut # This package usually provides the OpenGL headers
+            mingw-w64-x86_64-freeglut
 
+      # Subsequent steps run within the MSYS2 environment where 'go' is now installed
       - name: Run Tests
-        shell: msys2 {0}
+        shell: msys2 {0} # Execute commands in the MSYS2 bash shell
         run: |
           make test
 

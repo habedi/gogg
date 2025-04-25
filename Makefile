@@ -46,8 +46,10 @@ format: ## Format Go files
 
 .PHONY: test
 test: format ## Run the tests
-	$(ECHO) "Running tests..."
-	@$(GO) test -v ./... $(COVER_FLAGS) --race
+	$(ECHO) "Running non-UI tests..."
+	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/ui') $(COVER_FLAGS) --race
+	$(ECHO) "Running UI tests..."
+	@$(GO) test -v  -p 1 ./ui/... $(COVER_FLAGS) --race
 
 .PHONY: showcov
 showcov: test ## Display test coverage report
