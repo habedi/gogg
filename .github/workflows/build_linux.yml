@@ -36,6 +36,9 @@ jobs:
       - name: List Build Directory (for Debugging)
         run: ls -R bin
 
+      - name: Test CLI API
+        run: bash test_gogg_cli.sh
+
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
