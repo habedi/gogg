@@ -87,3 +87,4 @@ gogg_catalogue*
 gogg_full_catalogue*
 coverage.txt
 .env
+*_output.txt

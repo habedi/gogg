@@ -6,6 +6,10 @@ on:
     tags:
       - 'v*' # Trigger on version tags
 
+permissions:
+  contents: read
+
+# The build jobs for different platforms (Windows, Linux, and macOS)
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -13,28 +17,40 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      # Setup MSYS2 and install ALL required tools (make, gcc, pkg-config, freeglut, AND go)
+      - name: Setup MSYS2 Environment
+        uses: msys2/setup-msys2@v2
         with:
-          go-version: stable
+          msystem: MINGW64
+          update: true
+          install: >-
+            make
+            mingw-w64-x86_64-go
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-freeglut
 
-      - name: Install Dependencies
+      - name: Run Tests
+        shell: msys2 {0}
         run: |
-          choco install make -y
           make test
 
       - name: Build Windows Binary
+        shell: msys2 {0}
         run: |
           make build GOGG_BINARY=gogg.exe
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gogg-windows
+          name: gogg-windows-amd64
           path: bin/gogg.exe
 
   build-linux:
     runs-on: ubuntu-latest
+    env:
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -47,7 +63,10 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y make
+          make install-deps
+
+      - name: Run Tests
+        run: |
           make test
 
       - name: Build Linux Binary
@@ -57,7 +76,7 @@ jobs:
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gogg-linux
+          name: gogg-linux-amd64
           path: bin/gogg
 
   build-macos:
@@ -73,7 +92,10 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew install make
+          brew install make pkg-config glfw
+
+      - name: Run Tests
+        run: |
           make test
 
       - name: Build macOS Binary
@@ -83,52 +105,60 @@ jobs:
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gogg-macos
+          name: gogg-macos-arm64
           path: bin/gogg
 
   release:
     runs-on: ubuntu-latest
     needs: [ build-windows, build-linux, build-macos ]
+    permissions:
+      contents: write
     steps:
+      # Download all build artifacts (binaries)
       - name: Download Windows Artifact
         uses: actions/download-artifact@v4
         with:
-          name: gogg-windows
-          path: ./windows
+          name: gogg-windows-amd64
+          path: ./dist/windows
 
       - name: Download Linux Artifact
         uses: actions/download-artifact@v4
         with:
-          name: gogg-linux
-          path: ./linux
+          name: gogg-linux-amd64
+          path: ./dist/linux
 
       - name: Download macOS Artifact
         uses: actions/download-artifact@v4
         with:
-          name: gogg-macos
-          path: ./macos
+          name: gogg-macos-arm64
+          path: ./dist/macos
 
       - name: List Downloaded Files (for debugging)
-        run: ls -R .
+        run: ls -R ./dist
 
-      - name: Rename Extracted Binaries
+      # Create archives for each platform
+      - name: Create Archives
         run: |
-          cd windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ..
-          cd linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ..
-          cd macos && zip -r9 ../gogg-macos-universal.zip gogg && cd ..
+          cd dist/windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ../..
+          cd dist/linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ../..
+          cd dist/macos && zip -r9 ../gogg-macos-arm64.zip gogg && cd ../..
+        working-directory: .
 
-      - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: ${{ github.ref_name }}
-          tag: ${{ github.ref_name }}
-          body: |
-            Release version ${{ github.ref_name }}
-            - Binary builds for Windows, Linux, and macOS
-          artifacts: |
-            gogg-windows-amd64.zip
-            gogg-linux-amd64.zip
-            gogg-macos-universal.zip
-          draft: false
-          prerelease: false
+      - name: List Archives (for debugging)
+        run: ls -l gogg-*.zip
+
+#      # Create GitHub Release
+#      - name: Create GitHub Release
+#        uses: ncipollo/release-action@v1
+#        with:
+#          token: ${{ secrets.GITHUB_TOKEN }}
+#          name: ${{ github.ref_name }}
+#          tag: ${{ github.ref_name }}
+#          body: |
+#            Release version ${{ github.ref_name }}
+#          artifacts: |
+#            gogg-windows-amd64.zip
+#            gogg-linux-amd64.zip
+#            gogg-macos-arm64.zip
+#          draft: false      # Set to true to create a draft release
+#          prerelease: false # Set to true to mark as pre-release
