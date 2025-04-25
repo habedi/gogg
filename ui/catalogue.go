@@ -266,7 +266,7 @@ func RefreshCatalogueUI(win fyne.Window) {
 							_ = db.PutInGame(gameID, details.Title, rawDetails)
 						}
 						mu.Lock()
-						progress.SetValue(progress.Value + 1/total)
+						progress.SetValue(progress.Value + (1.0 / total))
 						mu.Unlock()
 					}
 				}
@@ -351,7 +351,9 @@ func exportCatalogueToCSV(w io.Writer) error {
 		return err
 	}
 	for _, game := range games {
-		if _, err := fmt.Fprintf(w, "%d,\"%s\"\n", game.ID, game.Title); err != nil {
+		// Properly escape double quotes in the title by replacing " with ""
+		escapedTitle := strings.ReplaceAll(game.Title, "\"", "\"\"")
+		if _, err := fmt.Fprintf(w, "%d,\"%s\"\n", game.ID, escapedTitle); err != nil {
 			return err
 		}
 	}

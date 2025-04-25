@@ -57,7 +57,7 @@ func createRootCmd() *cobra.Command {
 // It logs an error and exits the program if the database initialization fails.
 func initializeDatabase() {
 	if err := db.InitDB(); err != nil {
-		log.Info().Msgf("Failed to initialize database: %v\n", err)
+		log.Error().Err(err).Msg("Failed to initialize database")
 		os.Exit(1)
 	}
 }

@@ -17,8 +17,19 @@ var (
 	// Db is the global database connection object
 	Db *gorm.DB
 	// Path is the default path to the SQLite database file
-	Path = filepath.Join(os.Getenv("HOME"), ".gogg/games.db")
+	Path = getDefaultDBPath()
 )
+
+// getDefaultDBPath returns the default path to the SQLite database file
+// in a cross-platform way.
+func getDefaultDBPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current directory if home directory can't be determined
+		return filepath.Join(".", ".gogg/games.db")
+	}
+	return filepath.Join(homeDir, ".gogg/games.db")
+}
 
 // InitDB initializes the database by creating the necessary directory,
 // opening the database connection, migrating tables, and configuring the logger.
@@ -217,20 +228,20 @@ func UpsertTokenRecord(token *Token) error {
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		if err := Db.Create(token).Error; err != nil {
-			log.Error().Err(err).Msgf("Failed to insert new token: %s", token.AccessToken[:10])
+			log.Error().Err(err).Msg("Failed to insert new token")
 			return err
 		}
-		log.Info().Msgf("Token inserted successfully: %s", token.AccessToken[:10])
+		log.Info().Msg("Token inserted successfully")
 	} else {
 		if err := Db.Model(&existingToken).Where("1 = 1").Updates(Token{
 			AccessToken:  token.AccessToken,
 			RefreshToken: token.RefreshToken,
 			ExpiresAt:    token.ExpiresAt,
 		}).Error; err != nil {
-			log.Error().Err(err).Msgf("Failed to update token: %s", token.AccessToken[:10])
+			log.Error().Err(err).Msg("Failed to update token")
 			return err
 		}
-		log.Info().Msgf("Token updated successfully: %s", token.AccessToken[:10])
+		log.Info().Msg("Token updated successfully")
 	}
 
 	return nil

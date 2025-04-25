@@ -299,7 +299,13 @@ func processDownloadTask(task downloadTask, accessToken, downloadPath, gameTitle
 	resp.Body.Close()
 	totalSize := resp.ContentLength
 
-	if startOffset >= totalSize {
+	// Handle case where Content-Length is not provided (ContentLength = -1)
+	if totalSize < 0 {
+		log.Warn().Msgf("Content-Length not provided for %s, cannot determine total size", fileName)
+		totalSize = 0 // Set to 0 to indicate unknown size
+	}
+
+	if totalSize > 0 && startOffset >= totalSize {
 		log.Info().Msgf("File %s is already fully downloaded (%d bytes). Skipping.", fileName, totalSize)
 		fmt.Printf("File %s is already fully downloaded. Skipping download.\n", fileName)
 		return nil
@@ -704,12 +710,36 @@ func RefreshToken() (*db.Token, error) {
 	return token, nil
 }
 
+// Default client credentials
+const (
+	DefaultClientID     = "46899977096215655"
+	DefaultClientSecret = "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"
+)
+
+// getClientCredentials returns the client ID and secret from environment variables
+// or falls back to default values if not set.
+func getClientCredentials() (string, string) {
+	clientID := os.Getenv("GOGG_CLIENT_ID")
+	if clientID == "" {
+		clientID = DefaultClientID
+	}
+
+	clientSecret := os.Getenv("GOGG_CLIENT_SECRET")
+	if clientSecret == "" {
+		clientSecret = DefaultClientSecret
+	}
+
+	return clientID, clientSecret
+}
+
 // refreshAccessToken refreshes the token using the refresh token.
 func refreshAccessToken(token *db.Token) error {
 	tokenURL := "https://auth.gog.com/token"
+	clientID, clientSecret := getClientCredentials()
+
 	query := url.Values{
-		"client_id":     {"46899977096215655"},
-		"client_secret": {"9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"},
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {token.RefreshToken},
 	}
@@ -805,7 +835,8 @@ func performLogin(ctx context.Context, loginURL string, username string, passwor
 		chromedp.SendKeys(`#login_password`, password, chromedp.ByID),
 		chromedp.Click(`#login_login`, chromedp.ByID),
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			for {
+			maxAttempts := 120 // 60 seconds (120 * 500ms)
+			for attempt := 0; attempt < maxAttempts; attempt++ {
 				var currentURL string
 				if err := chromedp.Location(&currentURL).Do(ctx); err != nil {
 					return err
@@ -814,8 +845,13 @@ func performLogin(ctx context.Context, loginURL string, username string, passwor
 					finalURL = currentURL
 					return nil
 				}
+				// Check for login failure indicators
+				if strings.Contains(currentURL, "login_failure") || strings.Contains(currentURL, "error=") {
+					return fmt.Errorf("login failed: detected error in URL: %s", currentURL)
+				}
 				time.Sleep(500 * time.Millisecond)
 			}
+			return fmt.Errorf("login timed out after waiting for %d seconds", maxAttempts/2)
 		}),
 	)
 	return finalURL, err
@@ -837,9 +873,11 @@ func extractAuthCode(authURL string) (string, error) {
 // exchangeCodeForToken exchanges an authorization code for tokens.
 func exchangeCodeForToken(code string) (string, string, string, error) {
 	tokenURL := "https://auth.gog.com/token"
+	clientID, clientSecret := getClientCredentials()
+
 	query := url.Values{
-		"client_id":     {"46899977096215655"},
-		"client_secret": {"9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"},
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"redirect_uri":  {"https://embed.gog.com/on_login_success?origin=client"},
