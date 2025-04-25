@@ -75,10 +75,16 @@ build: format ## Build the binary for the current platform
 build-macos: format ## Build a universal binary for macOS (x86_64 and arm64)
 	$(ECHO) "Building universal binary for macOS..."
 	@mkdir -p bin
-	@GOARCH=amd64 $(GO) build -o bin/$(BINARY_NAME)-x86_64 $(MAIN)
-	@GOARCH=arm64 $(GO) build -o bin/$(BINARY_NAME)-arm64 $(MAIN)
-	@command -v lipo >/dev/null || { $(ECHO) "lipo not found. Please install Xcode command line tools."; exit 1; }
-	@lipo -create -output $(BINARY) bin/$(BINARY_NAME)-x86_64 bin/$(BINARY_NAME)-arm64
+	export CGO_CFLAGS="$$(pkg-config --cflags glfw3)" ;\
+	export CGO_LDFLAGS="$$(pkg-config --libs glfw3)" ;\
+	echo "Building for amd64..." ;\
+	GOARCH=amd64 $(GO) build -ldflags="-s -w" -o bin/$(BINARY_NAME)-x86_64 $(MAIN) ;\
+	echo "Building for arm64..." ;\
+	GOARCH=arm64 $(GO) build -ldflags="-s -w" -o bin/$(BINARY_NAME)-arm64 $(MAIN) ;\
+	echo "Creating universal binary..." ;\
+	command -v lipo >/dev/null || { $(ECHO) "lipo not found. Please install Xcode command line tools."; exit 1; } ;\
+	lipo -create -output $(BINARY) bin/$(BINARY_NAME)-x86_64 bin/$(BINARY_NAME)-arm64 ;\
+	echo "Build complete: $(BINARY)"
 
 .PHONY: run
 run: build ## Build and run the binary

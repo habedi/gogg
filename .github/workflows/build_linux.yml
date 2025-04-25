@@ -22,7 +22,8 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y make libgl1-mesa-dev libx11-dev xorg-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config
+          sudo apt-get install -y make libgl1-mesa-dev libx11-dev xorg-dev
+          sudo apt-get install -y libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config
 
       - name: Run Tests
         run: |

@@ -22,10 +22,7 @@ jobs:
       - name: Install Dependencies
         run: |
           brew install make
-          # Install OpenGL and GLFW dependencies
           brew install pkg-config
-          # macOS already includes OpenGL framework
-          # Install additional X11-related dependencies that might be needed
           brew install glfw
 
       - name: Run Tests
