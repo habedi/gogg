@@ -47,12 +47,12 @@ format: ## Format Go files
 .PHONY: test
 test: format ## Run the tests
 	$(ECHO) "Running non-UI tests..."
-	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/ui') $(COVER_FLAGS) --race
+	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/gui') $(COVER_FLAGS) --race
 	$(ECHO) "Running UI tests (individually to avoid race conditions)..."
-	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./ui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./ui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./gui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
 
 .PHONY: showcov
 showcov: test ## Display test coverage report

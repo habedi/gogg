@@ -1,11 +1,11 @@
 // ui/ui.go
-package ui
+package gui
 
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog" // Added for dialog inside search button
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -22,7 +22,7 @@ func Run() {
 	mainTabs.SetTabLocation(container.TabLocationTop)
 
 	myWindow.SetContent(mainTabs)
-	myWindow.Resize(fyne.NewSize(900, 600))
+	myWindow.Resize(fyne.NewSize(1000, 600))
 	myWindow.ShowAndRun()
 }
 

@@ -1,4 +1,4 @@
-package ui
+package gui
 
 import (
 	"crypto/md5"

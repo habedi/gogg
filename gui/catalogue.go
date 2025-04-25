@@ -1,5 +1,5 @@
 // ui/catalogue.go
-package ui
+package gui
 
 import (
 	"context"
