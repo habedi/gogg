@@ -27,4 +27,3 @@ jobs:
       - name: Run Linters
         run: |
           make lint
-        continue-on-error: false
