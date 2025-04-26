@@ -12,18 +12,18 @@ import (
 // Run initializes and runs the main GUI application.
 func Run(version string) {
 	myApp := app.NewWithID("com.habedi.gogg")
-	myWindow := myApp.NewWindow("Gogg GUI")
+	myWindow := myApp.NewWindow("GOGG GUI")
 
 	mainTabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), CatalogueTabUI(myWindow)),
-		container.NewTabItemWithIcon("Download", theme.DownloadIcon(), DownloadTabUI(myWindow)),
-		container.NewTabItemWithIcon("File", theme.DocumentIcon(), FileTabUI(myWindow)),
+		container.NewTabItemWithIcon("Game Catalogue", theme.ListIcon(), CatalogueTabUI(myWindow)),
+		container.NewTabItemWithIcon("Download Game", theme.DownloadIcon(), DownloadTabUI(myWindow)),
+		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
 		container.NewTabItemWithIcon("About", theme.InfoIcon(), ShowAboutUI(version)),
 	)
 	mainTabs.SetTabLocation(container.TabLocationTop)
 
 	myWindow.SetContent(mainTabs)
-	myWindow.Resize(fyne.NewSize(1000, 600))
+	myWindow.Resize(fyne.NewSize(800, 600))
 	myWindow.ShowAndRun()
 }
 
@@ -32,9 +32,9 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 	listTab := CatalogueListUI(win)
 
 	searchEntry := widget.NewEntry()
-	searchEntry.SetPlaceHolder("Enter game title or ID to search...")
+	searchEntry.SetPlaceHolder("Enter a search term or game ID to search")
 	searchByID := widget.NewCheck("Search by ID", nil)
-	initialLabel := widget.NewLabel("Search results will appear here...")
+	initialLabel := widget.NewLabel("Search results will appear here")
 	searchScroll := container.NewScroll(initialLabel)
 
 	clearSearch := func() {
@@ -44,71 +44,82 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 		searchScroll.Refresh()
 	}
 
-	searchBtn := widget.NewButtonWithIcon(
-		"Search", theme.SearchIcon(), func() {
-			q := searchEntry.Text
-			if q == "" {
-				dialog.ShowInformation("Search", "Please enter a search query.", win)
-				return
-			}
-			results := SearchCatalogueUI(win, q, searchByID.Checked, clearSearch)
-			searchScroll.Content = results
-			searchScroll.Refresh()
-		},
+	searchBtn := widget.NewButtonWithIcon("Search Catalogue", theme.SearchIcon(), func() {
+		q := searchEntry.Text
+		if q == "" {
+			dialog.ShowInformation("Search", "Enter a valid search term or game ID.", win)
+			return
+		}
+		results := SearchCatalogueUI(win, q, searchByID.Checked, clearSearch)
+		searchScroll.Content = results
+		searchScroll.Refresh()
+	})
+	searchBtn.Importance = widget.HighImportance
+
+	searchBar := container.NewBorder(nil, nil, nil,
+		container.NewHBox(searchByID, searchBtn),
+		searchEntry,
 	)
 
-	searchBar := container.NewGridWithColumns(3, searchEntry, searchByID, searchBtn)
 	searchTab := container.NewBorder(searchBar, nil, nil, nil, searchScroll)
 
-	refreshBtn := widget.NewButtonWithIcon(
-		"Refresh Catalogue", theme.ViewRefreshIcon(), func() {
-			RefreshCatalogueUI(win)
-		},
-	)
+	refreshBtn := widget.NewButtonWithIcon("Refresh Catalogue", theme.ViewRefreshIcon(), func() {
+		RefreshCatalogueUI(win)
+	})
+	refreshBtn.Importance = widget.MediumImportance
+
 	refreshTab := container.NewVBox(
-		widget.NewLabel("Retrieve the latest data and refresh the catalogue:"),
+		widget.NewLabelWithStyle("Rebuild the game catalogue with the latest data from GOG", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		refreshBtn,
 	)
 
-	exportJSON := widget.NewButtonWithIcon(
-		"Export JSON", theme.ContentAddIcon(), func() {
-			ExportCatalogueUI(win, "json")
-		},
-	)
-	exportCSV := widget.NewButtonWithIcon(
-		"Export CSV", theme.DocumentSaveIcon(), func() {
-			ExportCatalogueUI(win, "csv")
-		},
-	)
+	exportJSON := widget.NewButtonWithIcon("Export Full Catalogue (JSON)", theme.DocumentSaveIcon(), func() {
+		ExportCatalogueUI(win, "json")
+	})
+	exportJSON.Importance = widget.MediumImportance
+	exportCSV := widget.NewButtonWithIcon("Export Game List (CSV)", theme.DocumentSaveIcon(), func() {
+		ExportCatalogueUI(win, "csv")
+	})
+	exportCSV.Importance = widget.MediumImportance
 	exportTab := container.NewVBox(
-		widget.NewLabel("Export the full game catalogue or just the game list to a file:"),
+		widget.NewLabelWithStyle("Export the game catalogue data", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		container.NewHBox(exportJSON, exportCSV),
 	)
 
 	catalogueTabs := container.NewAppTabs(
-		container.NewTabItem("Search", searchTab),
-		container.NewTabItem("Refresh", refreshTab),
-		container.NewTabItem("Game List", listTab),
-		container.NewTabItem("Export", exportTab),
+		container.NewTabItemWithIcon("Search", theme.SearchIcon(), searchTab),
+		container.NewTabItemWithIcon("Refresh", theme.ViewRefreshIcon(), refreshTab),
+		container.NewTabItemWithIcon("Game List", theme.ListIcon(), listTab),
+		container.NewTabItemWithIcon("Export", theme.DocumentSaveIcon(), exportTab),
 	)
 	catalogueTabs.SetTabLocation(container.TabLocationTop)
 	catalogueTabs.SelectIndex(0)
 	return catalogueTabs
 }
 
-// DownloadTabUI returns the Download tab with icon.
+// DownloadTabUI returns the Download tab with a header and expanding content.
 func DownloadTabUI(win fyne.Window) fyne.CanvasObject {
-	return DownloadUI(win)
+	head := widget.NewLabelWithStyle("Download Game Files", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	down := DownloadUI(win)
+	return container.NewBorder(
+		container.NewVBox(head, widget.NewSeparator()),
+		nil, nil, nil,
+		down,
+	)
 }
 
-// FileTabUI returns the File tab with icon.
+// FileTabUI returns the File tab with header and expanding tabs.
 func FileTabUI(win fyne.Window) fyne.CanvasObject {
+	head := widget.NewLabelWithStyle("File Operations", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	hashTab := HashUI(win)
 	sizeTab := SizeUI(win)
 	fileTabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("Hash", theme.ContentAddIcon(), hashTab),
-		container.NewTabItemWithIcon("Size", theme.ViewFullScreenIcon(), sizeTab),
+		container.NewTabItemWithIcon("Hash Files", theme.ContentAddIcon(), hashTab),
+		container.NewTabItemWithIcon("Storage Size", theme.ViewFullScreenIcon(), sizeTab),
 	)
 	fileTabs.SetTabLocation(container.TabLocationTop)
-	return fileTabs
+	return container.NewBorder(
+		head, nil, nil, nil,
+		fileTabs,
+	)
 }

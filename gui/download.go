@@ -3,6 +3,7 @@ package gui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,14 +69,14 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 	var downloadCancel context.CancelFunc
 
 	// --- Widgets (existing - no changes needed here) ---
-	gameIDLabel := widget.NewLabel("Game ID:")
+	gameIDLabel := widget.NewLabel("Game ID")
 	gameIDEntry := widget.NewEntry()
 	// ... (rest of the input widgets and their layout: row1, row2, row3 are unchanged) ...
-	gameIDEntry.SetPlaceHolder("Enter game ID...")
+	gameIDEntry.SetPlaceHolder("Enter a game ID")
 
-	downloadDirLabel := widget.NewLabel("Download Dir:")
+	downloadDirLabel := widget.NewLabel("Download Path")
 	downloadDirEntry := widget.NewEntry()
-	downloadDirEntry.SetPlaceHolder("Select download directory...")
+	downloadDirEntry.SetPlaceHolder("Enter the the path to store the game files")
 	currentDir, err := os.Getwd()
 	if err == nil {
 		defaultDownloadPath := filepath.Join(currentDir, "games")
@@ -110,20 +111,20 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 		container.NewVBox(downloadDirLabel, container.NewBorder(nil, nil, nil, browseBtn, downloadDirEntry)),
 	)
 
-	langLabel := widget.NewLabel("Language:")
+	langLabel := widget.NewLabel("Language")
 	langOptions := []string{"en", "fr", "de", "es", "it", "ru", "pl", "pt-BR", "zh-Hans", "ja", "ko"}
 	langSelect := widget.NewSelect(langOptions, nil)
 	langSelect.SetSelected("en")
 
-	platformLabel := widget.NewLabel("Platform:")
+	platformLabel := widget.NewLabel("Platform")
 	platformOptions := []string{"all", "windows", "mac", "linux"}
 	platformSelect := widget.NewSelect(platformOptions, nil)
 	platformSelect.SetSelected("windows")
 
-	threadsLabel := widget.NewLabel("Threads:")
+	threadsLabel := widget.NewLabel("Threads")
 	threadsEntry := widget.NewEntry()
-	threadsEntry.SetPlaceHolder("5")
-	threadsEntry.SetText("5")
+	threadsEntry.SetPlaceHolder("1-20 worker threads can be used")
+	threadsEntry.SetText("1") // Default to 1 thread
 
 	row2 := container.NewGridWithColumns(3,
 		container.NewVBox(langLabel, langSelect),
@@ -154,12 +155,12 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 
 	// --- Log Output Area ---
 	logOutput := widget.NewMultiLineEntry()
-	logOutput.SetPlaceHolder("Download log output...")
+	logOutput.SetPlaceHolder("Download logs will appear here")
 	logOutput.Wrapping = fyne.TextWrapWord
 	logOutput.SetMinRowsVisible(10) // Ensure it has a reasonable minimum size
 
 	// --- Clear Log Button ---
-	clearLogBtn := widget.NewButton("Clear Log", func() {
+	clearLogBtn := widget.NewButton("Clear Logs", func() {
 		// This runs directly on the main GUI thread, no runOnMain needed
 		logOutput.SetText("")
 	})
@@ -188,7 +189,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 		gameIDStr := gameIDEntry.Text
 		downloadDir := downloadDirEntry.Text
 		if gameIDStr == "" || downloadDir == "" {
-			dialog.ShowError(fmt.Errorf("game ID and download directory are required"), win)
+			dialog.ShowError(fmt.Errorf("game ID and a download path are required"), win)
 			return
 		}
 		gameID, err := strconv.Atoi(gameIDStr)
@@ -231,13 +232,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 				})
 			}()
 
-			executeDownloadUI(
-				downloadCtx,
-				gameID, downloadDir, lang, platform,
-				extrasFlag, dlcFlag, resumeFlag, flattenFlag,
-				numThreads, win, logOutput,
-				progressWriter,
-			)
+			executeDownloadUI(downloadCtx, gameID, downloadDir, lang, platform, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads, logOutput, progressWriter)
 		}()
 	}
 
@@ -255,16 +250,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 }
 
 // executeDownloadUI function remains the same...
-func executeDownloadUI(
-	ctx context.Context,
-	gameID int,
-	downloadPath, language, platformName string,
-	extrasFlag, dlcFlag, resumeFlag, flattenFlag bool,
-	numThreads int,
-	win fyne.Window,
-	logOutput *widget.Entry,
-	progressWriter io.Writer,
-) {
+func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag bool, numThreads int, logOutput *widget.Entry, progressWriter io.Writer) {
 	// ... (implementation unchanged) ...
 	appendLog(logOutput, fmt.Sprintf("Starting download for game ID %d...", gameID))
 
@@ -326,7 +312,7 @@ func executeDownloadUI(
 		progressWriter,
 	)
 
-	if ctx.Err() == context.Canceled {
+	if errors.Is(ctx.Err(), context.Canceled) {
 		appendLog(logOutput, "<<< Download cancelled.")
 		return
 	}

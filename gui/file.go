@@ -59,9 +59,9 @@ var gameLanguages = map[string]string{
 // hash files for files in the selected directory.
 func HashUI(win fyne.Window) fyne.CanvasObject {
 	// Directory selection.
-	dirLabel := widget.NewLabel("Directory:")
+	dirLabel := widget.NewLabel("Path")
 	dirEntry := widget.NewEntry()
-	dirEntry.SetPlaceHolder("Select directory...") // Placeholder remains useful
+	dirEntry.SetPlaceHolder("The path to the scan")
 
 	// --- Calculate and set default directory ---
 	currentDir, err := os.Getwd()
@@ -105,7 +105,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	dirRow := container.NewBorder(nil, nil, dirLabel, browseBtn, dirEntry)
 
 	// Options: algorithm selection and checkboxes.
-	algoLabel := widget.NewLabel("Algorithm:")
+	algoLabel := widget.NewLabel("Hash Algorithm")
 	// Default changed back to md5 as per the provided code
 	algoSelect := widget.NewSelect(hashAlgorithms, nil)
 	algoSelect.SetSelected("md5")
@@ -114,7 +114,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	recursiveCheck := widget.NewCheck("Recursive", nil)
 	recursiveCheck.SetChecked(true)
 	saveCheck := widget.NewCheck("Save to File", nil)
-	cleanCheck := widget.NewCheck("Clean old hash files", nil)
+	cleanCheck := widget.NewCheck("Remove Old Hash Files", nil)
 	optionsBox := container.NewHBox(recursiveCheck, saveCheck, cleanCheck)
 
 	// "Generate Hashes" button.
@@ -130,12 +130,12 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 
 	// Log output area (single area for all output in this version).
 	logOutput := widget.NewMultiLineEntry()
-	logOutput.SetPlaceHolder("Log output...")
+	logOutput.SetPlaceHolder("Logs and results will appear here")
 	logOutput.Wrapping = fyne.TextWrapWord
 	logOutput.SetMinRowsVisible(8) // Keep a reasonable size
 
 	// --- Add Clear Log Button ---
-	clearLogBtn := widget.NewButton("Clear Log", func() {
+	clearLogBtn := widget.NewButton("Clear Logs", func() {
 		// Action to clear the logOutput text entry
 		logOutput.SetText("")
 	})
@@ -201,11 +201,11 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 	}
 
 	if clean {
-		appendLog(logOutput, fmt.Sprintf("Cleaning old hash files from %s...", dir))
+		appendLog(logOutput, fmt.Sprintf("Cleaning old hash files from '%s'", dir))
 		removeHashFilesUI(dir, recursive, logOutput) // Pass logOutput for cleaning messages
 	}
 
-	appendLog(logOutput, fmt.Sprintf("Starting hash generation (Algo: %s, Recursive: %t, Save: %t)...", algo, recursive, saveToFile))
+	appendLog(logOutput, fmt.Sprintf("Starting hash generation (Algo: %s, Recursive: %t, Save: %t)", algo, recursive, saveToFile))
 
 	exclusionList := []string{
 		".git", ".gitignore", ".DS_Store", "Thumbs.db",
@@ -305,7 +305,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 				countMutex.Lock()
 				processedCount++
 				if processedCount%100 == 0 {
-					appendLog(logOutput, fmt.Sprintf("Processed %d files...", processedCount))
+					appendLog(logOutput, fmt.Sprintf("Processed %d files", processedCount))
 				}
 				countMutex.Unlock()
 			}
@@ -361,7 +361,7 @@ func removeHashFilesUI(dir string, recursive bool, logOutput *widget.Entry) {
 					appendLog(logOutput, fmt.Sprintf("Removed %s", path))
 					removedCount++
 				}
-				break // Move to next file
+				break // Move to the next file after removing one
 			}
 		}
 		return nil
@@ -376,26 +376,33 @@ func removeHashFilesUI(dir string, recursive bool, logOutput *widget.Entry) {
 // SizeUI function remains the same...
 func SizeUI(win fyne.Window) fyne.CanvasObject {
 	gameIDEntry := widget.NewEntry()
-	gameIDEntry.SetPlaceHolder("Enter game ID...")
+	gameIDEntry.SetPlaceHolder("Enter a game ID")
 	gameIDRow := container.NewBorder(
-		widget.NewLabel("Game ID:"), nil, nil, nil, gameIDEntry,
+		widget.NewLabel("Game ID"), nil, nil, nil, gameIDEntry,
 	)
 
-	langLabel := widget.NewLabel("Language:")
+	langLabel := widget.NewLabel("Language")
 	langSelect := widget.NewSelect(
-		[]string{"en", "fr", "de", "es", "it", "ru", "pl", "pt-BR", "zh-Hans", "ja", "ko"},
+		// Use the keys of gameLanguages for the select options
+		func() []string {
+			keys := make([]string, 0, len(gameLanguages))
+			for k := range gameLanguages {
+				keys = append(keys, k)
+			}
+			return keys
+		}(),
 		nil,
 	)
 	langSelect.SetSelected("en")
 
-	platformLabel := widget.NewLabel("Platform:")
+	platformLabel := widget.NewLabel("Platform")
 	platformSelect := widget.NewSelect(
 		[]string{"all", "windows", "mac", "linux"},
 		nil,
 	)
 	platformSelect.SetSelected("windows")
 
-	unitLabel := widget.NewLabel("Unit:")
+	unitLabel := widget.NewLabel("Size Unit")
 	unitSelect := widget.NewSelect(
 		[]string{"mb", "gb"},
 		nil,
@@ -409,6 +416,13 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 
 	estimateBtn := widget.NewButton("Estimate Size", nil)
 	logOutput := widget.NewMultiLineEntry()
+	logOutput.SetPlaceHolder("Logs and results will appear here")
+	logOutput.Wrapping = fyne.TextWrapWord
+	logOutput.SetMinRowsVisible(8)
+
+	clearLogBtn := widget.NewButton("Clear Logs", func() {
+		logOutput.SetText("")
+	})
 
 	top := container.NewVBox(
 		gameIDRow,
@@ -419,7 +433,15 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 		estimateBtn,
 	)
 
-	split := container.NewVSplit(top, logOutput)
+	bottom := container.NewBorder(
+		nil,
+		container.NewHBox(layout.NewSpacer(), clearLogBtn),
+		nil,
+		nil,
+		logOutput,
+	)
+
+	split := container.NewVSplit(top, bottom)
 	split.SetOffset(0.3)
 
 	estimateBtn.OnTapped = func() {

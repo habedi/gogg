@@ -72,7 +72,7 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 	scroll := container.NewScroll(table)
 	copyButton := widget.NewButton("Copy All", func() {
 		win.Clipboard().SetContent(formatTableData(data))
-		dialog.ShowInformation("Copied", "Table data copied successfully.", win)
+		dialog.ShowInformation("Copied", "Game list copied to clipboard successfully.", win)
 	})
 	refreshButton := widget.NewButton("Refresh", func() {
 		newGames, err := db.GetCatalogue()
@@ -104,7 +104,7 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 				games = append(games, *g)
 			}
 		} else {
-			return widget.NewLabel("Error: Invalid game ID. It must be a number.")
+			return widget.NewLabel("Error: Invalid game ID. A game ID must be a number.")
 		}
 	} else {
 		games, err = db.SearchGamesByName(query)
@@ -113,7 +113,7 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 		return widget.NewLabel(fmt.Sprintf("Database Error: %v", err))
 	}
 	if len(games) == 0 {
-		return widget.NewLabel("No game(s) found matching the query.")
+		return widget.NewLabel("No results found matching the search term or game ID.")
 	}
 	data := [][]string{{"Row ID", "Game ID", "Game Title"}}
 	for i, game := range games {
@@ -130,11 +130,11 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 	table.SetColumnWidth(1, 130)
 	table.SetColumnWidth(2, 400)
 	scroll := container.NewScroll(table)
-	copyButton := widget.NewButton("Copy All", func() {
+	copyButton := widget.NewButton("Copy Results", func() {
 		win.Clipboard().SetContent(formatTableData(data))
-		dialog.ShowInformation("Copied", "Table data copied successfully.", win)
+		dialog.ShowInformation("Copied", "Results copied to clipboard successfully.", win)
 	})
-	clearButton := widget.NewButton("Clear", onClear)
+	clearButton := widget.NewButton("Clear Results", onClear)
 	topButtons := container.NewHBox(copyButton, clearButton)
 	return container.NewBorder(topButtons, nil, nil, nil, scroll)
 }
@@ -239,7 +239,7 @@ func RefreshCatalogueUI(win fyne.Window) {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
 		} else {
-			dialog.ShowInformation("Success", "Refreshed the game catalogue successfully.", win)
+			dialog.ShowInformation("Success", "Rebuilt the game catalogue with the latest data from GOG successfully.", win)
 		}
 	}()
 }
