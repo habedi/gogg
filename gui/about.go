@@ -1,8 +1,8 @@
-// gui/about.go
 package gui
 
 import (
 	"fmt"
+	"net/url"
 	"runtime"
 
 	"fyne.io/fyne/v2"
@@ -10,19 +10,46 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+var goggRepo = "https://github.com/habedi/gogg"
+
+// ShowAboutUI displays application metadata: title, version, platform, Go version, and repo link.
 func ShowAboutUI(version string) fyne.CanvasObject {
 	platform := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
 	goVersion := runtime.Version()
-	lbl := widget.NewLabel(fmt.Sprintf(
-		"GOGG: A multiplatform game file downloader for GOG\nVersion: %s, Platform: %s, Go Version: %s",
-		version, platform, goVersion,
-	))
-	lbl.Alignment = fyne.TextAlignCenter
-	lbl.TextStyle = fyne.TextStyle{Bold: true}
 
-	copyright := widget.NewLabel("© 2025 Hassan Abedi")
-	return container.NewVBox(
-		container.NewCenter(lbl),
-		container.NewCenter(copyright),
+	versionLbl := widget.NewLabel(fmt.Sprintf("Version: %s", version))
+	platformLbl := widget.NewLabel(fmt.Sprintf("Platform: %s", platform))
+	goLbl := widget.NewLabel(fmt.Sprintf("Go: %s", goVersion))
+
+	repoURL, _ := url.Parse(goggRepo)
+	repoLink := widget.NewHyperlink("GitHub Repository", repoURL)
+
+	info := container.NewVBox(
+		versionLbl,
+		platformLbl,
+		goLbl,
+		repoLink,
 	)
+
+	author := widget.NewLabel("© 2025 Hassan Abedi")
+
+	// Title and subtitle as styled labels
+	titleLbl := widget.NewLabelWithStyle("GOGG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	subtitleLbl := widget.NewLabelWithStyle("A game file downloader for GOG",
+		fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+
+	card := widget.NewCard(
+		"",
+		"",
+		container.NewVBox(
+			container.NewVBox(
+				titleLbl,
+				subtitleLbl,
+			),
+			info,
+			author,
+		),
+	)
+
+	return container.NewCenter(card)
 }
