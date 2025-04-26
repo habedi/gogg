@@ -1,4 +1,3 @@
-// ui/ui.go
 package gui
 
 import (
@@ -6,19 +5,20 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
-// Run function remains the same...
+// Run initializes and runs the main GUI application.
 func Run(version string) {
 	myApp := app.NewWithID("com.habedi.gogg")
 	myWindow := myApp.NewWindow("Gogg GUI")
 
 	mainTabs := container.NewAppTabs(
-		container.NewTabItem("Catalogue", CatalogueTabUI(myWindow)),
-		container.NewTabItem("Download", DownloadTabUI(myWindow)),
-		container.NewTabItem("File", FileTabUI(myWindow)),
-		container.NewTabItem("About", ShowAboutUI(version)),
+		container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), CatalogueTabUI(myWindow)),
+		container.NewTabItemWithIcon("Download", theme.DownloadIcon(), DownloadTabUI(myWindow)),
+		container.NewTabItemWithIcon("File", theme.DocumentIcon(), FileTabUI(myWindow)),
+		container.NewTabItemWithIcon("About", theme.InfoIcon(), ShowAboutUI(version)),
 	)
 	mainTabs.SetTabLocation(container.TabLocationTop)
 
@@ -27,67 +27,64 @@ func Run(version string) {
 	myWindow.ShowAndRun()
 }
 
-// CatalogueTabUI returns the catalogue UI content as a container with four sub-tabs.
+// CatalogueTabUI builds the Catalogue tab with subtabs and icon buttons.
 func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
-	// Game List tab.
 	listTab := CatalogueListUI(win)
 
-	// --- Search tab ---
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Enter game title or ID to search...")
-	searchByIDCheck := widget.NewCheck("Search by ID", nil)
-	initialResultsLabel := widget.NewLabel("Search results will appear here...") // Store initial label
-	searchScroll := container.NewScroll(initialResultsLabel)                     // Use initial label here
+	searchByID := widget.NewCheck("Search by ID", nil)
+	initialLabel := widget.NewLabel("Search results will appear here...")
+	searchScroll := container.NewScroll(initialLabel)
 
-	// Define the clear action here, so it can be passed to SearchCatalogueUI
 	clearSearch := func() {
-		searchEntry.SetText("")                    // Clear the search entry
-		searchByIDCheck.SetChecked(false)          // Uncheck the ID box
-		searchScroll.Content = initialResultsLabel // Reset scroll content to the initial label
-		searchScroll.Refresh()                     // Refresh the scroll container
+		searchEntry.SetText("")
+		searchByID.SetChecked(false)
+		searchScroll.Content = initialLabel
+		searchScroll.Refresh()
 	}
 
-	searchButton := widget.NewButton("Search", func() {
-		query := searchEntry.Text
-		searchByID := searchByIDCheck.Checked
-		// Don't perform search if query is empty
-		if query == "" {
-			dialog.ShowInformation("Search", "Please enter a search query.", win)
-			return
-		}
-		// *** Call SearchCatalogueUI and pass the clearSearch function ***
-		results := SearchCatalogueUI(win, query, searchByID, clearSearch)
-		searchScroll.Content = results // Update scroll content with results table or error message
-		searchScroll.Refresh()
-	})
+	searchBtn := widget.NewButtonWithIcon(
+		"Search", theme.SearchIcon(), func() {
+			q := searchEntry.Text
+			if q == "" {
+				dialog.ShowInformation("Search", "Please enter a search query.", win)
+				return
+			}
+			results := SearchCatalogueUI(win, q, searchByID.Checked, clearSearch)
+			searchScroll.Content = results
+			searchScroll.Refresh()
+		},
+	)
 
-	// *** REMOVED the Clear button from here ***
-	// *** Grid is back to 3 columns ***
-	searchBar := container.NewGridWithColumns(3, searchEntry, searchByIDCheck, searchButton)
+	searchBar := container.NewGridWithColumns(3, searchEntry, searchByID, searchBtn)
 	searchTab := container.NewBorder(searchBar, nil, nil, nil, searchScroll)
 
-	// --- Refresh tab (remains the same) ---
-	refreshButton := widget.NewButton("Refresh Catalogue", func() {
-		RefreshCatalogueUI(win)
-	})
+	refreshBtn := widget.NewButtonWithIcon(
+		"Refresh Catalogue", theme.ViewRefreshIcon(), func() {
+			RefreshCatalogueUI(win)
+		},
+	)
 	refreshTab := container.NewVBox(
 		widget.NewLabel("Retrieve the latest data and refresh the catalogue:"),
-		refreshButton,
+		refreshBtn,
 	)
 
-	// --- Export tab (remains the same) ---
-	exportJSONButton := widget.NewButton("Export full catalogue", func() {
-		ExportCatalogueUI(win, "json")
-	})
-	exportCSVButton := widget.NewButton("Export game list", func() {
-		ExportCatalogueUI(win, "csv")
-	})
+	exportJSON := widget.NewButtonWithIcon(
+		"Export JSON", theme.ContentAddIcon(), func() {
+			ExportCatalogueUI(win, "json")
+		},
+	)
+	exportCSV := widget.NewButtonWithIcon(
+		"Export CSV", theme.DocumentSaveIcon(), func() {
+			ExportCatalogueUI(win, "csv")
+		},
+	)
 	exportTab := container.NewVBox(
 		widget.NewLabel("Export the full game catalogue or just the game list to a file:"),
-		container.NewHBox(exportJSONButton, exportCSVButton),
+		container.NewHBox(exportJSON, exportCSV),
 	)
 
-	// --- Main Catalogue Tabs (remains the same) ---
 	catalogueTabs := container.NewAppTabs(
 		container.NewTabItem("Search", searchTab),
 		container.NewTabItem("Refresh", refreshTab),
@@ -95,23 +92,22 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 		container.NewTabItem("Export", exportTab),
 	)
 	catalogueTabs.SetTabLocation(container.TabLocationTop)
-	// Set Search tab as default
 	catalogueTabs.SelectIndex(0)
 	return catalogueTabs
 }
 
-// DownloadTabUI function remains the same...
+// DownloadTabUI returns the Download tab with icon.
 func DownloadTabUI(win fyne.Window) fyne.CanvasObject {
 	return DownloadUI(win)
 }
 
-// FileTabUI function remains the same...
+// FileTabUI returns the File tab with icon.
 func FileTabUI(win fyne.Window) fyne.CanvasObject {
 	hashTab := HashUI(win)
 	sizeTab := SizeUI(win)
 	fileTabs := container.NewAppTabs(
-		container.NewTabItem("Hash", hashTab),
-		container.NewTabItem("Size", sizeTab),
+		container.NewTabItemWithIcon("Hash", theme.ContentAddIcon(), hashTab),
+		container.NewTabItemWithIcon("Size", theme.ViewFullScreenIcon(), sizeTab),
 	)
 	fileTabs.SetTabLocation(container.TabLocationTop)
 	return fileTabs
