@@ -18,8 +18,8 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 	goVersion := runtime.Version()
 
 	versionLbl := widget.NewLabel(fmt.Sprintf("Version: %s", version))
-	platformLbl := widget.NewLabel(fmt.Sprintf("Platform: %s", platform))
 	goLbl := widget.NewLabel(fmt.Sprintf("Go Version: %s", goVersion))
+	platformLbl := widget.NewLabel(fmt.Sprintf("Platform: %s", platform))
 
 	repoURL, _ := url.Parse(goggRepo)
 	repoLink := widget.NewHyperlink("Project's GitHub Repository", repoURL)

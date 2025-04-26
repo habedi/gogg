@@ -22,10 +22,14 @@ jobs:
         with:
           go-version: stable
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: latest
+      - name: Install Dependencies
+        run: |
+          make install-deps
+
+      #      - name: golangci-lint
+      #        uses: golangci/golangci-lint-action@v7
+      #        with:
+      #          version: latest
 
       - name: Run Linters
         run: |

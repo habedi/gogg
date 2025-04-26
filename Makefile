@@ -1,11 +1,3 @@
-# Load environment variables from .env file
-ifneq (,$(wildcard ./.env))
-    include .env
-    export $(shell sed 's/=.*//' .env)
-else
-    $(warning .env file not found. Environment variables not loaded.)
-endif
-
 # Variables
 REPO := github.com/habedi/gogg
 BINARY_NAME := $(or $(GOGG_BINARY), $(notdir $(REPO)))
@@ -47,12 +39,16 @@ format: ## Format Go files
 .PHONY: test
 test: format ## Run the tests
 	$(ECHO) "Running non-UI tests..."
-	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/gui') $(COVER_FLAGS) --race
+	@$(GO) test -v $(shell $(GO) list ./... | grep -v './gui') --cover --coverprofile=non_ui_coverage.out --race
 	$(ECHO) "Running UI tests (individually to avoid race conditions)..."
-	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./gui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./gui/... --cover --coverprofile=ui_coverage_1.out --race
+	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_2.out --race
+	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_3.out --race
+	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_4.out --race
+	$(ECHO) "Merging coverage reports..."
+	@echo "mode: set" > $(COVER_PROFILE)
+	@tail -n +2 -q non_ui_coverage.out ui_coverage_*.out >> $(COVER_PROFILE)
+	@rm -f non_ui_coverage.out ui_coverage_*.out
 
 .PHONY: showcov
 showcov: test ## Display test coverage report
