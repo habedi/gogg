@@ -11,8 +11,6 @@ import (
 	"golang.org/x/term"
 )
 
-// loginCmd creates a new cobra.Command for logging into GOG.com.
-// It returns a pointer to the created cobra.Command.
 func loginCmd() *cobra.Command {
 	var gogUsername, gogPassword string
 	var headless bool
@@ -38,14 +36,11 @@ func loginCmd() *cobra.Command {
 		},
 	}
 
-	// Add flags for login options
 	cmd.Flags().BoolVarP(&headless, "headless", "n", true, "Login in headless mode without showing the browser window? [true, false]")
 
 	return cmd
 }
 
-// promptForInput prompts the user for input and returns the trimmed string.
-// It takes a prompt string as an argument.
 func promptForInput(prompt string) string {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print(prompt)
@@ -57,8 +52,6 @@ func promptForInput(prompt string) string {
 	return strings.TrimSpace(input)
 }
 
-// promptForPassword prompts the user for a password securely and returns the trimmed string.
-// It takes a prompt string as an argument.
 func promptForPassword(prompt string) string {
 	fmt.Print(prompt)
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -66,12 +59,10 @@ func promptForPassword(prompt string) string {
 		fmt.Println("Error: Failed to read password.")
 		os.Exit(1)
 	}
-	fmt.Println() // Print a newline for better formatting
+	fmt.Println()
 	return strings.TrimSpace(string(password))
 }
 
-// validateCredentials checks if the username and password are not empty.
-// It takes the username and password strings as arguments and returns a boolean.
 func validateCredentials(username, password string) bool {
 	return username != "" && password != ""
 }

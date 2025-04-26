@@ -3,7 +3,7 @@ package cmd
 import "strings"
 
 // gameLanguages is a map that associates language codes with their native names.
-// The keys are language codes (e.g., "en" for English) and the values are the native names of the languages.
+// The keys are language codes (e.g., "en" for English), and the values are the native names of the languages.
 var gameLanguages = map[string]string{
 	"en":      "English",
 	"fr":      "Français",            // French

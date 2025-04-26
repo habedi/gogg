@@ -19,7 +19,7 @@ max_line_length = 100
 # Markdown files
 [*.md]
 max_line_length = 120
-trim_trailing_whitespace = false # Don't remove trailing whitespace in Markdown files
+trim_trailing_whitespace = false
 
 # Bash scripts
 [*.sh]

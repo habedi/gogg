@@ -1,7 +1,16 @@
-## Variables
+# Load environment variables from .env file
+ifneq (,$(wildcard ./.env))
+    include .env
+    export $(shell sed 's/=.*//' .env)
+else
+    $(warning .env file not found. Environment variables not loaded.)
+endif
+
+# Variables
 REPO := github.com/habedi/gogg
 BINARY_NAME := $(or $(GOGG_BINARY), $(notdir $(REPO)))
 BINARY := bin/$(BINARY_NAME)
+MAKEFILE_LIST = Makefile
 COVER_PROFILE := coverage.txt
 GO_FILES := $(shell find . -type f -name '*.go')
 COVER_FLAGS := --cover --coverprofile=$(COVER_PROFILE)
@@ -37,8 +46,13 @@ format: ## Format Go files
 
 .PHONY: test
 test: format ## Run the tests
-	$(ECHO) "Running tests..."
-	@$(GO) test -v ./... $(COVER_FLAGS) --race
+	$(ECHO) "Running non-UI tests..."
+	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/gui') $(COVER_FLAGS) --race
+	$(ECHO) "Running UI tests (individually to avoid race conditions)..."
+	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./gui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
 
 .PHONY: showcov
 showcov: test ## Display test coverage report
@@ -46,20 +60,24 @@ showcov: test ## Display test coverage report
 	@$(GO) tool cover -func=$(COVER_PROFILE)
 
 .PHONY: build
-build: format ## Build the binary for the current platform
+build: format ## Build the binary for the current platform (Linux and Windows)
 	$(ECHO) "Tidying dependencies..."
 	@$(GO) mod tidy
-	$(ECHO) "Building the project..."
+	$(ECHO) "Building the binary..."
 	@$(GO) build -o $(BINARY)
+	@$(ECHO) "Build complete: $(BINARY)"
 
 .PHONY: build-macos
-build-macos: format ## Build a universal binary for macOS (x86_64 and arm64)
-	$(ECHO) "Building universal binary for macOS..."
+build-macos: format ## Build binary for macOS (v14 and newer; arm64)
+	$(ECHO) "Tidying dependencies..."
+	@$(GO) mod tidy
+	$(ECHO) "Building arm64 binary for macOS..."
 	@mkdir -p bin
-	@GOARCH=amd64 $(GO) build -o bin/$(BINARY_NAME)-x86_64 $(MAIN)
-	@GOARCH=arm64 $(GO) build -o bin/$(BINARY_NAME)-arm64 $(MAIN)
-	@command -v lipo >/dev/null || { $(ECHO) "lipo not found. Please install Xcode command line tools."; exit 1; }
-	@lipo -create -output $(BINARY) bin/$(BINARY_NAME)-x86_64 bin/$(BINARY_NAME)-arm64
+	export CGO_ENABLED=1 ;\
+	export CGO_CFLAGS="$$(pkg-config --cflags glfw3)" ;\
+	export CGO_LDFLAGS="$$(pkg-config --libs glfw3)" ;\
+	GOARCH=arm64 $(GO) build -v -tags desktop,gl -ldflags="-s -w" -o $(BINARY) $(MAIN) ;\
+	echo "Build complete: $(BINARY)"
 
 .PHONY: run
 run: build ## Build and run the binary
@@ -90,6 +108,8 @@ install-snap: ## Install Snap (for Debian-based systems)
 .PHONY: install-deps
 install-deps: ## Install development dependencies (for Debian-based systems)
 	$(ECHO) "Installing dependencies..."
+	@sudo apt-get install -y make libgl1-mesa-dev libx11-dev xorg-dev \
+	libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config
 	@$(MAKE) install-snap
 	@sudo snap install go --classic
 	@sudo snap install golangci-lint --classic

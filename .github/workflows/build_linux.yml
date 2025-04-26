@@ -3,9 +3,15 @@ name: Build for Linux
 on:
   workflow_dispatch: # Allow manual execution
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
 
     steps:
       - name: Checkout Repository
@@ -19,17 +25,21 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y make
+          make install-deps
+
+      - name: Run Tests
+        run: |
           make test
-        continue-on-error: false
 
       - name: Build for Linux
         run: |
           make build
-        continue-on-error: false
 
       - name: List Build Directory (for Debugging)
         run: ls -R bin
+
+      - name: Test CLI API
+        run: bash test_gogg_cli.sh
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4

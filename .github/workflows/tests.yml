@@ -6,6 +6,9 @@ on:
     tags:
       - 'v*' # Trigger on version tags
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,15 +32,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y make
           make install-deps
-        continue-on-error: false
 
       - name: Run Tests and Generate Coverage Report
         run: |
-          make test # Generates a coverage.txt file for Codecov
-        continue-on-error: false
+          make test
 
       - name: Upload Coverage Reports to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-        continue-on-error: false # Set to true to prevent failing the build if Codecov fails
+        continue-on-error: false

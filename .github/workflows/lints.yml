@@ -6,6 +6,9 @@ on:
     tags:
       - 'v*' # Trigger on version tags
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -27,4 +30,3 @@ jobs:
       - name: Run Linters
         run: |
           make lint
-        continue-on-error: false

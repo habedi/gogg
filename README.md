@@ -42,9 +42,9 @@
     </a>
 </div>
 
-## Gogg
+---
 
-Gogg is a minimalistic command-line tool for downloading game files from [GOG.com](https://www.gog.com/).
+Gogg is a minimalistic tool for downloading game files from [GOG.com](https://www.gog.com/).
 It is written in [Go](https://golang.org/) and uses the
 official [GOG API](https://gogapidocs.readthedocs.io/en/latest/index.html).
 
@@ -70,6 +70,8 @@ Additionally, it allows users to perform the following actions:
 - Verify the integrity of downloaded files by calculating their hashes
 - Calculate the total size of the files to be downloaded (for storage planning)
 
+---
+
 ### Getting Started
 
 See the [documentation](docs/README.md) for how to install and use Gogg.
@@ -78,7 +80,12 @@ Run `gogg -h` to see the available commands and options.
 
 #### Examples
 
-**For more detailed examples, see the content of the [examples](docs/examples/) directory.**
+| File                                                                                     | Description                                                         |
+|------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| [calculate_storage_for_all_games.ps1](docs/examples/calculate_storage_for_all_games.ps1) | PowerShell script to calculate storage size for all games user owns |
+| [download_all_games.ps1](docs/examples/download_all_games.ps1)                           | PowerShell script to download all games user owns                   |
+| [download_all_games.sh](docs/examples/download_all_games.sh)                             | Bash script to download all games user owns                         |
+| [simple_example.sh](docs/examples/simple_example.sh)                                     | Simple examples of how to use Gogg from the command line            |
 
 ##### Login to GOG
 
@@ -133,6 +140,12 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
 
 [![asciicast](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI.svg)](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI)
 
+---
+
 ### Contributing
 
 Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for information on how to contribute to Gogg.
+
+### License
+
+Gogg is licensed under the [MIT License](LICENSE).

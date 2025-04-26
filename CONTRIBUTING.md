@@ -1,7 +1,7 @@
 # Contributing to Gogg
 
-Thank you for considering contributing to this project!
-Contributions are always welcome and appreciated.
+Thank you for considering contributing to developing Gogg!
+Your contributions help improve the project and make it more useful for everyone.
 
 ## How to Contribute
 

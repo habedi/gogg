@@ -3,6 +3,9 @@ name: Build for Windows
 on:
   workflow_dispatch: # Allow manual execution
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
@@ -11,24 +14,39 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      # Setup MSYS2 and install ALL required tools (make, gcc, pkg-config, freeglut, AND go)
+      - name: Setup MSYS2 Environment
+        uses: msys2/setup-msys2@v2
         with:
-          go-version: stable
+          msystem: MINGW64
+          update: true
+          install: >-
+            make
+            mingw-w64-x86_64-go
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-freeglut
 
-      - name: Install Dependencies
+      - name: Run Tests
+        shell: msys2 {0}
         run: |
-          choco install make -y
           make test
-        continue-on-error: false
 
       - name: Build for Windows
+        shell: msys2 {0}
         run: |
           make build GOGG_BINARY=gogg.exe
-        continue-on-error: false
 
       - name: List Build Directory (for Debugging)
+        shell: msys2 {0}
         run: ls -R bin
+
+      - name: Test CLI API
+        shell: msys2 {0}
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: bash test_gogg_cli.sh
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4

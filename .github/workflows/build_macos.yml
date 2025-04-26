@@ -3,6 +3,9 @@ name: Build for MacOS
 on:
   workflow_dispatch: # Allow manual execution
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: macos-latest
@@ -19,19 +22,25 @@ jobs:
       - name: Install Dependencies
         run: |
           brew install make
+          brew install pkg-config
+          brew install glfw
+
+      - name: Run Tests
+        run: |
           make test
-        continue-on-error: false
 
       - name: Build for MacOS
         run: |
           make build-macos
-        continue-on-error: false
 
       - name: List Build Directory (for Debugging)
         run: ls -R bin
 
+      - name: Test CLI API
+        run: bash test_gogg_cli.sh
+
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gogg-macos-universal
+          name: gogg-macos-arm64
           path: 'bin/gogg'
