@@ -22,7 +22,8 @@ func TestConfigureLogLevelFromEnv_Disabled(t *testing.T) {
 		os.Setenv("DEBUG_GOGG", tc.envVal)
 		configureLogLevelFromEnv()
 		if zerolog.GlobalLevel() != tc.expectedLvl {
-			t.Errorf("DEBUG_GOGG=%q: expected log level %v, got %v", tc.envVal, tc.expectedLvl, zerolog.GlobalLevel())
+			t.Errorf("DEBUG_GOGG=%q: expected log level %v, got %v",
+				tc.envVal, tc.expectedLvl, zerolog.GlobalLevel())
 		}
 	}
 }
@@ -41,7 +42,8 @@ func TestConfigureLogLevelFromEnv_Debug(t *testing.T) {
 		os.Setenv("DEBUG_GOGG", tc.envVal)
 		configureLogLevelFromEnv()
 		if zerolog.GlobalLevel() != tc.expectedLvl {
-			t.Errorf("DEBUG_GOGG=%q: expected log level %v, got %v", tc.envVal, tc.expectedLvl, zerolog.GlobalLevel())
+			t.Errorf("DEBUG_GOGG=%q: expected log level %v, got %v",
+				tc.envVal, tc.expectedLvl, zerolog.GlobalLevel())
 		}
 	}
 }
@@ -93,7 +95,8 @@ func TestHandleInterrupt(t *testing.T) {
 			t.Errorf("expected exit code 1, got %d", code)
 		}
 		if loggedMessage != "Interrupt signal received. Exiting..." {
-			t.Errorf("expected log message %q, got %q", "Interrupt signal received. Exiting...", loggedMessage)
+			t.Errorf("expected log message %q, got %q",
+				"Interrupt signal received. Exiting...", loggedMessage)
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Error("exit function was not called on interrupt")
