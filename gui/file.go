@@ -447,7 +447,7 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	estimateBtn.OnTapped = func() {
 		logOutput.SetText("")
 		go estimateStorageSizeUI(
-			gameIDEntry.Text,
+			strings.TrimSpace(gameIDEntry.Text),
 			langSelect.Selected,
 			platformSelect.Selected,
 			extrasCheck.Checked,
@@ -463,6 +463,9 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 
 // estimateStorageSizeUI function remains the same...
 func estimateStorageSizeUI(gameID, language, platformName string, extrasFlag, dlcFlag bool, sizeUnit string, win fyne.Window, logOutput *widget.Entry) error {
+	// Remove leading and trailing spaces from gameID
+	gameID = strings.TrimSpace(gameID)
+
 	if gameID == "" {
 		appendLog(logOutput, "Game ID cannot be empty.")
 		return fmt.Errorf("game ID cannot be empty")

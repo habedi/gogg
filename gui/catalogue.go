@@ -93,6 +93,11 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 }
 
 func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear func()) fyne.CanvasObject {
+	// Remove leading and trailing spaces from the query
+	if strings.TrimSpace(query) == "" {
+		return widget.NewLabel("Error: Search term or game ID cannot be empty.")
+	}
+
 	var games []db.Game
 	var err error
 	if searchByID {

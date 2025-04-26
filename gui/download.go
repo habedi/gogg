@@ -71,7 +71,6 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 	// --- Widgets (existing - no changes needed here) ---
 	gameIDLabel := widget.NewLabel("Game ID")
 	gameIDEntry := widget.NewEntry()
-	// ... (rest of the input widgets and their layout: row1, row2, row3 are unchanged) ...
 	gameIDEntry.SetPlaceHolder("Enter a game ID")
 
 	downloadDirLabel := widget.NewLabel("Download Path")
@@ -186,8 +185,8 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 	// --- Button Logic (unchanged) ---
 	downloadBtn.OnTapped = func() {
 		// ... (validation logic unchanged) ...
-		gameIDStr := gameIDEntry.Text
-		downloadDir := downloadDirEntry.Text
+		gameIDStr := strings.TrimSpace(gameIDEntry.Text)
+		downloadDir := strings.TrimSpace(downloadDirEntry.Text)
 		if gameIDStr == "" || downloadDir == "" {
 			dialog.ShowError(fmt.Errorf("game ID and a download path are required"), win)
 			return
