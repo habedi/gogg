@@ -4,7 +4,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "0.5.0-beta"
+var version = "0.4.1-beta"
 
 func versionCmd() *cobra.Command {
 	cmd := &cobra.Command{
