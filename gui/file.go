@@ -24,12 +24,11 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout" // Import layout
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
-	// "github.com/rs/zerolog/log"
 )
 
 // Supported hash algorithms.
@@ -58,55 +57,44 @@ var gameLanguages = map[string]string{
 // choose options (hash algorithm, recursive, save, clean), and then generate
 // hash files for files in the selected directory.
 func HashUI(win fyne.Window) fyne.CanvasObject {
-	// Directory selection.
 	dirLabel := widget.NewLabel("Path")
 	dirEntry := widget.NewEntry()
 	dirEntry.SetPlaceHolder("The path to the scan")
 
-	// --- Calculate and set default directory ---
 	currentDir, err := os.Getwd()
 	if err != nil {
-		// Optional: Log warning if needed
 		log.Warn().Err(err).Msg("Failed to get current working directory for default hash path")
-		// Field will remain empty if CWD fails
 	} else {
-		// Use the same default as the download tab: ./games
 		defaultHashPath := filepath.Join(currentDir, "games")
-		dirEntry.SetText(defaultHashPath) // Set the default text
+		dirEntry.SetText(defaultHashPath)
 	}
-	// -----------------------------------------
 
 	browseBtn := widget.NewButton("Browse", func() {
-		// Pre-populate the folder dialog with the current value if it's a valid dir
-		initialDir := dirEntry.Text // Use the current text in the entry
+		initialDir := dirEntry.Text
 		if _, statErr := os.Stat(initialDir); os.IsNotExist(statErr) {
-			// If dir doesn't exist, maybe start browse from CWD or parent of default
-			initialDir, _ = os.Getwd() // Fallback to CWD if default/current path doesn't exist
+			initialDir, _ = os.Getwd()
 		}
-		dirURI, _ := storage.ParseURI("file://" + initialDir) // Convert path to URI for dialog
-		listableURI, _ := storage.ListerForURI(dirURI)        // Get Lister interface for dialog
-
+		dirURI, _ := storage.ParseURI("file://" + initialDir)
+		listableURI, _ := storage.ListerForURI(dirURI)
 		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil {
 				dialog.ShowError(err, win)
 				return
 			}
 			if uri != nil {
-				dirEntry.SetText(uri.Path()) // Use uri.Path() for file paths
+				dirEntry.SetText(uri.Path())
 			}
 		}, win)
-
 		if listableURI != nil {
-			fd.SetLocation(listableURI) // Set starting location for the dialog
+			fd.SetLocation(listableURI)
 		}
+		fd.Resize(fyne.NewSize(800, 600))
+		fd.SetConfirmText("Select")
 		fd.Show()
 	})
-	// Using NewBorder allows the entry field to expand while keeping the button fixed size.
 	dirRow := container.NewBorder(nil, nil, dirLabel, browseBtn, dirEntry)
 
-	// Options: algorithm selection and checkboxes.
 	algoLabel := widget.NewLabel("Hash Algorithm")
-	// Default changed back to md5 as per the provided code
 	algoSelect := widget.NewSelect(hashAlgorithms, nil)
 	algoSelect.SetSelected("md5")
 	algoBox := container.NewHBox(algoLabel, algoSelect)
@@ -117,10 +105,8 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	cleanCheck := widget.NewCheck("Remove Old Hash Files", nil)
 	optionsBox := container.NewHBox(recursiveCheck, saveCheck, cleanCheck)
 
-	// "Generate Hashes" button.
 	generateBtn := widget.NewButton("Generate Hashes", nil)
 
-	// Arrange the UI elements vertically
 	topContent := container.NewVBox(
 		dirRow,
 		algoBox,
@@ -128,59 +114,44 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		generateBtn,
 	)
 
-	// Log output area (single area for all output in this version).
 	logOutput := widget.NewMultiLineEntry()
 	logOutput.SetPlaceHolder("Logs and results will appear here")
 	logOutput.Wrapping = fyne.TextWrapWord
-	logOutput.SetMinRowsVisible(8) // Keep a reasonable size
+	logOutput.SetMinRowsVisible(8)
 
-	// --- Add Clear Log Button ---
 	clearLogBtn := widget.NewButton("Clear Logs", func() {
-		// Action to clear the logOutput text entry
 		logOutput.SetText("")
 	})
 
-	// --- Combine Log Output and Clear Button ---
-	// Use a Border layout: logOutput fills center, button at the bottom-right.
 	bottomContent := container.NewBorder(
-		nil, // Top
-		container.NewHBox(layout.NewSpacer(), clearLogBtn), // Bottom: Spacer pushes button right
-		nil,       // Left
-		nil,       // Right
-		logOutput, // Center: log output area
+		nil,
+		container.NewHBox(layout.NewSpacer(), clearLogBtn),
+		nil,
+		nil,
+		logOutput,
 	)
 
-	// Use a vertical split: Form controls on top, Log+Clear button below.
-	split := container.NewVSplit(topContent, bottomContent) // Use bottomContent here
-	split.SetOffset(0.35)                                   // Adjust offset as needed
+	split := container.NewVSplit(topContent, bottomContent)
+	split.SetOffset(0.35)
 
-	// --- Generate Button Logic ---
 	generateBtn.OnTapped = func() {
 		dir := dirEntry.Text
 		if dir == "" {
 			dialog.ShowError(fmt.Errorf("please select a directory"), win)
 			return
 		}
-		// Make sure directory exists before proceeding
 		if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
 			dialog.ShowError(fmt.Errorf("selected directory does not exist: %s", dir), win)
 			return
 		}
-
 		algo := algoSelect.Selected
 		recursive := recursiveCheck.Checked
 		saveToFile := saveCheck.Checked
 		clean := cleanCheck.Checked
-
-		// Clear log before starting and disable button
-		runOnMain(func() { logOutput.SetText("") })
+		logOutput.SetText("")
 		generateBtn.Disable()
-
-		// Run hashing in background
 		go func() {
-			// Ensure button is re-enabled when done
-			defer runOnMain(func() { generateBtn.Enable() })
-			// Call the original function that logs everything to logOutput
+			defer generateBtn.Enable()
 			generateHashFilesUI(dir, algo, recursive, saveToFile, clean, win, logOutput)
 		}()
 	}
@@ -287,8 +258,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 				if saveToFile {
 					hashFilePath := path + "." + algo
 					// content := fmt.Sprintf("\"%s\": %s", path, hashVal)
-					content := fmt.Sprintf("%s", hashVal)
-					err = os.WriteFile(hashFilePath, []byte(content), 0o644)
+					err = os.WriteFile(hashFilePath, []byte(hashVal), 0o644)
 					if err != nil {
 						appendLog(logOutput, fmt.Sprintf("Worker %d: Error writing hash to %s: %v", workerID, hashFilePath, err))
 						continue
@@ -446,16 +416,18 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 
 	estimateBtn.OnTapped = func() {
 		logOutput.SetText("")
-		go estimateStorageSizeUI(
-			strings.TrimSpace(gameIDEntry.Text),
-			langSelect.Selected,
-			platformSelect.Selected,
-			extrasCheck.Checked,
-			dlcsCheck.Checked,
-			unitSelect.Selected,
-			win,
-			logOutput,
-		)
+		go func() {
+			_ = estimateStorageSizeUI(
+				strings.TrimSpace(gameIDEntry.Text),
+				langSelect.Selected,
+				platformSelect.Selected,
+				extrasCheck.Checked,
+				dlcsCheck.Checked,
+				unitSelect.Selected,
+				win,
+				logOutput,
+			)
+		}()
 	}
 
 	return split

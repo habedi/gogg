@@ -51,13 +51,13 @@ func TestSearchCatalogueUI(t *testing.T) {
 	t.Cleanup(w.Close)
 
 	// Test search by title.
-	co := gui.SearchCatalogueUI(w, "Test", false)
+	co := gui.SearchCatalogueUI(w, "Test", false, func() {})
 	if co == nil {
 		t.Error("SearchCatalogueUI (by title) returned nil, expected a valid fyne.CanvasObject")
 	}
 
 	// Test search by ID (assuming "1" is valid).
-	co2 := gui.SearchCatalogueUI(w, "1", true)
+	co2 := gui.SearchCatalogueUI(w, "1", true, func() {})
 	if co2 == nil {
 		t.Error("SearchCatalogueUI (by ID) returned nil, expected a valid fyne.CanvasObject")
 	}

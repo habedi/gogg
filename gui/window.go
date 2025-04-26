@@ -47,7 +47,7 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 	searchBtn := widget.NewButtonWithIcon("Search Catalogue", theme.SearchIcon(), func() {
 		q := searchEntry.Text
 		if q == "" {
-			dialog.ShowInformation("Search", "Enter a valid search term or game ID.", win)
+			dialog.ShowInformation("Search", "Enter a valid search term or game ID", win)
 			return
 		}
 		results := SearchCatalogueUI(win, q, searchByID.Checked, clearSearch)

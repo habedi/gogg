@@ -116,7 +116,8 @@ func DownloadGameFiles(
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusMovedPermanently {
+		if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusMovedPermanently ||
+			resp.StatusCode == http.StatusTemporaryRedirect || resp.StatusCode == http.StatusPermanentRedirect {
 			location := resp.Header.Get("Location")
 			if location != "" {
 				log.Info().Msgf("Redirected to: %s", location)
@@ -317,9 +318,11 @@ func DownloadGameFiles(
 			progressbar.OptionSetPredictTime(false), // Predict time might be noisy
 			progressbar.OptionShowCount(),           // Show count might be useful
 		)
-		// Set progress bar to the starting point (resume offset)
+		// Set the progress bar to the starting point (resume offset)
 		if startOffset > 0 {
-			progressBar.Set64(startOffset)
+			if err := progressBar.Set64(startOffset); err != nil {
+				log.Warn().Err(err).Msg("failed to set progress start offset")
+			}
 		}
 
 		// Wrap response body with progress bar reader

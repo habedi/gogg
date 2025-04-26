@@ -41,7 +41,7 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 	games, err := db.GetCatalogue()
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("initial catalogue load failed: %v", err), win)
-		return widget.NewLabel("Error loading catalogue. Try refreshing.")
+		return widget.NewLabel("Error loading catalogue. Try refresh the catalogue and try again")
 	}
 	data := [][]string{{"Row ID", "Game ID", "Game Title"}}
 	for i, game := range games {
@@ -72,7 +72,7 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 	scroll := container.NewScroll(table)
 	copyButton := widget.NewButton("Copy All", func() {
 		win.Clipboard().SetContent(formatTableData(data))
-		dialog.ShowInformation("Copied", "Game list copied to clipboard successfully.", win)
+		dialog.ShowInformation("Copied", "Game list copied to clipboard successfully", win)
 	})
 	refreshButton := widget.NewButton("Refresh", func() {
 		newGames, err := db.GetCatalogue()
@@ -86,7 +86,7 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 			data = append(data, []string{strconv.Itoa(i + 1), strconv.Itoa(game.ID), title})
 		}
 		table.Refresh()
-		dialog.ShowInformation("Refreshed", "Game list updated.", win)
+		dialog.ShowInformation("Refreshed", "Game list updated successfully", win)
 	})
 	topButtons := container.NewHBox(copyButton, refreshButton)
 	return container.NewBorder(topButtons, nil, nil, nil, scroll)
@@ -95,7 +95,7 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear func()) fyne.CanvasObject {
 	// Remove leading and trailing spaces from the query
 	if strings.TrimSpace(query) == "" {
-		return widget.NewLabel("Error: Search term or game ID cannot be empty.")
+		return widget.NewLabel("Error: Search term or game ID cannot be empty")
 	}
 
 	var games []db.Game
@@ -109,7 +109,7 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 				games = append(games, *g)
 			}
 		} else {
-			return widget.NewLabel("Error: Invalid game ID. A game ID must be a number.")
+			return widget.NewLabel("Error: Invalid game ID. A game ID must be a number")
 		}
 	} else {
 		games, err = db.SearchGamesByName(query)
@@ -118,7 +118,7 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 		return widget.NewLabel(fmt.Sprintf("Database Error: %v", err))
 	}
 	if len(games) == 0 {
-		return widget.NewLabel("No results found matching the search term or game ID.")
+		return widget.NewLabel("No results found matching the search term or game ID")
 	}
 	data := [][]string{{"Row ID", "Game ID", "Game Title"}}
 	for i, game := range games {
@@ -137,7 +137,7 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 	scroll := container.NewScroll(table)
 	copyButton := widget.NewButton("Copy Results", func() {
 		win.Clipboard().SetContent(formatTableData(data))
-		dialog.ShowInformation("Copied", "Results copied to clipboard successfully.", win)
+		dialog.ShowInformation("Copied", "Results copied to clipboard successfully", win)
 	})
 	clearButton := widget.NewButton("Clear Results", onClear)
 	topButtons := container.NewHBox(copyButton, clearButton)
@@ -160,7 +160,8 @@ func RefreshCatalogueUI(win fyne.Window) {
 	progress.SetValue(0)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancelButton := widget.NewButton("Cancel", func() { cancel() })
-	content := container.NewVBox(widget.NewLabel("Refreshing game catalogue..."), progress, cancelButton)
+	content := container.NewVBox(widget.NewLabel("Refreshing game catalogue data in progress"),
+		progress, cancelButton)
 	dlg := dialog.NewCustom("Refreshing Catalogue", "OK", content, win)
 	dlg.Show()
 	go func() {
@@ -168,7 +169,7 @@ func RefreshCatalogueUI(win fyne.Window) {
 		if err != nil || token == nil {
 			dlg.Hide()
 			if errors.Is(ctx.Err(), context.Canceled) {
-				dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
+				dialog.ShowInformation("Cancelled", "Refresh the catalogue was cancelled", win)
 			} else {
 				dialog.ShowError(fmt.Errorf("failed to refresh token; did you login"), win)
 			}
@@ -178,7 +179,7 @@ func RefreshCatalogueUI(win fyne.Window) {
 		if err != nil {
 			dlg.Hide()
 			if errors.Is(ctx.Err(), context.Canceled) {
-				dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
+				dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
 			} else {
 				dialog.ShowError(fmt.Errorf("error fetching games: %v", err), win)
 			}
@@ -186,13 +187,13 @@ func RefreshCatalogueUI(win fyne.Window) {
 		}
 		if len(gameIDs) == 0 {
 			dlg.Hide()
-			dialog.ShowInformation("Info", "No games found in the GOG account.", win)
+			dialog.ShowInformation("Info", "No games found in the GOG account", win)
 			return
 		}
 		if err := db.EmptyCatalogue(); err != nil {
 			dlg.Hide()
 			if errors.Is(ctx.Err(), context.Canceled) {
-				dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
+				dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
 			} else {
 				dialog.ShowError(fmt.Errorf("failed to empty catalogue: %v", err), win)
 			}
@@ -242,9 +243,9 @@ func RefreshCatalogueUI(win fyne.Window) {
 		}
 		dlg.Hide()
 		if errors.Is(ctx.Err(), context.Canceled) {
-			dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
+			dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
 		} else {
-			dialog.ShowInformation("Success", "Rebuilt the game catalogue with the latest data from GOG successfully.", win)
+			dialog.ShowInformation("Success", "Rebuilt the game catalogue with the latest data from GOG successfully", win)
 		}
 	}()
 }
@@ -272,7 +273,7 @@ func ExportCatalogueUI(win fyne.Window, exportFormat string) {
 		if e := exportCatalogueToWriter(uc, exportFormat); e != nil {
 			dialog.ShowError(e, win)
 		} else {
-			dialog.ShowInformation("Success", "File exported successfully.", win)
+			dialog.ShowInformation("Success", "File exported successfully", win)
 		}
 	}, win)
 	fileDialog.SetFileName(defaultName)

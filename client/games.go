@@ -82,7 +82,7 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 		log.Error().Err(err).Msg("Failed to send request")
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Error().Msgf("HTTP request failed with status %d", resp.StatusCode)
 		return nil, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
 	}

@@ -44,7 +44,7 @@
 
 ---
 
-Gogg is a minimalistic command-line tool for downloading game files from [GOG.com](https://www.gog.com/).
+Gogg is a minimalistic tool for downloading game files from [GOG.com](https://www.gog.com/).
 It is written in [Go](https://golang.org/) and uses the
 official [GOG API](https://gogapidocs.readthedocs.io/en/latest/index.html).
 

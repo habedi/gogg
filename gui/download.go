@@ -64,6 +64,7 @@ func (w *guiLogWriter) Write(p []byte) (n int, err error) {
 }
 
 // DownloadUI builds a grid-based layout for downloading game files.
+// DownloadUI builds a grid-based layout for downloading game files.
 func DownloadUI(win fyne.Window) fyne.CanvasObject {
 	var downloadCtx context.Context
 	var downloadCancel context.CancelFunc
@@ -102,6 +103,9 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 		if listableURI != nil {
 			fd.SetLocation(listableURI)
 		}
+		// Apply the fix here:
+		fd.Resize(fyne.NewSize(800, 600))
+		fd.SetConfirmText("Select")
 		fd.Show()
 	})
 
@@ -249,18 +253,21 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 }
 
 // executeDownloadUI function remains the same...
-func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag bool, numThreads int, logOutput *widget.Entry, progressWriter io.Writer) {
+func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, platformName string,
+	extrasFlag, dlcFlag, resumeFlag, flattenFlag bool, numThreads int, logOutput *widget.Entry,
+	progressWriter io.Writer,
+) {
 	// ... (implementation unchanged) ...
 	appendLog(logOutput, fmt.Sprintf("Starting download for game ID %d...", gameID))
 
 	if numThreads < 1 || numThreads > 20 {
-		appendLog(logOutput, "Number of threads must be between 1 and 20.")
+		appendLog(logOutput, "Number of threads must be between 1 and 20")
 		return
 	}
 
 	langFull, ok := gameLanguages[language]
 	if !ok {
-		appendLog(logOutput, "Invalid language code.")
+		appendLog(logOutput, "Invalid language code")
 		return
 	}
 	language = langFull
@@ -289,7 +296,7 @@ func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, 
 		return
 	}
 	if game == nil {
-		appendLog(logOutput, fmt.Sprintf("Game with ID %d not found in the local catalogue.", gameID))
+		appendLog(logOutput, fmt.Sprintf("Game with ID %d not found in the local catalogue", gameID))
 		return
 	}
 
@@ -312,7 +319,7 @@ func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, 
 	)
 
 	if errors.Is(ctx.Err(), context.Canceled) {
-		appendLog(logOutput, "<<< Download cancelled.")
+		appendLog(logOutput, "<<< Download cancelled")
 		return
 	}
 

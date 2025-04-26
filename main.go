@@ -14,10 +14,10 @@ func main() {
 	configureLogLevelFromEnv()
 
 	stopChan := setupInterruptListener()
-	go handleInterrupt(stopChan, func(msg string) {
-		log.Fatal().Msg(msg)
-	}, os.Exit)
-
+	go handleInterrupt(stopChan,
+		func(msg string) { log.Fatal().Msg(msg) },
+		os.Exit,
+	)
 	execute()
 }
 
