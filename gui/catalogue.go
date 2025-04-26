@@ -236,7 +236,7 @@ func RefreshCatalogueUI(win fyne.Window) {
 			progress.SetValue(1)
 		}
 		dlg.Hide()
-		if ctx.Err() == context.Canceled {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
 		} else {
 			dialog.ShowInformation("Success", "Refreshed the game catalogue successfully.", win)

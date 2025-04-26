@@ -10,7 +10,7 @@ import (
 )
 
 // Run function remains the same...
-func Run() {
+func Run(version string) {
 	myApp := app.NewWithID("com.habedi.gogg")
 	myWindow := myApp.NewWindow("Gogg GUI")
 
@@ -18,6 +18,7 @@ func Run() {
 		container.NewTabItem("Catalogue", CatalogueTabUI(myWindow)),
 		container.NewTabItem("Download", DownloadTabUI(myWindow)),
 		container.NewTabItem("File", FileTabUI(myWindow)),
+		container.NewTabItem("About", ShowAboutUI(version)),
 	)
 	mainTabs.SetTabLocation(container.TabLocationTop)
 

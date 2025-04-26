@@ -10,7 +10,7 @@ func guiCmd() *cobra.Command {
 		Use:   "gui",
 		Short: "Start the Gogg GUI",
 		Run: func(cmd *cobra.Command, args []string) {
-			gui.Run()
+			gui.Run(version)
 		},
 	}
 	return cmd

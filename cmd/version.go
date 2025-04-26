@@ -5,7 +5,7 @@ import (
 )
 
 // version holds the current version of the Gogg.
-var version = "0.5.0"
+var version = "0.5.0-beta"
 
 // versionCmd creates a new cobra.Command that shows the version of Gogg.
 // It returns a pointer to the created cobra.Command.
