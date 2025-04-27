@@ -35,7 +35,7 @@ jobs:
       - name: Build for Windows
         shell: msys2 {0}
         run: |
-          make build GOGG_BINARY=gogg.exe
+          make release GOGG_BINARY=gogg.exe
 
       - name: List Build Directory (for Debugging)
         shell: msys2 {0}

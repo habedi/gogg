@@ -38,7 +38,7 @@ jobs:
       - name: Build Windows Binary
         shell: msys2 {0}
         run: |
-          make build GOGG_BINARY=gogg.exe
+          make release GOGG_BINARY=gogg.exe
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
@@ -71,7 +71,7 @@ jobs:
 
       - name: Build Linux Binary
         run: |
-          make build
+          make release
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
@@ -100,7 +100,7 @@ jobs:
 
       - name: Build macOS Binary
         run: |
-          make build-macos
+          make release-macos
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4

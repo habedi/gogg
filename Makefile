@@ -9,6 +9,7 @@ COVER_FLAGS := --cover --coverprofile=$(COVER_PROFILE)
 GO ?= go
 MAIN ?= ./main.go
 ECHO := @echo
+RELEASE_FLAGS := -ldflags="-s -w" -trimpath
 
 # Adjust PATH if necessary (append /snap/bin if not present)
 PATH := $(if $(findstring /snap/bin,$(PATH)),$(PATH),/snap/bin:$(PATH))
@@ -122,3 +123,23 @@ lint: format ## Run the linters
 gofumpt: ## Run gofumpt to format Go files
 	$(ECHO) "Running gofumpt for formatting..."
 	@gofumpt -l -w .
+
+.PHONY: release
+release: ## Build the release binary for current platform (Linux and Windows)
+	$(ECHO) "Tidying dependencies..."
+	@$(GO) mod tidy
+	$(ECHO) "Building the release binary..."
+	@$(GO) build $(RELEASE_FLAGS) -o $(BINARY) $(MAIN)
+	@$(ECHO) "Build complete: $(BINARY)"
+
+.PHONY: release-macos
+release-macos: ## Build release binary for macOS (v14 and newer; arm64)
+	$(ECHO) "Tidying dependencies..."
+	@$(GO) mod tidy
+	$(ECHO) "Building arm64 release binary for macOS..."
+	@mkdir -p bin
+	export CGO_ENABLED=1 ;\
+	export CGO_CFLAGS="$$(pkg-config --cflags glfw3)" ;\
+	export CGO_LDFLAGS="$$(pkg-config --libs glfw3)" ;\
+	GOARCH=arm64 $(GO) build $(RELEASE_FLAGS) -o $(BINARY) $(MAIN) ;\
+	echo "Build complete: $(BINARY)"

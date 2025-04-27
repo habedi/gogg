@@ -79,7 +79,7 @@ See the [documentation](docs/README.md) for how to install and use Gogg.
 
 Run `gogg -h` to see the available commands and options.
 
-> [!IMPORTANT]
+> [!NOTE]
 > Since version `0.4.1`, Gogg has a GUI besides its command line interface (CLI).
 > The GUI is still in the early stages of development and does not support all the features of the CLI and may have bugs.
 > Run `gogg gui` to start the GUI.
