@@ -1,4 +1,3 @@
-// ui/catalogue.go
 package gui
 
 import (
@@ -72,7 +71,7 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 	scroll := container.NewScroll(table)
 	copyButton := widget.NewButton("Copy All", func() {
 		win.Clipboard().SetContent(formatTableData(data))
-		dialog.ShowInformation("Copied", "Game list copied to clipboard successfully", win)
+		dialog.ShowInformation("Copied", "Game list copied to clipboard", win)
 	})
 	refreshButton := widget.NewButton("Refresh", func() {
 		newGames, err := db.GetCatalogue()
@@ -86,18 +85,16 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 			data = append(data, []string{strconv.Itoa(i + 1), strconv.Itoa(game.ID), title})
 		}
 		table.Refresh()
-		dialog.ShowInformation("Refreshed", "Game list updated successfully", win)
+		dialog.ShowInformation("Refreshed", "Game list updated", win)
 	})
 	topButtons := container.NewHBox(copyButton, refreshButton)
 	return container.NewBorder(topButtons, nil, nil, nil, scroll)
 }
 
 func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear func()) fyne.CanvasObject {
-	// Remove leading and trailing spaces from the query
 	if strings.TrimSpace(query) == "" {
 		return widget.NewLabel("Error: Search term or game ID cannot be empty")
 	}
-
 	var games []db.Game
 	var err error
 	if searchByID {
@@ -137,7 +134,7 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 	scroll := container.NewScroll(table)
 	copyButton := widget.NewButton("Copy Results", func() {
 		win.Clipboard().SetContent(formatTableData(data))
-		dialog.ShowInformation("Copied", "Results copied to clipboard successfully", win)
+		dialog.ShowInformation("Copied", "Results copied to clipboard", win)
 	})
 	clearButton := widget.NewButton("Clear Results", onClear)
 	topButtons := container.NewHBox(copyButton, clearButton)
@@ -160,43 +157,50 @@ func RefreshCatalogueUI(win fyne.Window) {
 	progress.SetValue(0)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancelButton := widget.NewButton("Cancel", func() { cancel() })
-	content := container.NewVBox(widget.NewLabel("Refreshing game catalogue data in progress"),
-		progress, cancelButton)
+	content := container.NewVBox(widget.NewLabel("Downloading the latest game data"), progress, cancelButton)
 	dlg := dialog.NewCustom("Refreshing Catalogue", "OK", content, win)
 	dlg.Show()
 	go func() {
 		token, err := client.RefreshToken()
 		if err != nil || token == nil {
-			dlg.Hide()
-			if errors.Is(ctx.Err(), context.Canceled) {
-				dialog.ShowInformation("Cancelled", "Refresh the catalogue was cancelled", win)
-			} else {
-				dialog.ShowError(fmt.Errorf("failed to refresh token; did you login"), win)
-			}
+			fyne.Do(func() {
+				dlg.Hide()
+				if errors.Is(ctx.Err(), context.Canceled) {
+					dialog.ShowInformation("Cancelled", "Refresh the catalogue was cancelled", win)
+				} else {
+					dialog.ShowError(fmt.Errorf("failed to refresh token; did you login"), win)
+				}
+			})
 			return
 		}
 		gameIDs, err := client.FetchIdOfOwnedGames(token.AccessToken, "https://embed.gog.com/user/data/games")
 		if err != nil {
-			dlg.Hide()
-			if errors.Is(ctx.Err(), context.Canceled) {
-				dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
-			} else {
-				dialog.ShowError(fmt.Errorf("error fetching games: %v", err), win)
-			}
+			fyne.Do(func() {
+				dlg.Hide()
+				if errors.Is(ctx.Err(), context.Canceled) {
+					dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
+				} else {
+					dialog.ShowError(fmt.Errorf("error fetching games: %v", err), win)
+				}
+			})
 			return
 		}
 		if len(gameIDs) == 0 {
-			dlg.Hide()
-			dialog.ShowInformation("Info", "No games found in the GOG account", win)
+			fyne.Do(func() {
+				dlg.Hide()
+				dialog.ShowInformation("Info", "No games found in the GOG account", win)
+			})
 			return
 		}
 		if err := db.EmptyCatalogue(); err != nil {
-			dlg.Hide()
-			if errors.Is(ctx.Err(), context.Canceled) {
-				dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
-			} else {
-				dialog.ShowError(fmt.Errorf("failed to empty catalogue: %v", err), win)
-			}
+			fyne.Do(func() {
+				dlg.Hide()
+				if errors.Is(ctx.Err(), context.Canceled) {
+					dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
+				} else {
+					dialog.ShowError(fmt.Errorf("failed to empty catalogue: %v", err), win)
+				}
+			})
 			return
 		}
 		total := float64(len(gameIDs))
@@ -221,10 +225,9 @@ func RefreshCatalogueUI(win fyne.Window) {
 							_ = db.PutInGame(id, details.Title, raw)
 						}
 						mu.Lock()
-						if progress != nil {
-							progress.SetValue(progress.Value + (1.0 / total))
-						}
+						v := progress.Value + (1.0 / total)
 						mu.Unlock()
+						fyne.Do(func() { progress.SetValue(v) })
 					}
 				}
 			}()
@@ -238,15 +241,15 @@ func RefreshCatalogueUI(win fyne.Window) {
 		}
 		close(taskChan)
 		wg.Wait()
-		if progress != nil {
+		fyne.Do(func() {
 			progress.SetValue(1)
-		}
-		dlg.Hide()
-		if errors.Is(ctx.Err(), context.Canceled) {
-			dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
-		} else {
-			dialog.ShowInformation("Success", "Rebuilt the game catalogue with the latest data from GOG successfully", win)
-		}
+			dlg.Hide()
+			if errors.Is(ctx.Err(), context.Canceled) {
+				dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled", win)
+			} else {
+				dialog.ShowInformation("Success", "Rebuilt the catalogue with the latest data", win)
+			}
+		})
 	}()
 }
 

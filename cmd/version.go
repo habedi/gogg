@@ -1,13 +1,16 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
 	"runtime"
+
+	"github.com/spf13/cobra"
 )
 
-var version = "0.4.1-beta"
-var goVersion = runtime.Version()
-var platform = runtime.GOOS + "/" + runtime.GOARCH
+var (
+	version   = "0.4.1-beta"
+	goVersion = runtime.Version()
+	platform  = runtime.GOOS + "/" + runtime.GOARCH
+)
 
 func versionCmd() *cobra.Command {
 	cmd := &cobra.Command{
