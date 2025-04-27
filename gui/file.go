@@ -184,7 +184,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 	}
 
 	go func() {
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				appendLog(logOutput, fmt.Sprintf("Access error: %q: %v", path, err))
 				return nil
@@ -273,7 +273,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 
 func removeHashFilesUI(dir string, recursive bool, logOutput *widget.Entry) {
 	removedCount := 0
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			appendLog(logOutput, fmt.Sprintf("Access error during clean: %q: %v", path, err))
 			return nil
@@ -439,13 +439,13 @@ func estimateStorageSizeUI(gameID, language, platformName string, extrasFlag, dl
 		switch {
 		case strings.HasSuffix(s, " gb"):
 			unit = "gb"
-			fmt.Sscanf(s, "%f gb", &val)
+			_, _ = fmt.Sscanf(s, "%f gb", &val)
 		case strings.HasSuffix(s, " mb"):
 			unit = "mb"
-			fmt.Sscanf(s, "%f mb", &val)
+			_, _ = fmt.Sscanf(s, "%f mb", &val)
 		case strings.HasSuffix(s, " kb"):
 			unit = "kb"
-			fmt.Sscanf(s, "%f kb", &val)
+			_, _ = fmt.Sscanf(s, "%f kb", &val)
 		default:
 			bytesVal, err := strconv.ParseInt(s, 10, 64)
 			if err == nil {
