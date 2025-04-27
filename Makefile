@@ -1,11 +1,3 @@
-# Load environment variables from .env file
-ifneq (,$(wildcard ./.env))
-    include .env
-    export $(shell sed 's/=.*//' .env)
-else
-    $(warning .env file not found. Environment variables not loaded.)
-endif
-
 # Variables
 REPO := github.com/habedi/gogg
 BINARY_NAME := $(or $(GOGG_BINARY), $(notdir $(REPO)))
@@ -17,6 +9,7 @@ COVER_FLAGS := --cover --coverprofile=$(COVER_PROFILE)
 GO ?= go
 MAIN ?= ./main.go
 ECHO := @echo
+RELEASE_FLAGS := -ldflags="-s -w" -trimpath
 
 # Adjust PATH if necessary (append /snap/bin if not present)
 PATH := $(if $(findstring /snap/bin,$(PATH)),$(PATH),/snap/bin:$(PATH))
@@ -47,12 +40,16 @@ format: ## Format Go files
 .PHONY: test
 test: format ## Run the tests
 	$(ECHO) "Running non-UI tests..."
-	@$(GO) test -v $(shell $(GO) list ./... | grep -v '/gui') $(COVER_FLAGS) --race
+	@$(GO) test -v $(shell $(GO) list ./... | grep -v './gui') --cover --coverprofile=non_ui_coverage.out --race
 	$(ECHO) "Running UI tests (individually to avoid race conditions)..."
-	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./gui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
-	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./gui/... $(COVER_FLAGS) --race
+	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./gui/... --cover --coverprofile=ui_coverage_1.out --race
+	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_2.out --race
+	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_3.out --race
+	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_4.out --race
+	$(ECHO) "Merging coverage reports..."
+	@echo "mode: set" > $(COVER_PROFILE)
+	@tail -n +2 -q non_ui_coverage.out ui_coverage_*.out >> $(COVER_PROFILE)
+	@rm -f non_ui_coverage.out ui_coverage_*.out
 
 .PHONY: showcov
 showcov: test ## Display test coverage report
@@ -126,3 +123,23 @@ lint: format ## Run the linters
 gofumpt: ## Run gofumpt to format Go files
 	$(ECHO) "Running gofumpt for formatting..."
 	@gofumpt -l -w .
+
+.PHONY: release
+release: ## Build the release binary for current platform (Linux and Windows)
+	$(ECHO) "Tidying dependencies..."
+	@$(GO) mod tidy
+	$(ECHO) "Building the release binary..."
+	@$(GO) build $(RELEASE_FLAGS) -o $(BINARY) $(MAIN)
+	@$(ECHO) "Build complete: $(BINARY)"
+
+.PHONY: release-macos
+release-macos: ## Build release binary for macOS (v14 and newer; arm64)
+	$(ECHO) "Tidying dependencies..."
+	@$(GO) mod tidy
+	$(ECHO) "Building arm64 release binary for macOS..."
+	@mkdir -p bin
+	export CGO_ENABLED=1 ;\
+	export CGO_CFLAGS="$$(pkg-config --cflags glfw3)" ;\
+	export CGO_LDFLAGS="$$(pkg-config --libs glfw3)" ;\
+	GOARCH=arm64 $(GO) build $(RELEASE_FLAGS) -o $(BINARY) $(MAIN) ;\
+	echo "Build complete: $(BINARY)"

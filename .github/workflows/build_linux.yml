@@ -33,7 +33,7 @@ jobs:
 
       - name: Build for Linux
         run: |
-          make build
+          make release
 
       - name: List Build Directory (for Debugging)
         run: ls -R bin

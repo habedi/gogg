@@ -141,6 +141,13 @@ gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --ex
 
 ---
 
+### GUI
+
+Since version `0.4.1`, Gogg has a GUI that provides most of the features of Gogg's CLI.
+The GUI can be started by running `gogg gui` from the command line.
+
+---
+
 ### Debug Mode
 
 To enable debug mode, set the `DEBUG_GOGG` environment variable to `true` or `1` when running Gogg.

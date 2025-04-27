@@ -31,7 +31,10 @@ func Login(loginURL string, username string, password string, headless bool) err
 	}
 
 	// Try headless login first
-	ctx, cancel := createChromeContext(headless)
+	ctx, cancel, err := createChromeContext(headless)
+	if err != nil {
+		return err
+	}
 	defer cancel()
 
 	log.Info().Msg("Trying to login to GOG.com.")
@@ -43,7 +46,11 @@ func Login(loginURL string, username string, password string, headless bool) err
 			log.Warn().Err(err).Msg("Headless login failed, retrying with window mode.")
 			fmt.Println("Headless login failed, retrying with window mode.")
 			// Retry with window mode if headless login fails
-			ctx, cancel = createChromeContext(false)
+
+			ctx, cancel, err = createChromeContext(false)
+			if err != nil {
+				return fmt.Errorf("failed to create Chrome context: %w", err)
+			}
 			defer cancel()
 
 			finalURL, err = performLogin(ctx, loginURL, username, password, false)
@@ -159,35 +166,28 @@ func isTokenValid(token *db.Token) (bool, error) {
 
 // createChromeContext creates a new ChromeDP context with the specified option to run Chrome in headless mode or not.
 // It returns the ChromeDP context and a cancel function to release resources.
-func createChromeContext(headless bool) (context.Context, context.CancelFunc) {
-	// Check if Google Chrome or Chromium is available in the path
+func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
 	var execPath string
-	if path, err := exec.LookPath("google-chrome"); err == nil {
-		execPath = path
-	} else if path, err := exec.LookPath("chromium"); err == nil {
-		execPath = path
-	} else if path, err := exec.LookPath("chrome"); err == nil {
-		execPath = path
+	if p, err := exec.LookPath("google-chrome"); err == nil {
+		execPath = p
+	} else if p, err := exec.LookPath("chromium"); err == nil {
+		execPath = p
+	} else if p, err := exec.LookPath("chrome"); err == nil {
+		execPath = p
 	} else {
-		log.Error().Msg("Neither Google Chrome nor Chromium is available in the path. Please install one of them.")
-		return nil, nil
+		return nil, nil, fmt.Errorf("no Chrome or Chromium executable found in PATH")
 	}
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(execPath),
 	)
-	if !headless {
-		opts = append(opts, chromedp.Flag("headless", false), chromedp.Flag("disable-gpu", false),
-			chromedp.Flag("start-maximized", true))
-	}
-
 	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancelContext := chromedp.NewContext(allocatorCtx, chromedp.WithLogf(log.Info().Msgf))
 
 	return ctx, func() {
 		cancelContext()
 		cancelAllocator()
-	}
+	}, nil
 }
 
 // performLogin performs the login process using the provided username and password and returns the final URL after successful login.

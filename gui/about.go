@@ -18,16 +18,16 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 	goVersion := runtime.Version()
 
 	versionLbl := widget.NewLabel(fmt.Sprintf("Version: %s", version))
+	goLbl := widget.NewLabel(fmt.Sprintf("Go version: %s", goVersion))
 	platformLbl := widget.NewLabel(fmt.Sprintf("Platform: %s", platform))
-	goLbl := widget.NewLabel(fmt.Sprintf("Go Version: %s", goVersion))
 
 	repoURL, _ := url.Parse(goggRepo)
 	repoLink := widget.NewHyperlink("Project's GitHub Repository", repoURL)
 
 	info := container.NewVBox(
 		versionLbl,
-		platformLbl,
 		goLbl,
+		platformLbl,
 		repoLink,
 	)
 
@@ -35,7 +35,7 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 
 	// Title and subtitle as styled labels
 	titleLbl := widget.NewLabelWithStyle("Gogg", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	subtitleLbl := widget.NewLabelWithStyle("A Game File Downloader for GOG",
+	subtitleLbl := widget.NewLabelWithStyle("A game file downloader for GOG",
 		fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
 	card := widget.NewCard(

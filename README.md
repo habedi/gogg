@@ -57,6 +57,7 @@ Main features of Gogg:
 
 - It can be used to fully automate the download process with a few simple commands.
 - It can run anywhere (Windows, macOS, or Linux) that a Go compiler is available.
+- It has a graphical user interface (GUI) that lets users search and download games they own on GOG.
 
 Additionally, it allows users to perform the following actions:
 
@@ -77,6 +78,12 @@ Additionally, it allows users to perform the following actions:
 See the [documentation](docs/README.md) for how to install and use Gogg.
 
 Run `gogg -h` to see the available commands and options.
+
+> [!NOTE]
+> Since version `0.4.1`, Gogg has a GUI besides its command line interface (CLI).
+> The GUI is still in the early stages of development and does not support all the features of the CLI and may have
+> bugs.
+> To start the GUI, run `gogg gui`.
 
 #### Examples
 
@@ -136,7 +143,7 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
  --extras=false --unit=GB
 ```
 
-### Demo
+### CLI Demo
 
 [![asciicast](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI.svg)](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI)
 
