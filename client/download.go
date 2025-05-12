@@ -434,7 +434,7 @@ func DownloadGameFiles(
 						continue
 					}
 					if strings.Contains(*file.ManualURL, "en1patch") {
-						log.Info().Msgf("Skipping patch in game %s, platform %s, file name %s", game.Title, platformFiles.subDir, *file.ManualURL)
+						fmt.Fprintf(progressWriter, "Skipping patch in game %s, platform %s, file name %s\n", game.Title, platformFiles.subDir, *file.ManualURL)
 						continue
 					}
 					url := fmt.Sprintf("https://embed.gog.com%s", *file.ManualURL)
