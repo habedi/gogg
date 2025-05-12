@@ -17,7 +17,7 @@ import (
 
 func downloadCmd() *cobra.Command {
 	var language, platformName string
-	var extrasFlag, dlcFlag, resumeFlag, flattenFlag bool
+	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool
 	var numThreads int
 
 	cmd := &cobra.Command{
@@ -32,7 +32,7 @@ func downloadCmd() *cobra.Command {
 				return
 			}
 			downloadDir := args[1]
-			executeDownload(gameID, downloadDir, strings.ToLower(language), platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads)
+			executeDownload(gameID, downloadDir, strings.ToLower(language), platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 		},
 	}
 
@@ -43,11 +43,12 @@ func downloadCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&resumeFlag, "resume", "r", true, "Resume downloading? [true, false]")
 	cmd.Flags().IntVarP(&numThreads, "threads", "t", 5, "Number of worker threads to use for downloading [1-20]")
 	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", true, "Flatten the directory structure when downloading? [true, false]")
+	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", false, "Skip patches when downloading? [true, false]")
 
 	return cmd
 }
 
-func executeDownload(gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag bool, numThreads int) {
+func executeDownload(gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
@@ -108,12 +109,12 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 		return
 	}
 
-	logDownloadParameters(parsedGameData, gameID, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads)
+	logDownloadParameters(parsedGameData, gameID, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
 	ctx := context.Background()
 	progressWriter := io.Writer(os.Stderr)
 
-	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads, progressWriter)
+	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
 	if err != nil {
 		if err == context.Canceled || err == context.DeadlineExceeded {
 			log.Warn().Err(err).Msg("Download operation cancelled or timed out.")
@@ -128,12 +129,13 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title)))
 }
 
-func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag bool, numThreads int) {
+func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	fmt.Println("================================= Download Parameters =====================================")
 	fmt.Printf("Downloading \"%v\" (with game ID=\"%d\") to \"%v\"\n", game.Title, gameID, downloadPath)
 	fmt.Printf("Platform: \"%v\", Language: '%v'\n", platformName, language)
 	fmt.Printf("Include Extras: %v, Include DLCs: %v, Resume enabled: %v\n", extrasFlag, dlcFlag, resumeFlag)
 	fmt.Printf("Number of worker threads for download: %d\n", numThreads)
 	fmt.Printf("Flatten directory structure: %v\n", flattenFlag)
+	fmt.Printf("Skip patches: %v\n", skipPatchesFlag)
 	fmt.Println("============================================================================================")
 }

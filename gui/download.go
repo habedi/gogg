@@ -133,8 +133,10 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 	resumeCheck.SetChecked(true)
 	flattenCheck := widget.NewCheck("Flatten Structure", nil)
 	flattenCheck.SetChecked(true)
+	skipPatchesCheck := widget.NewCheck("Skip Patches", nil)
+	skipPatchesCheck.SetChecked(false)
 
-	row3 := container.NewHBox(extrasCheck, dlcCheck, resumeCheck, flattenCheck)
+	row3 := container.NewHBox(extrasCheck, dlcCheck, resumeCheck, flattenCheck, skipPatchesCheck)
 
 	downloadBtn := widget.NewButton("Download Game", nil)
 	cancelBtn := widget.NewButton("Cancel Download", nil)
@@ -189,6 +191,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 		dlcFlag := dlcCheck.Checked
 		resumeFlag := resumeCheck.Checked
 		flattenFlag := flattenCheck.Checked
+		skipPatchesFlag := skipPatchesCheck.Checked
 
 		fyne.Do(func() {
 			logOutput.SetText("")
@@ -213,7 +216,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 				})
 			}()
 
-			executeDownloadUI(downloadCtx, gameID, downloadDir, lang, platform, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads, logOutput, progressWriter)
+			executeDownloadUI(downloadCtx, gameID, downloadDir, lang, platform, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, logOutput, progressWriter)
 		}()
 	}
 
@@ -231,7 +234,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 }
 
 func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, platformName string,
-	extrasFlag, dlcFlag, resumeFlag, flattenFlag bool, numThreads int, logOutput *widget.Entry,
+	extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int, logOutput *widget.Entry,
 	progressWriter io.Writer,
 ) {
 	appendLog(logOutput, fmt.Sprintf("Starting download for game ID %d...", gameID))
@@ -290,7 +293,7 @@ func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, 
 	err = client.DownloadGameFiles(
 		ctx,
 		token.AccessToken, parsedGameData, downloadPath, language, platformName,
-		extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads,
+		extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads,
 		progressWriter,
 	)
 

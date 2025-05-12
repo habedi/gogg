@@ -130,6 +130,7 @@ The `download` command supports the following additional options:
 - `--resume`: Resume interrupted downloads (default is true)
 - `--threads`: Number of worker threads to use for downloading (default is 5)
 - `--flatten`: Flatten the directory structure of the downloaded files (default is true)
+- `--skip-patches`: Skip patches when downloading (default is false)
 
 For example, to download all files (English language) of a game with the ID `<game_id>` to the directory
 `<download_dir>` with the specified options:
