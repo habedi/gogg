@@ -79,7 +79,7 @@ func DownloadGameFiles(
 	ctx context.Context, // Add context parameter
 	accessToken string, game Game, downloadPath string,
 	gameLanguage string, platformName string, extrasFlag bool, dlcFlag bool, resumeFlag bool,
-	flattenFlag bool, numThreads int,
+	flattenFlag bool, skipPatchesFlag bool, numThreads int,
 	progressWriter io.Writer, // Add writer parameter
 ) error {
 	client := &http.Client{} // Standard client for most requests
@@ -431,6 +431,10 @@ func DownloadGameFiles(
 				for _, file := range platformFiles.files {
 					if file.ManualURL == nil || *file.ManualURL == "" {
 						log.Warn().Msgf("Skipping file with nil or empty ManualURL in game %s, platform %s", game.Title, platformFiles.subDir)
+						continue
+					}
+					if strings.Contains(*file.ManualURL, "en1patch") {
+						fmt.Fprintf(progressWriter, "Skipping patch in game %s, platform %s, file name %s\n", game.Title, platformFiles.subDir, *file.ManualURL)
 						continue
 					}
 					url := fmt.Sprintf("https://embed.gog.com%s", *file.ManualURL)
