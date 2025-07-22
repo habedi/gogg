@@ -5,7 +5,7 @@ BINARY := bin/$(BINARY_NAME)
 COVER_PROFILE := coverage.txt
 GO_FILES := $(shell find . -type f -name '*.go')
 COVER_FLAGS := --cover --coverprofile=$(COVER_PROFILE)
-EXTRA_TMP_FILES := $(shell find . -type f -name 'gogg_catalogue_*.csv')
+EXTRA_TMP_FILES := $(shell find . -type f -name 'gogg_catalogue_*.csv' -o -name '*_output.txt')
 GO ?= go
 MAIN ?= ./main.go
 ECHO := @echo
