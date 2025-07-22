@@ -26,7 +26,7 @@ func Run(version string, authService *auth.Service) {
 		container.NewTabItemWithIcon("Game Catalogue", theme.ListIcon(), CatalogueTabUI(myWindow, authService)),
 		container.NewTabItemWithIcon("Download Game", theme.DownloadIcon(), DownloadTabUI(myWindow, authService)),
 		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
-		container.NewTabItemWithIcon("Settings", theme.SettingsIcon(), SettingsTabUI()),
+		container.NewTabItemWithIcon("Settings", theme.SettingsIcon(), SettingsTabUI(myWindow)),
 		container.NewTabItemWithIcon("About", theme.InfoIcon(), ShowAboutUI(version)),
 	)
 	mainTabs.SetTabLocation(container.TabLocationTop)

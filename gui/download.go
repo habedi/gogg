@@ -310,6 +310,7 @@ func executeDownloadUI(ctx context.Context, authService *auth.Service, gameID in
 
 	targetPath := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
 	appendLog(logOutput, fmt.Sprintf("<<< Game files downloaded successfully to: \"%s\"", targetPath))
+	go PlayNotificationSound()
 }
 
 func logDownloadParametersUI(
