@@ -12,14 +12,14 @@
     <a href="https://github.com/habedi/gogg/actions/workflows/lints.yml">
         <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/lints.yml?label=linters&style=flat&labelColor=555555&logo=github" alt="Linters">
     </a>
-    <a href="https://github.com/habedi/gogg/actions/workflows/build_linux.yml">
-        <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_linux.yml?label=linux%20build&style=flat&labelColor=555555&logo=linux" alt="Linux Build">
+    <a href="https://github.com/habedi/gogg/actions/workflows/release.yml">
+        <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/release.yml?label=linux%20build&style=flat&labelColor=555555&logo=linux" alt="Linux Build">
     </a>
-    <a href="https://github.com/habedi/gogg/actions/workflows/build_windows.yml">
-        <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_windows.yml?label=windows%20build&style=flat&labelColor=555555&logo=github" alt="Windows Build">
+    <a href="https://github.com/habedi/gogg/actions/workflows/release.yml">
+        <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/release.yml?label=windows%20build&style=flat&labelColor=555555&logo=github" alt="Windows Build">
     </a>
-    <a href="https://github.com/habedi/gogg/actions/workflows/build_macos.yml">
-        <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/build_macos.yml?label=macos%20build&style=flat&labelColor=555555&logo=apple" alt="MacOS Build">
+    <a href="https://github.com/habedi/gogg/actions/workflows/release.yml">
+        <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/release.yml?label=macos%20build&style=flat&labelColor=555555&logo=apple" alt="MacOS Build">
     </a>
     <br>
     <a href="docs">
