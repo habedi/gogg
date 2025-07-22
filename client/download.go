@@ -149,13 +149,13 @@ func DownloadGameFiles(
 		var startOffset int64
 
 		if task.resume {
-			if fileInfo, err := os.Stat(filePath); err == nil {
+			if fileInfo, statErr := os.Stat(filePath); statErr == nil {
 				startOffset = fileInfo.Size()
 				file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0o644)
-			} else if os.IsNotExist(err) {
+			} else if os.IsNotExist(statErr) {
 				file, err = os.Create(filePath)
 			} else {
-				return err
+				return statErr
 			}
 		} else {
 			file, err = os.Create(filePath)
@@ -386,7 +386,6 @@ func enqueueExtras(ctx context.Context, tasks chan<- downloadTask, extras []Extr
 func enqueueDLCs(ctx context.Context, tasks chan<- downloadTask, game *Game, lang, platform string, extras, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
 	for _, dlc := range game.DLCs {
 		dlcSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title))
-		// Create a synthetic Game object for the DLC to reuse enqueueGameFiles
 		dlcGame := Game{Downloads: dlc.ParsedDownloads}
 		if err := enqueueGameFiles(ctx, tasks, dlcGame, lang, platform, resume, flatten, skipPatches, progressWriter); err != nil {
 			return err

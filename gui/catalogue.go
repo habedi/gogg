@@ -32,7 +32,7 @@ func NewCopyableLabel(win fyne.Window) *CopyableLabel {
 }
 
 func (cl *CopyableLabel) Tapped(_ *fyne.PointEvent) {
-	cl.win.Clipboard().SetContent(cl.Text)
+	fyne.CurrentApp().Clipboard().SetContent(cl.Text)
 }
 
 func (cl *CopyableLabel) TappedSecondary(_ *fyne.PointEvent) {}
@@ -71,7 +71,7 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 	table.SetColumnWidth(2, 400)
 	scroll := container.NewScroll(table)
 	copyButton := widget.NewButton("Copy All", func() {
-		win.Clipboard().SetContent(formatTableData(data))
+		fyne.CurrentApp().Clipboard().SetContent(formatTableData(data))
 		dialog.ShowInformation("Copied", "Game list copied to clipboard", win)
 	})
 	refreshButton := widget.NewButton("Refresh", func() {
@@ -134,7 +134,7 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 	table.SetColumnWidth(2, 400)
 	scroll := container.NewScroll(table)
 	copyButton := widget.NewButton("Copy Results", func() {
-		win.Clipboard().SetContent(formatTableData(data))
+		fyne.CurrentApp().Clipboard().SetContent(formatTableData(data))
 		dialog.ShowInformation("Copied", "Results copied to clipboard", win)
 	})
 	clearButton := widget.NewButton("Clear Results", onClear)

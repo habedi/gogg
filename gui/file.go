@@ -7,6 +7,7 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -378,7 +379,7 @@ func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag
 			fullMsg = fmt.Sprintf("%s: %v", msg, err)
 		}
 		appendLog(logOutput, fullMsg)
-		return fmt.Errorf(fullMsg)
+		return errors.New(fullMsg)
 	}
 
 	if gameID == "" {
