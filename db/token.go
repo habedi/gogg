@@ -16,6 +16,17 @@ type Token struct {
 	ExpiresAt    string `json:"expires_at,omitempty"`
 }
 
+// TokenStore is a concrete implementation of the auth.TokenStorer interface using GORM.
+type TokenStore struct{}
+
+func (ts *TokenStore) GetTokenRecord() (*Token, error) {
+	return GetTokenRecord()
+}
+
+func (ts *TokenStore) UpsertTokenRecord(token *Token) error {
+	return UpsertTokenRecord(token)
+}
+
 func GetTokenRecord() (*Token, error) {
 	if Db == nil {
 		return nil, fmt.Errorf("database connection is not initialized")

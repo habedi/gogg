@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func downloadCmd() *cobra.Command {
+func downloadCmd(authService *auth.Service) *cobra.Command {
 	var language, platformName string
 	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool
 	var numThreads int
@@ -33,7 +33,7 @@ func downloadCmd() *cobra.Command {
 				return
 			}
 			downloadDir := args[1]
-			executeDownload(gameID, downloadDir, strings.ToLower(language), platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
+			executeDownload(authService, gameID, downloadDir, strings.ToLower(language), platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 		},
 	}
 
@@ -49,7 +49,7 @@ func downloadCmd() *cobra.Command {
 	return cmd
 }
 
-func executeDownload(gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
+func executeDownload(authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
@@ -67,7 +67,7 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 		language = gameLanguages[language]
 	}
 
-	user, err := auth.RefreshToken()
+	user, err := authService.RefreshToken()
 	if err != nil {
 		fmt.Println("Failed to find or refresh the access token. Did you login?")
 		return

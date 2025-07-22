@@ -3,15 +3,32 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/db"
 	"github.com/spf13/cobra"
 )
+
+type mockTokenStorer struct {
+	getTokenErr error
+}
+
+func (m *mockTokenStorer) GetTokenRecord() (*db.Token, error) {
+	return nil, m.getTokenErr
+}
+func (m *mockTokenStorer) UpsertTokenRecord(token *db.Token) error { return nil }
+
+type mockTokenRefresher struct{}
+
+func (m *mockTokenRefresher) PerformTokenRefresh(refreshToken string) (string, string, int64, error) {
+	return "", "", 0, nil
+}
 
 func initTestDB(t *testing.T) {
 	t.Helper()
@@ -179,7 +196,11 @@ func TestExportCmd(t *testing.T) {
 
 func TestRefreshCmd(t *testing.T) {
 	initTestDB(t)
-	refreshCommand := refreshCmd()
+	storer := &mockTokenStorer{getTokenErr: errors.New("mock db error")}
+	refresher := &mockTokenRefresher{}
+	authService := auth.NewService(storer, refresher)
+
+	refreshCommand := refreshCmd(authService)
 	output, err := captureCombinedOutput(refreshCommand)
 	if err != nil {
 		t.Errorf("refresh command execution error: %v", err)

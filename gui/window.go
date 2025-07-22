@@ -7,16 +7,16 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/habedi/gogg/auth"
 )
 
-// Run initializes and runs the main GUI application.
-func Run(version string) {
+func Run(version string, authService *auth.Service) {
 	myApp := app.NewWithID("com.habedi.gogg")
 	myWindow := myApp.NewWindow("GOGG GUI")
 
 	mainTabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("Game Catalogue", theme.ListIcon(), CatalogueTabUI(myWindow)),
-		container.NewTabItemWithIcon("Download Game", theme.DownloadIcon(), DownloadTabUI(myWindow)),
+		container.NewTabItemWithIcon("Game Catalogue", theme.ListIcon(), CatalogueTabUI(myWindow, authService)),
+		container.NewTabItemWithIcon("Download Game", theme.DownloadIcon(), DownloadTabUI(myWindow, authService)),
 		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
 		container.NewTabItemWithIcon("About", theme.InfoIcon(), ShowAboutUI(version)),
 	)
@@ -27,8 +27,7 @@ func Run(version string) {
 	myWindow.ShowAndRun()
 }
 
-// CatalogueTabUI builds the Catalogue tab with subtabs and icon buttons.
-func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
+func CatalogueTabUI(win fyne.Window, authService *auth.Service) fyne.CanvasObject {
 	listTab := CatalogueListUI(win)
 
 	searchEntry := widget.NewEntry()
@@ -64,7 +63,7 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 	searchTab := container.NewBorder(searchBar, nil, nil, nil, searchScroll)
 
 	refreshBtn := widget.NewButtonWithIcon("Refresh Catalogue", theme.ViewRefreshIcon(), func() {
-		RefreshCatalogueUI(win)
+		RefreshCatalogueUI(win, authService)
 	})
 	refreshBtn.Importance = widget.MediumImportance
 
@@ -97,10 +96,9 @@ func CatalogueTabUI(win fyne.Window) fyne.CanvasObject {
 	return catalogueTabs
 }
 
-// DownloadTabUI returns the Download tab with a header and expanding content.
-func DownloadTabUI(win fyne.Window) fyne.CanvasObject {
+func DownloadTabUI(win fyne.Window, authService *auth.Service) fyne.CanvasObject {
 	head := widget.NewLabelWithStyle("Download Game Files", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	down := DownloadUI(win)
+	down := DownloadUI(win, authService)
 	return container.NewBorder(
 		container.NewVBox(head, widget.NewSeparator()),
 		nil, nil, nil,
@@ -108,7 +106,6 @@ func DownloadTabUI(win fyne.Window) fyne.CanvasObject {
 	)
 }
 
-// FileTabUI returns the File tab with header and expanding tabs.
 func FileTabUI(win fyne.Window) fyne.CanvasObject {
 	head := widget.NewLabelWithStyle("File Operations", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	hashTab := HashUI(win)

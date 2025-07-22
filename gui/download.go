@@ -60,7 +60,7 @@ func (w *guiLogWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func DownloadUI(win fyne.Window) fyne.CanvasObject {
+func DownloadUI(win fyne.Window, authService *auth.Service) fyne.CanvasObject {
 	var downloadCtx context.Context
 	var downloadCancel context.CancelFunc
 
@@ -217,7 +217,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 				})
 			}()
 
-			executeDownloadUI(downloadCtx, gameID, downloadDir, lang, platform, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, logOutput, progressWriter)
+			executeDownloadUI(downloadCtx, authService, gameID, downloadDir, lang, platform, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, logOutput, progressWriter)
 		}()
 	}
 
@@ -234,7 +234,7 @@ func DownloadUI(win fyne.Window) fyne.CanvasObject {
 	return split
 }
 
-func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, platformName string,
+func executeDownloadUI(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string,
 	extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int, logOutput *widget.Entry,
 	progressWriter io.Writer,
 ) {
@@ -252,7 +252,7 @@ func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, 
 	}
 	language = langFull
 
-	token, err := auth.RefreshToken()
+	token, err := authService.RefreshToken()
 	if err != nil {
 		appendLog(logOutput, fmt.Sprintf("Failed to refresh token. Did you login? Error: %v", err))
 		return

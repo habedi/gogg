@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func catalogueCmd() *cobra.Command {
+func catalogueCmd(authService *auth.Service) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "catalogue",
 		Short: "Manage the game catalogue",
@@ -29,7 +29,7 @@ func catalogueCmd() *cobra.Command {
 		listCmd(),
 		searchCmd(),
 		infoCmd(),
-		refreshCmd(),
+		refreshCmd(authService),
 		exportCmd(),
 	)
 	return cmd
@@ -125,14 +125,14 @@ func showGameInfo(cmd *cobra.Command, gameID int) {
 	cmd.Println(string(nestedDataPretty))
 }
 
-func refreshCmd() *cobra.Command {
+func refreshCmd(authService *auth.Service) *cobra.Command {
 	var numThreads int
 	cmd := &cobra.Command{
 		Use:   "refresh",
 		Short: "Update the catalogue with the latest data from GOG",
 		Long:  "Update the game catalogue with the latest data for the games owned by the user on GOG",
 		Run: func(cmd *cobra.Command, args []string) {
-			refreshCatalogue(cmd, numThreads)
+			refreshCatalogue(cmd, authService, numThreads)
 		},
 	}
 	cmd.Flags().IntVarP(&numThreads, "threads", "t", 10,
@@ -140,13 +140,13 @@ func refreshCmd() *cobra.Command {
 	return cmd
 }
 
-func refreshCatalogue(cmd *cobra.Command, numThreads int) {
+func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads int) {
 	log.Info().Msg("Refreshing the game catalogue...")
 	if numThreads < 1 || numThreads > 20 {
 		cmd.PrintErrln("Error: Number of threads should be between 1 and 20.")
 		return
 	}
-	token, err := auth.RefreshToken()
+	token, err := authService.RefreshToken()
 	if err != nil || token == nil {
 		cmd.PrintErrln("Error: Failed to refresh the access token. Did you login?")
 		return

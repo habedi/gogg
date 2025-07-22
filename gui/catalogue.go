@@ -151,7 +151,7 @@ func formatTableData(data [][]string) string {
 	return sb.String()
 }
 
-func RefreshCatalogueUI(win fyne.Window) {
+func RefreshCatalogueUI(win fyne.Window, authService *auth.Service) {
 	progress := widget.NewProgressBar()
 	progress.Min = 0
 	progress.Max = 1
@@ -162,7 +162,7 @@ func RefreshCatalogueUI(win fyne.Window) {
 	dlg := dialog.NewCustom("Refreshing Catalogue", "OK", content, win)
 	dlg.Show()
 	go func() {
-		token, err := auth.RefreshToken()
+		token, err := authService.RefreshToken()
 		if err != nil || token == nil {
 			fyne.Do(func() {
 				dlg.Hide()

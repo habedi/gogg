@@ -3,16 +3,26 @@ package cmd
 import (
 	"os"
 
+	"github.com/habedi/gogg/auth"
+	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
 func Execute() {
-	rootCmd := createRootCmd()
 	initializeDatabase()
 	defer closeDatabase()
 
+	// Instantiate concrete implementations of our interfaces.
+	tokenStore := &db.TokenStore{}
+	gogClient := &client.GogClient{}
+
+	// Create the auth service, injecting the dependencies.
+	authService := auth.NewService(tokenStore, gogClient)
+
+	// Pass the service to the root command constructor.
+	rootCmd := createRootCmd(authService)
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show help for a command")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -21,19 +31,20 @@ func Execute() {
 	}
 }
 
-func createRootCmd() *cobra.Command {
+func createRootCmd(authService *auth.Service) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "gogg",
 		Short: "A Downloader for GOG",
 	}
 
+	// Pass the auth service down to the commands that need it.
 	rootCmd.AddCommand(
-		catalogueCmd(),
-		downloadCmd(),
+		catalogueCmd(authService),
+		downloadCmd(authService),
 		versionCmd(),
 		loginCmd(),
 		fileCmd(),
-		guiCmd(),
+		guiCmd(authService),
 	)
 
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
