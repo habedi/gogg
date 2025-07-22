@@ -33,6 +33,12 @@ func NewCopyableLabel(win fyne.Window) *CopyableLabel {
 
 func (cl *CopyableLabel) Tapped(_ *fyne.PointEvent) {
 	fyne.CurrentApp().Clipboard().SetContent(cl.Text)
+
+	if _, err := strconv.Atoi(cl.Text); err == nil {
+		if len(cl.Text) > 4 { // Assume IDs are longer than typical row numbers
+			fyne.CurrentApp().SendNotification(fyne.NewNotification("Copied", fmt.Sprintf("Game ID %s copied to clipboard", cl.Text)))
+		}
+	}
 }
 
 func (cl *CopyableLabel) TappedSecondary(_ *fyne.PointEvent) {}
@@ -89,7 +95,9 @@ func CatalogueListUI(win fyne.Window) fyne.CanvasObject {
 		dialog.ShowInformation("Refreshed", "Game list updated", win)
 	})
 	topButtons := container.NewHBox(copyButton, refreshButton)
-	return container.NewBorder(topButtons, nil, nil, nil, scroll)
+	hintLabel := widget.NewLabelWithStyle("Hint: Left-click a Game ID to copy it to the clipboard.", fyne.TextAlignCenter, fyne.TextStyle{})
+
+	return container.NewBorder(container.NewVBox(topButtons, hintLabel), nil, nil, nil, scroll)
 }
 
 func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear func()) fyne.CanvasObject {
@@ -139,7 +147,9 @@ func SearchCatalogueUI(win fyne.Window, query string, searchByID bool, onClear f
 	})
 	clearButton := widget.NewButton("Clear Results", onClear)
 	topButtons := container.NewHBox(copyButton, clearButton)
-	return container.NewBorder(topButtons, nil, nil, nil, scroll)
+	hintLabel := widget.NewLabelWithStyle("Hint: Left-click a Game ID to copy it to the clipboard.", fyne.TextAlignCenter, fyne.TextStyle{})
+
+	return container.NewBorder(container.NewVBox(topButtons, hintLabel), nil, nil, nil, scroll)
 }
 
 func formatTableData(data [][]string) string {
