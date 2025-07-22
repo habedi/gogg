@@ -15,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
+	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 )
@@ -161,7 +162,7 @@ func RefreshCatalogueUI(win fyne.Window) {
 	dlg := dialog.NewCustom("Refreshing Catalogue", "OK", content, win)
 	dlg.Show()
 	go func() {
-		token, err := client.RefreshToken()
+		token, err := auth.RefreshToken()
 		if err != nil || token == nil {
 			fyne.Do(func() {
 				dlg.Hide()

@@ -1,0 +1,48 @@
+digraph package_dependency_graph {
+    rankdir=LR;
+    splines=ortho;
+    node [shape=box, style="rounded,filled", fontname="Arial"];
+
+    subgraph cluster_app {
+    label="Gogg Application";
+    style=filled;
+    color="#eeeeee";
+    fontsize=12;
+
+    // UI/Driver Layer
+        main [fillcolor="#a7c7e7"]; // light blue
+        cmd [fillcolor="#a7c7e7"];
+    gui [fillcolor="#a7c7e7"];
+
+    // Service Layer
+        auth [fillcolor="#d4edda"]; // light green
+
+    // Adapter Layer
+        client [fillcolor="#f8d7da"]; // light pink
+        db [fillcolor="#fff3cd"]; // light yellow
+    }
+
+    subgraph cluster_external {
+    label="External Systems";
+    style=filled;
+    color="#eeeeee";
+    fontsize=12;
+    gog_api [label="GOG API", shape=cylinder, fillcolor=whitesmoke];
+    db_file [label="Database File", shape=cylinder, fillcolor=whitesmoke];
+    }
+
+    // -- Dependencies --
+
+    // UI Layer
+    main -> cmd;
+    cmd -> {gui; auth; client; db;}
+    gui -> {auth; client; db;}
+
+    // Service Layer
+    auth -> client;
+    auth -> db;
+
+    // Adapters to External
+    client -> gog_api;
+    db -> db_file;
+}

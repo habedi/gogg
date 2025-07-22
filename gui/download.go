@@ -17,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
+	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 )
@@ -251,7 +252,7 @@ func executeDownloadUI(ctx context.Context, gameID int, downloadPath, language, 
 	}
 	language = langFull
 
-	token, err := client.RefreshToken()
+	token, err := auth.RefreshToken()
 	if err != nil {
 		appendLog(logOutput, fmt.Sprintf("Failed to refresh token. Did you login? Error: %v", err))
 		return

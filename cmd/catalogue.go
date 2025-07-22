@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/olekukonko/tablewriter"
@@ -145,7 +146,7 @@ func refreshCatalogue(cmd *cobra.Command, numThreads int) {
 		cmd.PrintErrln("Error: Number of threads should be between 1 and 20.")
 		return
 	}
-	token, err := client.RefreshToken()
+	token, err := auth.RefreshToken()
 	if err != nil || token == nil {
 		cmd.PrintErrln("Error: Failed to refresh the access token. Did you login?")
 		return

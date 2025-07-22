@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
@@ -66,7 +67,8 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 		language = gameLanguages[language]
 	}
 
-	if _, err := client.RefreshToken(); err != nil {
+	user, err := auth.RefreshToken()
+	if err != nil {
 		fmt.Println("Failed to find or refresh the access token. Did you login?")
 		return
 	}
@@ -94,18 +96,6 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to parse game details.")
 		fmt.Println("Error parsing game data from local catalogue.")
-		return
-	}
-
-	user, err := db.GetTokenRecord()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to retrieve user token from the database.")
-		fmt.Println("Error retrieving user token. Please try logging in again.")
-		return
-	}
-	if user == nil {
-		log.Error().Msg("User token record is nil.")
-		fmt.Println("User token not found. Please try logging in again.")
 		return
 	}
 
