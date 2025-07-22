@@ -12,12 +12,21 @@ import (
 
 func Run(version string, authService *auth.Service) {
 	myApp := app.NewWithID("com.habedi.gogg")
+
+	themePref := myApp.Preferences().StringWithFallback("theme", "light")
+	if themePref == "dark" {
+		myApp.Settings().SetTheme(NewCustomDarkTheme())
+	} else {
+		myApp.Settings().SetTheme(theme.LightTheme())
+	}
+
 	myWindow := myApp.NewWindow("GOGG GUI")
 
 	mainTabs := container.NewAppTabs(
 		container.NewTabItemWithIcon("Game Catalogue", theme.ListIcon(), CatalogueTabUI(myWindow, authService)),
 		container.NewTabItemWithIcon("Download Game", theme.DownloadIcon(), DownloadTabUI(myWindow, authService)),
 		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
+		container.NewTabItemWithIcon("Settings", theme.SettingsIcon(), SettingsTabUI()),
 		container.NewTabItemWithIcon("About", theme.InfoIcon(), ShowAboutUI(version)),
 	)
 	mainTabs.SetTabLocation(container.TabLocationTop)
