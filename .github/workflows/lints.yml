@@ -1,10 +1,10 @@
 name: Run Linters
 
 on:
-  workflow_dispatch: # Allow manual execution
-  push:
-    tags:
-      - 'v*' # Trigger on version tags
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - "main"
 
 permissions:
   contents: read
@@ -25,11 +25,6 @@ jobs:
       - name: Install Dependencies
         run: |
           make install-deps
-
-      #      - name: golangci-lint
-      #        uses: golangci/golangci-lint-action@v7
-      #        with:
-      #          version: latest
 
       - name: Run Linters
         run: |
