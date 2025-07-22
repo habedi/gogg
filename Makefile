@@ -2,7 +2,6 @@
 REPO := github.com/habedi/gogg
 BINARY_NAME := $(or $(GOGG_BINARY), $(notdir $(REPO)))
 BINARY := bin/$(BINARY_NAME)
-MAKEFILE_LIST = Makefile
 COVER_PROFILE := coverage.txt
 GO_FILES := $(shell find . -type f -name '*.go')
 COVER_FLAGS := --cover --coverprofile=$(COVER_PROFILE)
@@ -27,10 +26,12 @@ SHELL := /bin/bash
 # Default target
 .DEFAULT_GOAL := help
 
-.PHONY: help
-help: ## Show the help message for each target
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; \
-	  {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+help: ## Show this help message
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Targets:"
+	@grep -E '^[a-zA-Z_-]+:.*## .*$$' Makefile | \
+	awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: format
 format: ## Format Go files
@@ -143,3 +144,17 @@ release-macos: ## Build release binary for macOS (v14 and newer; arm64)
 	export CGO_LDFLAGS="$$(pkg-config --libs glfw3)" ;\
 	GOARCH=arm64 $(GO) build $(RELEASE_FLAGS) -o $(BINARY) $(MAIN) ;\
 	echo "Build complete: $(BINARY)"
+
+.PHONY: setup-hooks
+setup-hooks: ## Set up pre-commit hooks
+	@echo "Setting up pre-commit hooks..."
+	@if ! command -v pre-commit &> /dev/null; then \
+	   echo "pre-commit not found. Please install it using 'pip install pre-commit'"; \
+	   exit 1; \
+	fi
+	@pre-commit install --install-hooks
+
+.PHONY: test-hooks
+test-hooks: ## Test pre-commit hooks on all files
+	@echo "Testing pre-commit hooks..."
+	@pre-commit run --all-files

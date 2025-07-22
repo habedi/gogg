@@ -1,0 +1,33 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [ '--maxkb=600' ]
+
+  - repo: local
+    hooks:
+      - id: format
+        name: Format the code
+        entry: make format
+        language: system
+        pass_filenames: false
+        types: [ go ]
+
+      - id: lint
+        name: Check code style
+        entry: make lint
+        language: system
+        pass_filenames: false
+        types: [ go ]
+
+      - id: test
+        name: Run tests
+        entry: make test
+        language: system
+        pass_filenames: false
+        stages: [ pre-push ]
