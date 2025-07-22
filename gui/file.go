@@ -27,27 +27,13 @@ import (
 	"github.com/habedi/gogg/db"
 )
 
-// Supported hash algorithms.
 var hashAlgorithms = []string{"md5", "sha1", "sha256", "sha512"}
 
-// gameLanguages maps supported language codes to their full names.
 var gameLanguages = map[string]string{
-	"en":      "English",
-	"fr":      "French",
-	"de":      "German",
-	"es":      "Spanish",
-	"it":      "Italian",
-	"ru":      "Russian",
-	"pl":      "Polish",
-	"pt-BR":   "Portuguese (Brazil)",
-	"zh-Hans": "Simplified Chinese",
-	"ja":      "Japanese",
-	"ko":      "Korean",
+	"en": "English", "fr": "French", "de": "German", "es": "Spanish", "it": "Italian",
+	"ru": "Russian", "pl": "Polish", "pt-BR": "Portuguese (Brazil)", "zh-Hans": "Simplified Chinese",
+	"ja": "Japanese", "ko": "Korean",
 }
-
-// ------------------------
-// Hash File UI Components
-// ------------------------
 
 func HashUI(win fyne.Window) fyne.CanvasObject {
 	dirLabel := widget.NewLabel("Path")
@@ -300,7 +286,6 @@ func removeHashFilesUI(dir string, recursive bool, logOutput *widget.Entry) {
 	appendLog(logOutput, fmt.Sprintf("Finished cleaning old hash files in %s. Removed %d file(s).", dir, removedCount))
 }
 
-// SizeUI function remains unchanged.
 func SizeUI(win fyne.Window) fyne.CanvasObject {
 	gameIDEntry := widget.NewEntry()
 	gameIDEntry.SetPlaceHolder("Enter a game ID")
@@ -386,178 +371,54 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	return split
 }
 
-// estimateStorageSizeUI remains unchanged.
-func estimateStorageSizeUI(gameID, language, platformName string, extrasFlag, dlcFlag bool, sizeUnit string, win fyne.Window, logOutput *widget.Entry) error {
-	gameID = strings.TrimSpace(gameID)
+func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag, dlcFlag bool, sizeUnit string, win fyne.Window, logOutput *widget.Entry) error {
+	handleError := func(msg string, err error) error {
+		fullMsg := msg
+		if err != nil {
+			fullMsg = fmt.Sprintf("%s: %v", msg, err)
+		}
+		appendLog(logOutput, fullMsg)
+		return fmt.Errorf(fullMsg)
+	}
+
 	if gameID == "" {
-		appendLog(logOutput, "Game ID cannot be empty.")
-		return fmt.Errorf("game ID cannot be empty")
+		return handleError("Game ID cannot be empty.", nil)
 	}
 
 	sizeUnit = strings.ToLower(sizeUnit)
 	if sizeUnit != "mb" && sizeUnit != "gb" {
-		appendLog(logOutput, fmt.Sprintf("Invalid size unit: \"%s\". Use mb or gb.", sizeUnit))
-		return fmt.Errorf("invalid size unit")
+		return handleError(fmt.Sprintf("Invalid size unit: \"%s\". Use mb or gb.", sizeUnit), nil)
 	}
 
-	langFull, ok := gameLanguages[language]
+	langFullName, ok := gameLanguages[languageCode]
 	if !ok {
-		appendLog(logOutput, "Invalid language code. Supported languages are:")
-		for code, name := range gameLanguages {
-			appendLog(logOutput, fmt.Sprintf("'%s' for %s", code, name))
-		}
-		return fmt.Errorf("invalid language code")
+		return handleError("Invalid language code.", nil)
 	}
-	language = langFull
 
 	gameIDInt, err := strconv.Atoi(gameID)
 	if err != nil {
-		appendLog(logOutput, fmt.Sprintf("Invalid game ID: %s", gameID))
-		return err
+		return handleError("Invalid game ID.", err)
 	}
 
 	game, err := db.GetGameByID(gameIDInt)
 	if err != nil {
-		appendLog(logOutput, fmt.Sprintf("Failed to retrieve game data for ID %d: %v", gameIDInt, err))
-		return err
+		return handleError("Failed to retrieve game data from DB", err)
 	}
 	if game == nil {
-		appendLog(logOutput, fmt.Sprintf("Game with ID %d not found.", gameIDInt))
-		return fmt.Errorf("game not found")
+		return handleError(fmt.Sprintf("Game with ID %d not found.", gameIDInt), nil)
 	}
 
 	var nestedData client.Game
 	if err := json.Unmarshal([]byte(game.Data), &nestedData); err != nil {
-		appendLog(logOutput, fmt.Sprintf("Failed to unmarshal game data for ID %d: %v", gameIDInt, err))
-		return err
+		return handleError("Failed to unmarshal game data", err)
 	}
 
-	parseSize := func(sizeStr string) (float64, error) {
-		s := strings.TrimSpace(strings.ToLower(sizeStr))
-		var val float64
-		var unit string
-		switch {
-		case strings.HasSuffix(s, " gb"):
-			unit = "gb"
-			_, _ = fmt.Sscanf(s, "%f gb", &val)
-		case strings.HasSuffix(s, " mb"):
-			unit = "mb"
-			_, _ = fmt.Sscanf(s, "%f mb", &val)
-		case strings.HasSuffix(s, " kb"):
-			unit = "kb"
-			_, _ = fmt.Sscanf(s, "%f kb", &val)
-		default:
-			bytesVal, err := strconv.ParseInt(s, 10, 64)
-			if err == nil {
-				return float64(bytesVal) / (1024 * 1024), nil
-			}
-			return 0, fmt.Errorf("unknown or missing size unit in '%s'", sizeStr)
-		}
-		switch unit {
-		case "gb":
-			return val * 1024, nil
-		case "mb":
-			return val, nil
-		case "kb":
-			return val / 1024, nil
-		}
-		return 0, nil
-	}
-
-	totalSizeMB := 0.0
 	appendLog(logOutput, fmt.Sprintf("Estimating size for Game: %s (ID: %d)", nestedData.Title, gameIDInt))
-	appendLog(logOutput, fmt.Sprintf("Params: Lang=%s, Platform=%s, Extras=%t, DLCs=%t", language, platformName, extrasFlag, dlcFlag))
+	appendLog(logOutput, fmt.Sprintf("Params: Lang=%s, Platform=%s, Extras=%t, DLCs=%t", langFullName, platformName, extrasFlag, dlcFlag))
 
-	for _, download := range nestedData.Downloads {
-		if !strings.EqualFold(download.Language, language) {
-			continue
-		}
-		for _, pf := range []struct {
-			files []client.PlatformFile
-			name  string
-		}{
-			{download.Platforms.Windows, "windows"},
-			{download.Platforms.Mac, "mac"},
-			{download.Platforms.Linux, "linux"},
-		} {
-			if platformName != "all" && !strings.EqualFold(platformName, pf.name) {
-				continue
-			}
-			for _, file := range pf.files {
-				fileName := file.Name
-				if file.ManualURL != nil && *file.ManualURL != "" {
-					fileName = *file.ManualURL
-				}
-				size, err := parseSize(file.Size)
-				if err != nil {
-					appendLog(logOutput, fmt.Sprintf("WARN: Failed to parse size for %s (%s): %v", fileName, file.Size, err))
-				} else {
-					appendLog(logOutput, fmt.Sprintf("  Game File: %s (%s)", fileName, file.Size))
-					totalSizeMB += size
-				}
-			}
-		}
-	}
-
-	if extrasFlag {
-		appendLog(logOutput, " Including Extras:")
-		for _, extra := range nestedData.Extras {
-			size, err := parseSize(extra.Size)
-			if err != nil {
-				appendLog(logOutput, fmt.Sprintf("WARN: Failed to parse extra size for %s (%s): %v", extra.Name, extra.Size, err))
-			} else {
-				appendLog(logOutput, fmt.Sprintf("  Extra: %s (%s)", extra.Name, extra.Size))
-				totalSizeMB += size
-			}
-		}
-	}
-
-	if dlcFlag {
-		appendLog(logOutput, " Including DLCs:")
-		for _, dlc := range nestedData.DLCs {
-			appendLog(logOutput, fmt.Sprintf("  DLC: %s", dlc.Title))
-			for _, download := range dlc.ParsedDownloads {
-				if !strings.EqualFold(download.Language, language) {
-					continue
-				}
-				for _, pf := range []struct {
-					files []client.PlatformFile
-					name  string
-				}{
-					{download.Platforms.Windows, "windows"},
-					{download.Platforms.Mac, "mac"},
-					{download.Platforms.Linux, "linux"},
-				} {
-					if platformName != "all" && !strings.EqualFold(platformName, pf.name) {
-						continue
-					}
-					for _, file := range pf.files {
-						fileName := file.Name
-						if file.ManualURL != nil && *file.ManualURL != "" {
-							fileName = *file.ManualURL
-						}
-						size, err := parseSize(file.Size)
-						if err != nil {
-							appendLog(logOutput, fmt.Sprintf("WARN: Failed to parse DLC file size for %s (%s): %v", fileName, file.Size, err))
-						} else {
-							appendLog(logOutput, fmt.Sprintf("    DLC File: %s (%s)", fileName, file.Size))
-							totalSizeMB += size
-						}
-					}
-				}
-			}
-			if extrasFlag {
-				for _, extra := range dlc.Extras {
-					size, err := parseSize(extra.Size)
-					if err != nil {
-						appendLog(logOutput, fmt.Sprintf("WARN: Failed to parse DLC extra size for %s (%s): %v", extra.Name, extra.Size, err))
-					} else {
-						appendLog(logOutput, fmt.Sprintf("    DLC Extra: %s (%s)", extra.Name, extra.Size))
-						totalSizeMB += size
-					}
-				}
-			}
-		}
+	totalSizeMB, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
+	if err != nil {
+		return handleError("Failed to calculate storage size", err)
 	}
 
 	appendLog(logOutput, "--- Estimation Complete ---")
@@ -570,7 +431,6 @@ func estimateStorageSizeUI(gameID, language, platformName string, extrasFlag, dl
 	return nil
 }
 
-// isValidHashAlgo checks supported algorithms.
 func isValidHashAlgo(algo string) bool {
 	for _, a := range hashAlgorithms {
 		if strings.ToLower(algo) == a {
@@ -580,7 +440,6 @@ func isValidHashAlgo(algo string) bool {
 	return false
 }
 
-// generateHash returns the hex‐encoded hash of the file.
 func generateHash(path, algo string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {

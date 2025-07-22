@@ -215,151 +215,46 @@ func sizeCmd() *cobra.Command {
 func estimateStorageSize(gameID, language, platformName string, extrasFlag, dlcFlag bool, sizeUnit string) error {
 	sizeUnit = strings.ToLower(sizeUnit)
 	if sizeUnit != "mb" && sizeUnit != "gb" {
-		fmt.Printf("Invalid size unit: \"%s\". Unit must be mb or gb\n", sizeUnit)
-		return fmt.Errorf("invalid size unit")
+		return fmt.Errorf("invalid size unit: \"%s\". Unit must be mb or gb", sizeUnit)
 	}
-	if !isValidLanguage(language) {
-		fmt.Println("Invalid language code. Supported languages are:")
-		for langCode, langName := range gameLanguages {
-			fmt.Printf("'%s' for %s\n", langCode, langName)
-		}
+
+	langFullName, ok := gameLanguages[language]
+	if !ok {
 		return fmt.Errorf("invalid language code")
-	} else {
-		language = gameLanguages[language]
 	}
+
 	gameIDInt, err := strconv.Atoi(gameID)
 	if err != nil {
-		log.Error().Msgf("Invalid game ID: %s", gameID)
-		return err
+		return fmt.Errorf("invalid game ID: %s", gameID)
 	}
+
 	game, err := db.GetGameByID(gameIDInt)
 	if err != nil {
-		log.Error().Msgf("Failed to retrieve game data for ID %d: %v", gameIDInt, err)
-		return err
+		return fmt.Errorf("failed to retrieve game data for ID %d: %w", gameIDInt, err)
 	}
 	if game == nil {
-		log.Error().Msgf("Game not found for ID %d", gameIDInt)
-		fmt.Printf("Game with ID %d not found in the catalogue.\n", gameIDInt)
-		return err
+		return fmt.Errorf("game with ID %d not found in the catalogue", gameIDInt)
 	}
+
 	var nestedData client.Game
 	if err := json.Unmarshal([]byte(game.Data), &nestedData); err != nil {
-		log.Error().Msgf("Failed to unmarshal game data for ID %d: %v", gameIDInt, err)
-		return err
+		return fmt.Errorf("failed to unmarshal game data for ID %d: %w", gameIDInt, err)
 	}
-	var totalSizeMB float64
-	parseSize := func(sizeStr string) (float64, error) {
-		sizeStr = strings.TrimSpace(strings.ToLower(sizeStr))
-		if strings.HasSuffix(sizeStr, " gb") {
-			sizeStr = strings.TrimSuffix(sizeStr, " gb")
-			size, err := strconv.ParseFloat(sizeStr, 64)
-			if err != nil {
-				return 0, err
-			}
-			return size * 1024, nil
-		} else if strings.HasSuffix(sizeStr, " mb") {
-			sizeStr = strings.TrimSuffix(sizeStr, " mb")
-			return strconv.ParseFloat(sizeStr, 64)
-		}
-		return 0, fmt.Errorf("unknown size unit")
-	}
-	for _, download := range nestedData.Downloads {
-		if !strings.EqualFold(download.Language, language) {
-			log.Info().Msgf("Skipping language %s", download.Language)
-			continue
-		}
-		for _, platformFiles := range []struct {
-			files  []client.PlatformFile
-			subDir string
-		}{
-			{files: download.Platforms.Windows, subDir: "windows"},
-			{files: download.Platforms.Mac, subDir: "mac"},
-			{files: download.Platforms.Linux, subDir: "linux"},
-		} {
-			if platformName != "all" && platformName != platformFiles.subDir {
-				log.Info().Msgf("Skipping platform %s", platformFiles.subDir)
-				continue
-			}
-			for _, file := range platformFiles.files {
-				size, err := parseSize(file.Size)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to parse file size")
-					return err
-				}
-				if size > 0 {
-					log.Info().Msgf("File: %s, Size: %s", *file.ManualURL, file.Size)
-					totalSizeMB += size
-				}
-			}
-		}
-	}
-	if extrasFlag {
-		for _, extra := range nestedData.Extras {
-			size, err := parseSize(extra.Size)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to parse extra size")
-				return err
-			}
-			if size > 0 {
-				log.Info().Msgf("Extra: %v, Size: %s", extra.ManualURL, extra.Size)
-				totalSizeMB += size
-			}
-		}
-	}
-	if dlcFlag {
-		for _, dlc := range nestedData.DLCs {
-			for _, download := range dlc.ParsedDownloads {
-				if !strings.EqualFold(download.Language, language) {
-					log.Info().Msgf("DLC %s: Skipping language %s", dlc.Title, download.Language)
-					continue
-				}
-				for _, platformFiles := range []struct {
-					files  []client.PlatformFile
-					subDir string
-				}{
-					{files: download.Platforms.Windows, subDir: "windows"},
-					{files: download.Platforms.Mac, subDir: "mac"},
-					{files: download.Platforms.Linux, subDir: "linux"},
-				} {
-					if platformName != "all" && platformName != platformFiles.subDir {
-						log.Info().Msgf("DLC %s: Skipping platform %s", dlc.Title, platformFiles.subDir)
-						continue
-					}
-					for _, file := range platformFiles.files {
-						size, err := parseSize(file.Size)
-						if err != nil {
-							log.Error().Err(err).Msg("Failed to parse file size")
-							return err
-						}
-						if size > 0 {
-							log.Info().Msgf("DLC File: %s, Size: %s", *file.ManualURL, file.Size)
-							totalSizeMB += size
-						}
-					}
-				}
-			}
-			if extrasFlag {
-				for _, extra := range dlc.Extras {
-					size, err := parseSize(extra.Size)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to parse extra size")
-						return err
-					}
-					if size > 0 {
-						log.Info().Msgf("DLC Extra: %v, Size: %s", extra.ManualURL, extra.Size)
-						totalSizeMB += size
-					}
-				}
-			}
-		}
-	}
+
 	log.Info().Msgf("Game title: \"%s\"\n", nestedData.Title)
-	log.Info().Msgf("Download parameters: Language=%s; Platform=%s; Extras=%t; DLCs=%t\n", language, platformName, extrasFlag, dlcFlag)
+	log.Info().Msgf("Download parameters: Language=%s; Platform=%s; Extras=%t; DLCs=%t\n", langFullName, platformName, extrasFlag, dlcFlag)
+
+	totalSizeMB, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
+	if err != nil {
+		return fmt.Errorf("failed to calculate storage size: %w", err)
+	}
+
 	if strings.ToLower(sizeUnit) == "gb" {
 		totalSizeGB := totalSizeMB / 1024
 		fmt.Printf("Total download size: %.2f GB\n", totalSizeGB)
 	} else {
 		fmt.Printf("Total download size: %.0f MB\n", totalSizeMB)
 	}
+
 	return nil
 }
