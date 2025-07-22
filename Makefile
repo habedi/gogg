@@ -5,6 +5,7 @@ BINARY := bin/$(BINARY_NAME)
 COVER_PROFILE := coverage.txt
 GO_FILES := $(shell find . -type f -name '*.go')
 COVER_FLAGS := --cover --coverprofile=$(COVER_PROFILE)
+EXTRA_TMP_FILES := $(shell find . -type f -name 'gogg_catalogue_*.csv')
 GO ?= go
 MAIN ?= ./main.go
 ECHO := @echo
@@ -91,6 +92,7 @@ clean: ## Remove artifacts and temporary files
 	@find . -type f -name '*.snap' -delete
 	@rm -f $(COVER_PROFILE)
 	@rm -rf bin/
+	@rm -f $(EXTRA_TMP_FILES)
 
 ####################################################################################################
 ## Dependency & Lint Targets
