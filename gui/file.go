@@ -20,6 +20,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/validation"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
@@ -29,12 +30,6 @@ import (
 )
 
 var hashAlgorithms = []string{"md5", "sha1", "sha256", "sha512"}
-
-var gameLanguages = map[string]string{
-	"en": "English", "fr": "French", "de": "German", "es": "Spanish", "it": "Italian",
-	"ru": "Russian", "pl": "Polish", "pt-BR": "Portuguese (Brazil)", "zh-Hans": "Simplified Chinese",
-	"ja": "Japanese", "ko": "Korean",
-}
 
 func HashUI(win fyne.Window) fyne.CanvasObject {
 	dirLabel := widget.NewLabel("Path")
@@ -289,7 +284,8 @@ func removeHashFilesUI(dir string, recursive bool, logOutput *widget.Entry) {
 
 func SizeUI(win fyne.Window) fyne.CanvasObject {
 	gameIDEntry := widget.NewEntry()
-	gameIDEntry.SetPlaceHolder("Enter a game ID")
+	gameIDEntry.SetPlaceHolder("Enter a game ID (numbers only)")
+	gameIDEntry.Validator = validation.NewRegexp(`^\d+$`, "Game ID must be a number")
 	gameIDRow := container.NewBorder(
 		widget.NewLabel("Game ID"), nil, nil, nil, gameIDEntry,
 	)
@@ -354,6 +350,10 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	split.SetOffset(0.3)
 
 	estimateBtn.OnTapped = func() {
+		if gameIDEntry.Validate() != nil {
+			dialog.ShowError(errors.New("Invalid Game ID. It must be a positive number."), win)
+			return
+		}
 		logOutput.SetText("")
 		go func() {
 			_ = estimateStorageSizeUI(

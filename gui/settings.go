@@ -53,6 +53,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 			soundPathLabel.SetText(path)
 		}, win)
 		fd.SetFilter(storage.NewExtensionFileFilter([]string{".mp3"}))
+		fd.Resize(fyne.NewSize(800, 600))
 		fd.Show()
 	})
 
