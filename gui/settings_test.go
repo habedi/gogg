@@ -12,16 +12,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// findObject recursively searches a canvas object tree for an object that matches the condition.
+func findObject(obj fyne.CanvasObject, condition func(fyne.CanvasObject) bool) fyne.CanvasObject {
+	if condition(obj) {
+		return obj
+	}
+
+	if c, ok := obj.(fyne.Container); ok {
+		for _, child := range c.Objects() {
+			if found := findObject(child, condition); found != nil {
+				return found
+			}
+		}
+	}
+
+	return nil
+}
+
 func TestSettingsTabUI_Render(t *testing.T) {
 	test.NewApp()
 	ui := gui.SettingsTabUI()
 	assert.NotNil(t, ui)
 
-	card := test.FindObject(ui, func(o fyne.CanvasObject) bool {
+	cardObj := findObject(ui, func(o fyne.CanvasObject) bool {
 		c, ok := o.(*widget.Card)
 		return ok && c.Title == "UI Configuration"
-	}).(*widget.Card)
-	assert.NotNil(t, card, "should find a card with the title 'UI Configuration'")
+	})
+	require.NotNil(t, cardObj, "should find a card widget")
+	card, ok := cardObj.(*widget.Card)
+	require.True(t, ok)
+	assert.Equal(t, "UI Configuration", card.Title)
 }
 
 func TestSettingsTabUI_ThemeSwitching(t *testing.T) {
@@ -31,16 +51,12 @@ func TestSettingsTabUI_ThemeSwitching(t *testing.T) {
 	w := test.NewWindow(gui.SettingsTabUI())
 	defer w.Close()
 
-	var radio *widget.RadioGroup
-	test.FindObject(w.Content(), func(o fyne.CanvasObject) bool {
-		r, ok := o.(*widget.RadioGroup)
-		if ok {
-			radio = r
-			return true
-		}
-		return false
+	radioObj := findObject(w.Content(), func(o fyne.CanvasObject) bool {
+		_, ok := o.(*widget.RadioGroup)
+		return ok
 	})
-	require.NotNil(t, radio, "should find the radio group widget")
+	require.NotNil(t, radioObj, "should find the radio group widget")
+	radio := radioObj.(*widget.RadioGroup)
 
 	// 1. Verify initial state is Light
 	assert.Equal(t, "Light", radio.Selected)
