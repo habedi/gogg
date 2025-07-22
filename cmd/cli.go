@@ -14,14 +14,13 @@ func Execute() {
 	initializeDatabase()
 	defer closeDatabase()
 
-	// Instantiate concrete implementations of our interfaces.
 	tokenStore := &db.TokenStore{}
-	gogClient := &client.GogClient{}
+	gogClient := &client.GogClient{
+		TokenURL: "https://auth.gog.com/token",
+	}
 
-	// Create the auth service, injecting the dependencies.
 	authService := auth.NewService(tokenStore, gogClient)
 
-	// Pass the service to the root command constructor.
 	rootCmd := createRootCmd(authService)
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show help for a command")
 
@@ -37,7 +36,6 @@ func createRootCmd(authService *auth.Service) *cobra.Command {
 		Short: "A Downloader for GOG",
 	}
 
-	// Pass the auth service down to the commands that need it.
 	rootCmd.AddCommand(
 		catalogueCmd(authService),
 		downloadCmd(authService),
