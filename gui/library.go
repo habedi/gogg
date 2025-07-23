@@ -140,6 +140,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	resumeCheck.SetChecked(true)
 	flattenCheck := widget.NewCheck("Flatten Directory", nil)
 	flattenCheck.SetChecked(false)
+	skipPatchesCheck := widget.NewCheck("Skip Patches", nil)
+	skipPatchesCheck.SetChecked(false)
 
 	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), nil)
 	downloadBtn.Importance = widget.HighImportance
@@ -159,7 +161,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			authService, dm, game,
 			downloadPathEntry.Text, langFull, platformSelect.Selected,
 			extrasCheck.Checked, dlcsCheck.Checked, resumeCheck.Checked,
-			flattenCheck.Checked, false, // skipPatches flag
+			flattenCheck.Checked, skipPatchesCheck.Checked,
 			threads,
 		)
 		dialog.ShowInformation("Started", fmt.Sprintf("Download for '%s' has started.\nCheck the Downloads tab for progress.", game.Title), win)
@@ -176,7 +178,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 
 	return container.NewVBox(
 		form,
-		container.NewHBox(extrasCheck, dlcsCheck),
+		container.NewHBox(extrasCheck, dlcsCheck, skipPatchesCheck),
 		container.NewHBox(resumeCheck, flattenCheck),
 		layout.NewSpacer(),
 		downloadBtn,

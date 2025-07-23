@@ -373,7 +373,7 @@ func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game
 				if file.ManualURL == nil || *file.ManualURL == "" {
 					continue
 				}
-				if skipPatches && (strings.Contains(*file.ManualURL, "patch") || strings.Contains(file.Name, "patch")) {
+				if skipPatches && (strings.Contains(strings.ToLower(*file.ManualURL), "patch") || strings.Contains(strings.ToLower(file.Name), "patch")) {
 					continue
 				}
 				task := downloadTask{
