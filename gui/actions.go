@@ -50,7 +50,15 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 				}
 				return
 			}
-			dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
+
+			games, dbErr := db.GetCatalogue()
+			if dbErr != nil {
+				// Fallback message if we can't get the count
+				dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
+			} else {
+				successMsg := fmt.Sprintf("Successfully refreshed catalogue.\nYour library now contains %d games.", len(games))
+				dialog.ShowInformation("Success", successMsg, win)
+			}
 		})
 	}()
 }
