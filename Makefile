@@ -77,7 +77,7 @@ run: build ## Build and run the binary
 .PHONY: clean
 clean: ## Remove artifacts and temporary files
 	$(ECHO) "Cleaning up..."
-	@$(GO) clean -cache -testcache -modcache
+	@$(GO) clean #-cache -testcache -modcache
 	@find . -type f -name '*.got.*' -delete
 	@find . -type f -name '*.out' -delete
 	@find . -type f -name '*.snap' -delete
