@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,8 +70,16 @@ func TestExchangeCodeForToken_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// exchangeCodeForToken uses a hardcoded URL, so we can't test it
-	// without further refactoring. This highlights the benefit of dependency injection.
-	// For now, we'll skip directly testing it and rely on the higher-level Login flow.
-	t.Skip("Skipping TestExchangeCodeForToken as it uses a hardcoded URL")
+	gogClient := &GogClient{TokenURL: server.URL + "/token"}
+
+	accessToken, refreshToken, expiresAt, err := gogClient.exchangeCodeForToken("my-auth-code")
+
+	require.NoError(t, err)
+	assert.Equal(t, "access-from-code", accessToken)
+	assert.Equal(t, "refresh-from-code", refreshToken)
+
+	expectedExpiry := time.Now().Add(time.Hour)
+	actualExpiry, parseErr := time.Parse(time.RFC3339, expiresAt)
+	require.NoError(t, parseErr)
+	assert.WithinDuration(t, expectedExpiry, actualExpiry, 5*time.Second)
 }

@@ -85,13 +85,18 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 			log.Warn().Err(err).Msg("Headless login failed, retrying with window mode.")
 			fmt.Println("Headless login failed, retrying with window mode.")
 
-			ctx, cancel, err = createChromeContext(false)
+			// Cancel the first headless context before creating a new one.
+			cancel()
+
+			var headedCtx context.Context
+			var headedCancel context.CancelFunc
+			headedCtx, headedCancel, err = createChromeContext(false)
 			if err != nil {
 				return fmt.Errorf("failed to create Chrome context: %w", err)
 			}
-			defer cancel()
+			defer headedCancel() // Defer cancellation of the new headed context.
 
-			finalURL, err = performLogin(ctx, loginURL, username, password, false)
+			finalURL, err = performLogin(headedCtx, loginURL, username, password, false)
 			if err != nil {
 				return fmt.Errorf("failed to login: %w", err)
 			}
@@ -131,7 +136,13 @@ func createChromeContext(headless bool) (context.Context, context.CancelFunc, er
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(execPath),
+		chromedp.Flag("headless", headless),
 	)
+
+	if headless {
+		opts = append(opts, chromedp.Flag("disable-gpu", true))
+	}
+
 	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancelContext := chromedp.NewContext(allocatorCtx, chromedp.WithLogf(log.Info().Msgf))
 

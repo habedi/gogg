@@ -1,16 +1,9 @@
 package gui
 
 import (
-	"crypto/md5"
-	"crypto/sha1"
-	"crypto/sha256"
-	"crypto/sha512"
-	"encoding/hex"
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
-	"hash"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"encoding/json"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/validation"
@@ -27,9 +21,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/hasher"
+	"github.com/habedi/gogg/pkg/pool"
 )
-
-var hashAlgorithms = []string{"md5", "sha1", "sha256", "sha512"}
 
 func HashUI(win fyne.Window) fyne.CanvasObject {
 	dirLabel := widget.NewLabel("Path")
@@ -68,7 +62,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	dirRow := container.NewBorder(nil, nil, dirLabel, browseBtn, dirEntry)
 
 	algoLabel := widget.NewLabel("Hash Algorithm")
-	algoSelect := widget.NewSelect(hashAlgorithms, nil)
+	algoSelect := widget.NewSelect(hasher.HashAlgorithms, nil)
 	algoSelect.SetSelected("md5")
 	algoBox := container.NewHBox(algoLabel, algoSelect)
 
@@ -133,7 +127,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 }
 
 func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, win fyne.Window, logOutput *widget.Entry) {
-	if !isValidHashAlgo(algo) {
+	if !hasher.IsValidHashAlgo(algo) {
 		runOnMainV2(func() {
 			appendLog(logOutput, fmt.Sprintf("ERROR: Unsupported hash algorithm: %s", algo))
 			dialog.ShowError(fmt.Errorf("unsupported hash algorithm: %s", algo), win)
@@ -154,88 +148,77 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 		"*.md5", "*.sha1", "*.sha256", "*.sha512", "*.cksum", "*.sum", "*.sig", "*.asc", "*.gpg",
 	}
 
+	var filesToProcess []string
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			appendLog(logOutput, fmt.Sprintf("Access error: %q: %v", path, err))
+			return nil
+		}
+		if info.IsDir() {
+			if path != dir && !recursive {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		excluded := false
+		for _, pattern := range exclusionList {
+			if matched, _ := filepath.Match(pattern, info.Name()); matched {
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			for _, ha := range hasher.HashAlgorithms {
+				if strings.HasSuffix(info.Name(), "."+ha) {
+					excluded = true
+					break
+				}
+			}
+		}
+		if !excluded {
+			filesToProcess = append(filesToProcess, path)
+		}
+		return nil
+	})
+
 	var hashFiles []string
 	var hfMutex sync.Mutex
-
-	fileChan := make(chan string, 100)
-	var wg sync.WaitGroup
+	var countMutex sync.Mutex
+	processedCount := 0
 
 	numWorkers := runtime.NumCPU() - 1
 	if numWorkers < 1 {
 		numWorkers = 1
 	}
 
-	go func() {
-		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				appendLog(logOutput, fmt.Sprintf("Access error: %q: %v", path, err))
-				return nil
+	workerFunc := func(ctx context.Context, path string) error {
+		hashVal, err := hasher.GenerateHash(path, algo)
+		if err != nil {
+			appendLog(logOutput, fmt.Sprintf("Error hashing %s: %v", path, err))
+			return nil // Don't stop the pool for one file error
+		}
+		if saveToFile {
+			hashFilePath := path + "." + algo
+			if err := os.WriteFile(hashFilePath, []byte(hashVal), 0o644); err != nil {
+				appendLog(logOutput, fmt.Sprintf("Error writing hash to %s: %v", hashFilePath, err))
+			} else {
+				hfMutex.Lock()
+				hashFiles = append(hashFiles, hashFilePath)
+				hfMutex.Unlock()
 			}
-			if info.IsDir() {
-				if path != dir && !recursive {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			excluded := false
-			for _, pattern := range exclusionList {
-				if matched, _ := filepath.Match(pattern, info.Name()); matched {
-					excluded = true
-					break
-				}
-			}
-			if !excluded {
-				for _, ha := range hashAlgorithms {
-					if strings.HasSuffix(info.Name(), "."+ha) {
-						excluded = true
-						break
-					}
-				}
-			}
-			if !excluded {
-				fileChan <- path
-			}
-			return nil
-		})
-		close(fileChan)
-	}()
-
-	var countMutex sync.Mutex
-	processedCount := 0
-
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-			for path := range fileChan {
-				hashVal, err := generateHash(path, algo)
-				if err != nil {
-					appendLog(logOutput, fmt.Sprintf("Worker %d: Error hashing %s: %v", workerID, path, err))
-					continue
-				}
-				if saveToFile {
-					hashFilePath := path + "." + algo
-					if err := os.WriteFile(hashFilePath, []byte(hashVal), 0o644); err != nil {
-						appendLog(logOutput, fmt.Sprintf("Worker %d: Error writing hash to %s: %v", workerID, hashFilePath, err))
-					} else {
-						hfMutex.Lock()
-						hashFiles = append(hashFiles, hashFilePath)
-						hfMutex.Unlock()
-					}
-				} else {
-					appendLog(logOutput, fmt.Sprintf("\"%s\": %s", path, hashVal))
-				}
-				countMutex.Lock()
-				processedCount++
-				if processedCount%100 == 0 {
-					appendLog(logOutput, fmt.Sprintf("Processed %d files", processedCount))
-				}
-				countMutex.Unlock()
-			}
-		}(i)
+		} else {
+			appendLog(logOutput, fmt.Sprintf("\"%s\": %s", path, hashVal))
+		}
+		countMutex.Lock()
+		processedCount++
+		if processedCount%100 == 0 {
+			appendLog(logOutput, fmt.Sprintf("Processed %d files", processedCount))
+		}
+		countMutex.Unlock()
+		return nil
 	}
 
-	wg.Wait()
+	pool.Run(context.Background(), filesToProcess, numWorkers, workerFunc)
 
 	countMutex.Lock()
 	finalCount := processedCount
@@ -266,7 +249,7 @@ func removeHashFilesUI(dir string, recursive bool, logOutput *widget.Entry) {
 			}
 			return nil
 		}
-		for _, algo := range hashAlgorithms {
+		for _, algo := range hasher.HashAlgorithms {
 			if strings.HasSuffix(path, "."+algo) {
 				if rmErr := os.Remove(path); rmErr != nil {
 					appendLog(logOutput, fmt.Sprintf("Error removing %s: %v", path, rmErr))
@@ -430,39 +413,4 @@ func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag
 	}
 
 	return nil
-}
-
-func isValidHashAlgo(algo string) bool {
-	for _, a := range hashAlgorithms {
-		if strings.ToLower(algo) == a {
-			return true
-		}
-	}
-	return false
-}
-
-func generateHash(path, algo string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	var h hash.Hash
-	switch strings.ToLower(algo) {
-	case "md5":
-		h = md5.New()
-	case "sha1":
-		h = sha1.New()
-	case "sha256":
-		h = sha256.New()
-	case "sha512":
-		h = sha512.New()
-	default:
-		return "", fmt.Errorf("unsupported hash algorithm: %s", algo)
-	}
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }

@@ -247,7 +247,7 @@ func DownloadGameFiles(
 	go func() {
 		defer wg.Done()
 		enqueueErr = func() error {
-			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, resumeFlag, flattenFlag, skipPatchesFlag, progressWriter); err != nil {
+			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, "", resumeFlag, flattenFlag, skipPatchesFlag, progressWriter); err != nil {
 				return err
 			}
 			if extrasFlag {
@@ -297,7 +297,7 @@ func DownloadGameFiles(
 	return nil
 }
 
-func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform string, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
+func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform, subDirPrefix string, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
 	for _, download := range game.Downloads {
 		if !strings.EqualFold(download.Language, lang) {
 			continue
@@ -320,7 +320,7 @@ func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game
 				task := downloadTask{
 					url:      fmt.Sprintf("https://embed.gog.com%s", *file.ManualURL),
 					fileName: filepath.Base(*file.ManualURL),
-					subDir:   name,
+					subDir:   filepath.Join(subDirPrefix, name),
 					resume:   resume,
 					flatten:  flatten,
 				}
@@ -365,8 +365,8 @@ func enqueueExtras(ctx context.Context, enqueue func(downloadTask), extras []Ext
 func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
 	for _, dlc := range game.DLCs {
 		dlcSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title))
-		dlcGame := Game{Downloads: dlc.ParsedDownloads}
-		if err := enqueueGameFiles(ctx, enqueue, dlcGame, lang, platform, resume, flatten, skipPatches, progressWriter); err != nil {
+		dlcGame := Game{Title: dlc.Title, Downloads: dlc.ParsedDownloads}
+		if err := enqueueGameFiles(ctx, enqueue, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches, progressWriter); err != nil {
 			return err
 		}
 		if extras {

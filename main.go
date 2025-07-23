@@ -40,7 +40,6 @@ func setupInterruptListener() chan os.Signal {
 func handleInterrupt(stopChan chan os.Signal, fatalLog func(string), exitFunc func(int)) {
 	<-stopChan
 	fatalLog("Interrupt signal received. Exiting...")
-	exitFunc(1)
 }
 
 func execute() {

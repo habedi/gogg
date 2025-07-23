@@ -2,15 +2,8 @@ package cmd
 
 import (
 	"context"
-	"crypto/md5"
-	"crypto/sha1"
-	"crypto/sha256"
-	"crypto/sha512"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,12 +12,11 @@ import (
 
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/hasher"
 	"github.com/habedi/gogg/pkg/pool"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
-
-var hashAlgorithms = []string{"md5", "sha1", "sha256", "sha512"}
 
 func fileCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -46,29 +38,20 @@ func hashCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			dir := args[0]
-			if !isValidHashAlgo(algo) {
+			if !hasher.IsValidHashAlgo(algo) {
 				log.Error().Msgf("Unsupported hash algorithm: %s", algo)
 				return
 			}
 			generateHashFiles(dir, algo, recursiveFlag, saveToFileFlag, cleanFlag, numThreads)
 		},
 	}
-	cmd.Flags().StringVarP(&algo, "algo", "a", "md5", "Hash algorithm to use [md5, sha1, sha256, sha512]")
+	cmd.Flags().StringVarP(&algo, "algo", "a", "md5", fmt.Sprintf("Hash algorithm to use %v", hasher.HashAlgorithms))
 	cmd.Flags().BoolVarP(&recursiveFlag, "recursive", "r", true, "Process files in subdirectories? [true, false]")
 	cmd.Flags().BoolVarP(&saveToFileFlag, "save", "s", false, "Save hash to files? [true, false]")
 	cmd.Flags().BoolVarP(&cleanFlag, "clean", "c", false, "Remove old hash files before generating new ones? [true, false]")
 	cmd.Flags().IntVarP(&numThreads, "threads", "t", 4, "Number of worker threads to use for hashing [1-16]")
 
 	return cmd
-}
-
-func isValidHashAlgo(algo string) bool {
-	for _, validAlgo := range hashAlgorithms {
-		if strings.ToLower(algo) == validAlgo {
-			return true
-		}
-	}
-	return false
 }
 
 func removeHashFiles(dir string, recursive bool) {
@@ -80,7 +63,7 @@ func removeHashFiles(dir string, recursive bool) {
 		if info.IsDir() && !recursive {
 			return filepath.SkipDir
 		}
-		for _, algo := range hashAlgorithms {
+		for _, algo := range hasher.HashAlgorithms {
 			if strings.HasSuffix(path, "."+algo) {
 				if err := os.Remove(path); err != nil {
 					log.Error().Msgf("Error removing hash file %s: %v", path, err)
@@ -132,14 +115,14 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 	var hfMutex sync.Mutex
 
 	workerFunc := func(ctx context.Context, path string) error {
-		hash, err := generateHash(path, algo)
+		hashVal, err := hasher.GenerateHash(path, algo)
 		if err != nil {
 			log.Error().Err(err).Str("file", path).Msg("Error generating hash")
 			return err
 		}
 		if saveToFile {
 			hashFilePath := path + "." + algo
-			err = os.WriteFile(hashFilePath, []byte(hash), 0o644)
+			err = os.WriteFile(hashFilePath, []byte(hashVal), 0o644)
 			if err != nil {
 				log.Error().Err(err).Str("file", hashFilePath).Msg("Error writing hash to file")
 				return err
@@ -148,7 +131,7 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 			hashFiles = append(hashFiles, hashFilePath)
 			hfMutex.Unlock()
 		} else {
-			fmt.Printf("%s hash for \"%s\": %s\n", algo, path, hash)
+			fmt.Printf("%s hash for \"%s\": %s\n", algo, path, hashVal)
 		}
 		return nil
 	}
@@ -161,31 +144,6 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 			fmt.Println(file)
 		}
 	}
-}
-
-func generateHash(filePath, algo string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	var hashAlgo hash.Hash
-	switch strings.ToLower(algo) {
-	case "md5":
-		hashAlgo = md5.New()
-	case "sha1":
-		hashAlgo = sha1.New()
-	case "sha256":
-		hashAlgo = sha256.New()
-	case "sha512":
-		hashAlgo = sha512.New()
-	default:
-		return "", fmt.Errorf("unsupported hash algorithm: %s", algo)
-	}
-	if _, err := io.Copy(hashAlgo, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hashAlgo.Sum(nil)), nil
 }
 
 func sizeCmd() *cobra.Command {
