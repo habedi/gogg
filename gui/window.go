@@ -16,7 +16,7 @@ func Run(version string, authService *auth.Service) {
 	if themePref == "dark" {
 		myApp.Settings().SetTheme(NewCustomDarkTheme())
 	} else {
-		myApp.Settings().SetTheme(theme.LightTheme())
+		myApp.Settings().SetTheme(theme.DefaultTheme())
 	}
 
 	myWindow := myApp.NewWindow("GOGG GUI")

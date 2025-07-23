@@ -18,17 +18,17 @@ func (t *customDarkTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVari
 		return color.NRGBA{R: 0x30, G: 0x30, B: 0x30, A: 0xff}
 	}
 
-	return theme.DarkTheme().Color(name, variant)
+	return theme.DefaultTheme().Color(name, variant)
 }
 
 func (t *customDarkTheme) Font(style fyne.TextStyle) fyne.Resource {
-	return theme.DarkTheme().Font(style)
+	return theme.DefaultTheme().Font(style)
 }
 
 func (t *customDarkTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
-	return theme.DarkTheme().Icon(name)
+	return theme.DefaultTheme().Icon(name)
 }
 
 func (t *customDarkTheme) Size(name fyne.ThemeSizeName) float32 {
-	return theme.DarkTheme().Size(name)
+	return theme.DefaultTheme().Size(name)
 }

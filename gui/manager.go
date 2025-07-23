@@ -30,10 +30,10 @@ func NewDownloadManager() *DownloadManager {
 	}
 }
 
-func (dm *DownloadManager) AddTask(task *DownloadTask) {
+func (dm *DownloadManager) AddTask(task *DownloadTask) error {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
-	dm.Tasks.Append(task)
+	return dm.Tasks.Append(task)
 }
 
 func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {

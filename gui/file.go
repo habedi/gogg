@@ -351,7 +351,7 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 
 	estimateBtn.OnTapped = func() {
 		if gameIDEntry.Validate() != nil {
-			dialog.ShowError(errors.New("Invalid Game ID. It must be a positive number."), win)
+			dialog.ShowError(errors.New("invalid Game ID, must be a positive number"), win)
 			return
 		}
 		logOutput.SetText("")

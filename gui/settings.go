@@ -15,7 +15,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		a := fyne.CurrentApp()
 		if selected == "Light" {
 			a.Preferences().SetString("theme", "light")
-			a.Settings().SetTheme(theme.LightTheme())
+			a.Settings().SetTheme(theme.DefaultTheme())
 		} else {
 			a.Preferences().SetString("theme", "dark")
 			a.Settings().SetTheme(NewCustomDarkTheme())

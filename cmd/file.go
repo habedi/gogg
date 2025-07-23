@@ -104,7 +104,7 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 
 	exclusionList := []string{".git", ".gitignore", ".DS_Store", "Thumbs.db", "desktop.ini", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm", "*.md5", "*.sha1", "*.sha256", "*.sha512", "*.cksum", "*.sum", "*.sig", "*.asc", "*.gpg"}
 	var filesToProcess []string
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Error().Msgf("Error accessing path %q: %v", path, err)
 			return err
@@ -124,6 +124,9 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 		filesToProcess = append(filesToProcess, path)
 		return nil
 	})
+	if walkErr != nil {
+		log.Error().Err(walkErr).Msg("Failed to walk directory for hashing")
+	}
 
 	var hashFiles []string
 	var hfMutex sync.Mutex

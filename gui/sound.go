@@ -53,7 +53,9 @@ func PlayNotificationSound() {
 	defer streamer.Close()
 
 	speakerOnce.Do(func() {
-		speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+		if err := speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10)); err != nil {
+			log.Error().Err(err).Msg("Failed to initialize speaker")
+		}
 	})
 
 	done := make(chan bool)

@@ -21,7 +21,7 @@ import (
 func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) fyne.CanvasObject {
 	allGames, _ := db.GetCatalogue()
 	gamesList := binding.NewUntypedList()
-	gamesList.Set(untypedSlice(allGames))
+	_ = gamesList.Set(untypedSlice(allGames))
 
 	selectedGame := binding.NewUntyped()
 
@@ -39,10 +39,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	gameListWidget.OnSelected = func(id widget.ListItemID) {
 		gameRaw, _ := gamesList.GetValue(id)
-		selectedGame.Set(gameRaw)
+		_ = selectedGame.Set(gameRaw)
 	}
 	gameListWidget.OnUnselected = func(id widget.ListItemID) {
-		selectedGame.Set(nil)
+		_ = selectedGame.Set(nil)
 	}
 
 	searchEntry := widget.NewEntry()
@@ -50,7 +50,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	searchEntry.OnChanged = func(s string) {
 		s = strings.ToLower(s)
 		if s == "" {
-			gamesList.Set(untypedSlice(allGames))
+			_ = gamesList.Set(untypedSlice(allGames))
 			return
 		}
 		filtered := make([]interface{}, 0)
@@ -59,14 +59,14 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				filtered = append(filtered, game)
 			}
 		}
-		gamesList.Set(filtered)
+		_ = gamesList.Set(filtered)
 	}
 
 	refreshBtn := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
 		searchEntry.SetText("")
 		RefreshCatalogueAction(win, authService, func() {
 			allGames, _ = db.GetCatalogue()
-			gamesList.Set(untypedSlice(allGames))
+			_ = gamesList.Set(untypedSlice(allGames))
 		})
 	})
 
@@ -158,7 +158,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		game := gameRaw.(db.Game)
 		threads, _ := strconv.Atoi(threadsEntry.Text)
 		lang := langSelect.Selected
-		langFull, _ := client.GameLanguages[lang]
+		langFull := client.GameLanguages[lang]
 
 		go executeDownload(
 			authService, dm, game,
