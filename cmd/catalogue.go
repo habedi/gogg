@@ -76,6 +76,7 @@ func listGames(cmd *cobra.Command, args []string) {
 }
 
 func infoCmd() *cobra.Command {
+	var updatesOnly bool
 	cmd := &cobra.Command{
 		Use:   "info [gameID]",
 		Short: "Show the information about a game in the catalogue",
@@ -87,13 +88,14 @@ func infoCmd() *cobra.Command {
 				cmd.PrintErrln("Error: Invalid game ID. It must be a number.")
 				return
 			}
-			showGameInfo(cmd, gameID)
+			showGameInfo(cmd, gameID, updatesOnly)
 		},
 	}
+	cmd.Flags().BoolVar(&updatesOnly, "updates", false, "Show a concise list of downloadable files and their versions")
 	return cmd
 }
 
-func showGameInfo(cmd *cobra.Command, gameID int) {
+func showGameInfo(cmd *cobra.Command, gameID int, updatesOnly bool) {
 	if gameID == 0 {
 		cmd.PrintErrln("Error: ID of the game is required to fetch information.")
 		return
@@ -110,19 +112,69 @@ func showGameInfo(cmd *cobra.Command, gameID int) {
 		cmd.Println("No game found with the specified ID. Please check the game ID.")
 		return
 	}
-	var nestedData map[string]interface{}
-	if err := json.Unmarshal([]byte(game.Data), &nestedData); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal nested game data")
-		cmd.PrintErrln("Error: Failed to parse nested game data.")
+
+	if !updatesOnly {
+		var nestedData map[string]interface{}
+		if err := json.Unmarshal([]byte(game.Data), &nestedData); err != nil {
+			log.Error().Err(err).Msg("Failed to unmarshal nested game data")
+			cmd.PrintErrln("Error: Failed to parse nested game data.")
+			return
+		}
+		nestedDataPretty, err := json.MarshalIndent(nestedData, "", "  ")
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to marshal nested game data")
+			cmd.PrintErrln("Error: Failed to format nested game data.")
+			return
+		}
+		cmd.Println(string(nestedDataPretty))
 		return
 	}
-	nestedDataPretty, err := json.MarshalIndent(nestedData, "", "  ")
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal nested game data")
-		cmd.PrintErrln("Error: Failed to format nested game data.")
+
+	// If --updates flag is used, show the version table
+	var gameData client.Game
+	if err := json.Unmarshal([]byte(game.Data), &gameData); err != nil {
+		log.Error().Err(err).Msg("Failed to unmarshal game data for update view")
+		cmd.PrintErrln("Error: Failed to parse game data.")
 		return
 	}
-	cmd.Println(string(nestedDataPretty))
+
+	table := tablewriter.NewWriter(cmd.OutOrStdout())
+	table.SetHeader([]string{"Component", "Language", "Platform", "File Name", "Version", "Date"})
+	table.SetAutoWrapText(false)
+	table.SetRowLine(true)
+
+	addFilesToTable := func(component string, downloads []client.Downloadable) {
+		for _, dl := range downloads {
+			platforms := map[string][]client.PlatformFile{
+				"Windows": dl.Platforms.Windows,
+				"Mac":     dl.Platforms.Mac,
+				"Linux":   dl.Platforms.Linux,
+			}
+			for pName, pFiles := range platforms {
+				if len(pFiles) == 0 {
+					continue
+				}
+				for _, file := range pFiles {
+					version := "N/A"
+					if file.Version != nil {
+						version = *file.Version
+					}
+					date := "N/A"
+					if file.Date != nil {
+						date = *file.Date
+					}
+					table.Append([]string{component, dl.Language, pName, file.Name, version, date})
+				}
+			}
+		}
+	}
+
+	addFilesToTable(gameData.Title, gameData.Downloads)
+	for _, dlc := range gameData.DLCs {
+		addFilesToTable(fmt.Sprintf("DLC: %s", dlc.Title), dlc.ParsedDownloads)
+	}
+
+	table.Render()
 }
 
 func refreshCmd(authService *auth.Service) *cobra.Command {
@@ -347,7 +399,7 @@ func exportCatalogueToJSON(path string) error {
 
 func ensurePathExists(path string) error {
 	if _, err := os.Stat(filepath.Dir(path)); os.IsNotExist(err) {
-		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 			log.Error().Err(err).Msgf("Failed to create directory %s", filepath.Dir(path))
 			return err
 		}
