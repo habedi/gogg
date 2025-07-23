@@ -56,10 +56,10 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 			// Update overall progress
 			if pu.totalBytes > 0 {
 				progress := float64(pu.downloadedBytes) / float64(pu.totalBytes)
-				pu.task.Progress.Set(progress)
+				_ = pu.task.Progress.Set(progress)
 			}
 			status := fmt.Sprintf("Downloading: %s", update.FileName)
-			pu.task.Status.Set(status)
+			_ = pu.task.Status.Set(status)
 		}
 	}
 

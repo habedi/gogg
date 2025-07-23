@@ -155,7 +155,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, nu
 	}
 
 	var filesToProcess []string
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			appendLog(logOutput, fmt.Sprintf("Access error: %q: %v", path, err))
 			return nil
@@ -186,6 +186,9 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, nu
 		}
 		return nil
 	})
+	if walkErr != nil {
+		appendLog(logOutput, fmt.Sprintf("ERROR walking directory %s: %v", dir, walkErr))
+	}
 
 	var hashFiles []string
 	var hfMutex sync.Mutex

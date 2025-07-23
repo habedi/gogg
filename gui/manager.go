@@ -61,9 +61,6 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 
 			border := obj.(*fyne.Container)
 
-			// Correctly access widgets. Fyne's Border layout only adds non-nil
-			// objects to its list. Given the layout above, the list is:
-			// [0] = center, [1] = top, [2] = right
 			vbox := border.Objects[0].(*fyne.Container)
 			title := border.Objects[1].(*widget.Label)
 			cancelBtn := border.Objects[2].(*widget.Button)
@@ -102,11 +99,11 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 		for _, taskRaw := range currentTasks {
 			task := taskRaw.(*DownloadTask)
 			status, _ := task.Status.Get()
-			if !(strings.HasPrefix(status, "Completed") || status == "Cancelled" || strings.HasPrefix(status, "Error")) {
+			if !strings.HasPrefix(status, "Completed") && status != "Cancelled" && !strings.HasPrefix(status, "Error") {
 				keptTasks = append(keptTasks, task)
 			}
 		}
-		dm.Tasks.Set(keptTasks)
+		_ = dm.Tasks.Set(keptTasks)
 	})
 
 	return container.NewBorder(nil, clearBtn, nil, nil, list)

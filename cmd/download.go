@@ -41,8 +41,10 @@ func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
 					progressbar.OptionSpinnerType(14),
 				)
 			case "file_progress":
-				cw.bar.Set64(update.CurrentBytes)
-				cw.bar.Describe(fmt.Sprintf("Downloading %s", update.FileName))
+				if cw.bar != nil {
+					_ = cw.bar.Set64(update.CurrentBytes)
+					cw.bar.Describe(fmt.Sprintf("Downloading %s", update.FileName))
+				}
 			}
 		}
 	}

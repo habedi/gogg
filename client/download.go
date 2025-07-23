@@ -60,7 +60,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 		}
 		jsonUpdate, _ := json.Marshal(update)
 		// Add a newline to delimit JSON objects for the decoder
-		pr.Write(append(jsonUpdate, '\n'))
+		_, _ = pr.Write(append(jsonUpdate, '\n'))
 	}
 	return n, err
 }
