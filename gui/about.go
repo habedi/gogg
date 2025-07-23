@@ -12,7 +12,6 @@ import (
 
 var goggRepo = "https://github.com/habedi/gogg"
 
-// ShowAboutUI displays application metadata: title, version, platform, Go version, and repo link.
 func ShowAboutUI(version string) fyne.CanvasObject {
 	platform := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
 	goVersion := runtime.Version()
@@ -33,7 +32,6 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 
 	author := widget.NewLabel("© 2025 Hassan Abedi")
 
-	// Title and subtitle as styled labels
 	titleLbl := widget.NewLabelWithStyle("Gogg", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	subtitleLbl := widget.NewLabelWithStyle("A game file downloader for GOG",
 		fyne.TextAlignCenter, fyne.TextStyle{Bold: true})

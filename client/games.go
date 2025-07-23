@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
 
-// FetchGameData retrieves the game data for the specified game from GOG.
-// It takes an access token and a URL as parameters and returns a Game struct, the raw response body as a string, and an error if the operation fails.
 func FetchGameData(accessToken string, url string) (Game, string, error) {
-	// url := fmt.Sprintf("https://embed.gog.com/account/gameDetails/%d.json", gameID)
 	req, err := createRequest("GET", url, accessToken)
 	if err != nil {
 		return Game{}, "", err
@@ -38,10 +37,7 @@ func FetchGameData(accessToken string, url string) (Game, string, error) {
 	return game, string(body), nil
 }
 
-// FetchIdOfOwnedGames retrieves the list of game IDs that the user owns from GOG.
-// It takes an access token and an API URL as parameters and returns a slice of integers representing the game IDs and an error if the operation fails.
 func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
-	// apiURL := "https://embed.gog.com/user/data/games"
 	req, err := createRequest("GET", apiURL, accessToken)
 	if err != nil {
 		return nil, err
@@ -61,8 +57,6 @@ func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
 	return parseOwnedGames(body)
 }
 
-// createRequest creates an HTTP request with the specified method, URL, and access token from GOG.
-// It returns a pointer to the http.Request object and an error if the request creation fails.
 func createRequest(method, url, accessToken string) (*http.Request, error) {
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
@@ -73,24 +67,45 @@ func createRequest(method, url, accessToken string) (*http.Request, error) {
 	return req, nil
 }
 
-// sendRequest sends an HTTP request and returns the response.
-// It takes a pointer to the http.Request object as a parameter and returns a pointer to the http.Response object and an error if the request fails.
 func sendRequest(req *http.Request) (*http.Response, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	var resp *http.Response
+	var err error
+
+	const maxRetries = 3
+	backoff := 1 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		resp, err = client.Do(req)
+		if err != nil {
+			log.Warn().Err(err).Int("attempt", i+1).Int("max_attempts", maxRetries).Msg("Request failed, retrying...")
+			time.Sleep(backoff)
+			backoff *= 2
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			log.Warn().Int("status", resp.StatusCode).Int("attempt", i+1).Int("max_attempts", maxRetries).Msg("Server error, retrying...")
+			time.Sleep(backoff)
+			backoff *= 2
+			continue
+		}
+
+		break
+	}
+
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to send request")
+		log.Error().Err(err).Msg("Failed to send request after multiple retries")
 		return nil, err
 	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Error().Msgf("HTTP request failed with status %d", resp.StatusCode)
+		log.Error().Int("status", resp.StatusCode).Msg("HTTP request failed with non-successful status")
 		return nil, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
 	}
 	return resp, nil
 }
 
-// readResponseBody reads the response body and returns it as a byte slice.
-// It takes a pointer to the http.Response object as a parameter and returns the response body as a byte slice and an error if the reading fails.
 func readResponseBody(resp *http.Response) ([]byte, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -100,8 +115,6 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 	return body, nil
 }
 
-// parseGameData parses the game data from the response body.
-// It takes the response body as a byte slice and a pointer to the Game struct as parameters and returns an error if the parsing fails.
 func parseGameData(body []byte, game *Game) error {
 	if err := json.Unmarshal(body, game); err != nil {
 		log.Error().Err(err).Msg("Failed to parse game data")
@@ -110,8 +123,6 @@ func parseGameData(body []byte, game *Game) error {
 	return nil
 }
 
-// parseOwnedGames parses the list of owned game IDs from the response body.
-// It takes the response body as a byte slice and returns a slice of integers representing the game IDs and an error if the parsing fails.
 func parseOwnedGames(body []byte) ([]int, error) {
 	var response struct {
 		Owned []int `json:"owned"`
@@ -121,4 +132,100 @@ func parseOwnedGames(body []byte) ([]int, error) {
 		return nil, err
 	}
 	return response.Owned, nil
+}
+
+func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dlcFlag bool) (float64, error) {
+	totalSizeMB := 0.0
+
+	parseSize := func(sizeStr string) (float64, error) {
+		s := strings.TrimSpace(strings.ToLower(sizeStr))
+		var val float64
+		switch {
+		case strings.HasSuffix(s, " gb"):
+			_, err := fmt.Sscanf(s, "%f gb", &val)
+			if err != nil {
+				return 0, err
+			}
+			return val * 1024, nil
+		case strings.HasSuffix(s, " mb"):
+			_, err := fmt.Sscanf(s, "%f mb", &val)
+			if err != nil {
+				return 0, err
+			}
+			return val, nil
+		case strings.HasSuffix(s, " kb"):
+			_, err := fmt.Sscanf(s, "%f kb", &val)
+			if err != nil {
+				return 0, err
+			}
+			return val / 1024, nil
+		default:
+			bytesVal, err := strconv.ParseInt(s, 10, 64)
+			if err == nil {
+				return float64(bytesVal) / (1024 * 1024), nil
+			}
+			return 0, fmt.Errorf("unknown or missing size unit in '%s'", sizeStr)
+		}
+	}
+
+	processFiles := func(files []PlatformFile) {
+		for _, file := range files {
+			if size, err := parseSize(file.Size); err == nil {
+				totalSizeMB += size
+			}
+		}
+	}
+
+	for _, download := range g.Downloads {
+		if !strings.EqualFold(download.Language, language) {
+			continue
+		}
+		platforms := map[string][]PlatformFile{
+			"windows": download.Platforms.Windows,
+			"mac":     download.Platforms.Mac,
+			"linux":   download.Platforms.Linux,
+		}
+		for name, files := range platforms {
+			if platformName == "all" || strings.EqualFold(platformName, name) {
+				processFiles(files)
+			}
+		}
+	}
+
+	if extrasFlag {
+		for _, extra := range g.Extras {
+			if size, err := parseSize(extra.Size); err == nil {
+				totalSizeMB += size
+			}
+		}
+	}
+
+	if dlcFlag {
+		for _, dlc := range g.DLCs {
+			for _, download := range dlc.ParsedDownloads {
+				if !strings.EqualFold(download.Language, language) {
+					continue
+				}
+				platforms := map[string][]PlatformFile{
+					"windows": download.Platforms.Windows,
+					"mac":     download.Platforms.Mac,
+					"linux":   download.Platforms.Linux,
+				}
+				for name, files := range platforms {
+					if platformName == "all" || strings.EqualFold(platformName, name) {
+						processFiles(files)
+					}
+				}
+			}
+			if extrasFlag {
+				for _, extra := range dlc.Extras {
+					if size, err := parseSize(extra.Size); err == nil {
+						totalSizeMB += size
+					}
+				}
+			}
+		}
+	}
+
+	return totalSizeMB, nil
 }

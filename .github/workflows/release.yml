@@ -1,23 +1,24 @@
 name: Make a Release
 
 on:
-  workflow_dispatch: # Allow manual execution
+  workflow_dispatch:
   push:
     tags:
-      - 'v*' # Trigger on version tags
+      - 'v*'
 
 permissions:
   contents: read
 
-# The build jobs for different platforms (Windows, Linux, and macOS)
 jobs:
+  call_tests:
+    uses: ./.github/workflows/tests.yml
+
   build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Setup MSYS2 and install ALL required tools (make, gcc, pkg-config, freeglut, AND go)
       - name: Setup MSYS2 Environment
         uses: msys2/setup-msys2@v2
         with:
@@ -114,7 +115,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Download all build artifacts (binaries)
       - name: Download Windows Artifact
         uses: actions/download-artifact@v4
         with:
@@ -136,8 +136,7 @@ jobs:
       - name: List Downloaded Files (for debugging)
         run: ls -R ./dist
 
-      # Create archives for each platform
-      - name: Create Archives
+      - name: Create Archives for Each Platform
         run: |
           cd dist/windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ../..
           cd dist/linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ../..

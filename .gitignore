@@ -66,6 +66,7 @@ tmp/
 
 # Dependency lock files (uncomment to ignore)
 poetry.lock
+uv.lock
 
 # Golang specific
 *.out

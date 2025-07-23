@@ -9,15 +9,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
-func downloadCmd() *cobra.Command {
+func downloadCmd(authService *auth.Service) *cobra.Command {
 	var language, platformName string
-	var extrasFlag, dlcFlag, resumeFlag, flattenFlag bool
+	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool
 	var numThreads int
 
 	cmd := &cobra.Command{
@@ -32,7 +33,7 @@ func downloadCmd() *cobra.Command {
 				return
 			}
 			downloadDir := args[1]
-			executeDownload(gameID, downloadDir, strings.ToLower(language), platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads)
+			executeDownload(authService, gameID, downloadDir, strings.ToLower(language), platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 		},
 	}
 
@@ -43,11 +44,18 @@ func downloadCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&resumeFlag, "resume", "r", true, "Resume downloading? [true, false]")
 	cmd.Flags().IntVarP(&numThreads, "threads", "t", 5, "Number of worker threads to use for downloading [1-20]")
 	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", true, "Flatten the directory structure when downloading? [true, false]")
+	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", false, "Skip patches when downloading? [true, false]")
 
 	return cmd
 }
 
-func executeDownload(gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag bool, numThreads int) {
+// isValidLanguage checks if a given language code is valid.
+func isValidLanguage(lang string) bool {
+	_, ok := client.GameLanguages[lang]
+	return ok
+}
+
+func executeDownload(authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
@@ -57,15 +65,15 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	}
 	if !isValidLanguage(language) {
 		fmt.Println("Invalid language code. Supported languages are:")
-		for langCode, langName := range gameLanguages {
+		for langCode, langName := range client.GameLanguages {
 			fmt.Printf("'%s' for %s\n", langCode, langName)
 		}
 		return
-	} else {
-		language = gameLanguages[language]
 	}
+	languageFullName := client.GameLanguages[language]
 
-	if _, err := client.RefreshToken(); err != nil {
+	user, err := authService.RefreshToken()
+	if err != nil {
 		fmt.Println("Failed to find or refresh the access token. Did you login?")
 		return
 	}
@@ -96,24 +104,12 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 		return
 	}
 
-	user, err := db.GetTokenRecord()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to retrieve user token from the database.")
-		fmt.Println("Error retrieving user token. Please try logging in again.")
-		return
-	}
-	if user == nil {
-		log.Error().Msg("User token record is nil.")
-		fmt.Println("User token not found. Please try logging in again.")
-		return
-	}
-
-	logDownloadParameters(parsedGameData, gameID, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads)
+	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
 	ctx := context.Background()
 	progressWriter := io.Writer(os.Stderr)
 
-	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, numThreads, progressWriter)
+	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
 	if err != nil {
 		if err == context.Canceled || err == context.DeadlineExceeded {
 			log.Warn().Err(err).Msg("Download operation cancelled or timed out.")
@@ -128,12 +124,13 @@ func executeDownload(gameID int, downloadPath, language, platformName string, ex
 	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title)))
 }
 
-func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag bool, numThreads int) {
+func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	fmt.Println("================================= Download Parameters =====================================")
 	fmt.Printf("Downloading \"%v\" (with game ID=\"%d\") to \"%v\"\n", game.Title, gameID, downloadPath)
 	fmt.Printf("Platform: \"%v\", Language: '%v'\n", platformName, language)
 	fmt.Printf("Include Extras: %v, Include DLCs: %v, Resume enabled: %v\n", extrasFlag, dlcFlag, resumeFlag)
 	fmt.Printf("Number of worker threads for download: %d\n", numThreads)
 	fmt.Printf("Flatten directory structure: %v\n", flattenFlag)
+	fmt.Printf("Skip patches: %v\n", skipPatchesFlag)
 	fmt.Println("============================================================================================")
 }

@@ -6,17 +6,27 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// Token represents the user's authentication token data.
 type Token struct {
+	ID           uint   `gorm:"primaryKey"`
 	AccessToken  string `json:"access_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	ExpiresAt    string `json:"expires_at,omitempty"`
 }
 
-// GetTokenRecord retrieves the token record from the database.
-// It returns a pointer to the Token object and an error if the operation fails.
+// TokenStore is a concrete implementation of the auth.TokenStorer interface using GORM.
+type TokenStore struct{}
+
+func (ts *TokenStore) GetTokenRecord() (*Token, error) {
+	return GetTokenRecord()
+}
+
+func (ts *TokenStore) UpsertTokenRecord(token *Token) error {
+	return UpsertTokenRecord(token)
+}
+
 func GetTokenRecord() (*Token, error) {
 	if Db == nil {
 		return nil, fmt.Errorf("database connection is not initialized")
@@ -25,52 +35,30 @@ func GetTokenRecord() (*Token, error) {
 	var token Token
 	if err := Db.First(&token).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil // Token not found
+			return nil, nil
 		}
 		log.Error().Err(err).Msg("Failed to retrieve token data")
 		return nil, err
 	}
 
-	//if &token == nil {
-	//	return nil, fmt.Errorf("no token data found. Please try logging in first")
-	//}
-
 	return &token, nil
 }
 
-// UpsertTokenRecord inserts or updates the token record in the database.
-// It takes a pointer to the Token object as a parameter and returns an error if the operation fails.
 func UpsertTokenRecord(token *Token) error {
 	if Db == nil {
 		return fmt.Errorf("database connection is not initialized")
 	}
 
-	var existingToken Token
-	err := Db.First(&existingToken).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		log.Error().Err(err).Msg("Failed to check existing token")
+	token.ID = 1
+
+	if err := Db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"access_token", "refresh_token", "expires_at"}),
+	}).Create(token).Error; err != nil {
+		log.Error().Err(err).Msgf("Failed to upsert token")
 		return err
 	}
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Insert new token
-		if err := Db.Create(token).Error; err != nil {
-			log.Error().Err(err).Msgf("Failed to insert new token: %s", token.AccessToken[:10])
-			return err
-		}
-		log.Info().Msgf("Token inserted successfully: %s", token.AccessToken[:10])
-	} else {
-		// Update existing token
-		if err := Db.Model(&existingToken).Where("1 = 1").Updates(Token{
-			AccessToken:  token.AccessToken,
-			RefreshToken: token.RefreshToken,
-			ExpiresAt:    token.ExpiresAt,
-		}).Error; err != nil {
-			log.Error().Err(err).Msgf("Failed to update token: %s", token.AccessToken[:10])
-			return err
-		}
-		log.Info().Msgf("Token updated successfully: %s", token.AccessToken[:10])
-	}
-
+	log.Info().Msgf("Token upserted successfully")
 	return nil
 }

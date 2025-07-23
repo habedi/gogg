@@ -2,6 +2,21 @@ package client
 
 import "encoding/json"
 
+// GameLanguages is a map of language codes to their full names.
+var GameLanguages = map[string]string{
+	"en":      "English",
+	"fr":      "Français",
+	"de":      "Deutsch",
+	"es":      "Español",
+	"it":      "Italiano",
+	"ru":      "Русский",
+	"pl":      "Polski",
+	"pt-BR":   "Português do Brasil",
+	"zh-Hans": "简体中文",
+	"ja":      "日本語",
+	"ko":      "한국어",
+}
+
 // Game contains information about a game and its downloadable content like extras and DLCs.
 type Game struct {
 	Title           string         `json:"title"`
