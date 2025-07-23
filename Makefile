@@ -152,4 +152,4 @@ setup-hooks: ## Install Git hooks (pre-commit and pre-push)
 .PHONY: test-hooks
 test-hooks: ## Test Git hooks on all files
 	@echo "Testing Git hooks..."
-	@pre-commit run --all-files
+	@pre-commit run --all-files --show-diff-on-failure

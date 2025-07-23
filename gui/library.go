@@ -8,7 +8,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/data/validation"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -129,9 +128,9 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, nil)
 	platformSelect.SetSelected("windows")
 
-	threadsEntry := widget.NewEntry()
-	threadsEntry.Validator = validation.NewRegexp(`^[1-9]$|^1[0-9]$|^20$`, "Must be 1-20")
-	threadsEntry.SetText("5")
+	threadOptions := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
+	threadsSelect := widget.NewSelect(threadOptions, nil)
+	threadsSelect.SetSelected("5")
 
 	extrasCheck := widget.NewCheck("Include Extras", nil)
 	extrasCheck.SetChecked(true)
@@ -145,10 +144,6 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), nil)
 	downloadBtn.Importance = widget.HighImportance
 	downloadBtn.OnTapped = func() {
-		if threadsEntry.Validate() != nil {
-			showErrorDialog(win, "Invalid number of threads. Must be between 1 and 20.", nil)
-			return
-		}
 		if downloadPathEntry.Text == "" {
 			showErrorDialog(win, "Download path cannot be empty.", nil)
 			return
@@ -156,7 +151,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 
 		gameRaw, _ := selectedGame.Get()
 		game := gameRaw.(db.Game)
-		threads, _ := strconv.Atoi(threadsEntry.Text)
+		threads, _ := strconv.Atoi(threadsSelect.Selected)
 		lang := langSelect.Selected
 		langFull := client.GameLanguages[lang]
 
@@ -175,7 +170,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			{Text: "Download Path", Widget: downloadPathEntry},
 			{Text: "Platform", Widget: platformSelect},
 			{Text: "Language", Widget: langSelect},
-			{Text: "Threads", Widget: threadsEntry},
+			{Text: "Threads", Widget: threadsSelect},
 		},
 	}
 

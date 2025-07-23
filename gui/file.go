@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,6 +65,11 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	algoSelect.SetSelected("md5")
 	algoBox := container.NewHBox(algoLabel, algoSelect)
 
+	threadOptions := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
+	threadsSelect := widget.NewSelect(threadOptions, nil)
+	threadsSelect.SetSelected("4")
+	threadsBox := container.NewHBox(widget.NewLabel("Threads"), threadsSelect)
+
 	recursiveCheck := widget.NewCheck("Recursive", nil)
 	recursiveCheck.SetChecked(true)
 	saveCheck := widget.NewCheck("Save to File", nil)
@@ -77,6 +81,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	topContent := container.NewVBox(
 		dirRow,
 		algoBox,
+		threadsBox,
 		optionsBox,
 		generateBtn,
 	)
@@ -115,18 +120,19 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		recursive := recursiveCheck.Checked
 		saveToFile := saveCheck.Checked
 		clean := cleanCheck.Checked
+		numThreads, _ := strconv.Atoi(threadsSelect.Selected)
 		logOutput.SetText("")
 		generateBtn.Disable()
 		go func() {
 			defer runOnMainV2(func() { generateBtn.Enable() })
-			generateHashFilesUI(dir, algo, recursive, saveToFile, clean, win, logOutput)
+			generateHashFilesUI(dir, algo, recursive, saveToFile, clean, numThreads, win, logOutput)
 		}()
 	}
 
 	return split
 }
 
-func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, win fyne.Window, logOutput *widget.Entry) {
+func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, numThreads int, win fyne.Window, logOutput *widget.Entry) {
 	if !hasher.IsValidHashAlgo(algo) {
 		runOnMainV2(func() {
 			appendLog(logOutput, fmt.Sprintf("ERROR: Unsupported hash algorithm: %s", algo))
@@ -140,7 +146,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 		removeHashFilesUI(dir, recursive, logOutput)
 	}
 
-	appendLog(logOutput, fmt.Sprintf("Starting hash generation (Algo: %s, Recursive: %t, Save: %t)", algo, recursive, saveToFile))
+	appendLog(logOutput, fmt.Sprintf("Starting hash generation (Algo: %s, Threads: %d, Recursive: %t, Save: %t)", algo, numThreads, recursive, saveToFile))
 
 	exclusionList := []string{
 		".git", ".gitignore", ".DS_Store", "Thumbs.db",
@@ -186,11 +192,6 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 	var countMutex sync.Mutex
 	processedCount := 0
 
-	numWorkers := runtime.NumCPU() - 1
-	if numWorkers < 1 {
-		numWorkers = 1
-	}
-
 	workerFunc := func(ctx context.Context, path string) error {
 		hashVal, err := hasher.GenerateHash(path, algo)
 		if err != nil {
@@ -218,7 +219,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, wi
 		return nil
 	}
 
-	pool.Run(context.Background(), filesToProcess, numWorkers, workerFunc)
+	pool.Run(context.Background(), filesToProcess, numThreads, workerFunc)
 
 	countMutex.Lock()
 	finalCount := processedCount
