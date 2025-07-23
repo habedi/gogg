@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	netURL "net/url"
 	"os"
@@ -15,8 +16,54 @@ import (
 
 	"github.com/habedi/gogg/pkg/pool"
 	"github.com/rs/zerolog/log"
-	"github.com/schollz/progressbar/v3"
 )
+
+// ProgressUpdate defines the structure for progress messages.
+type ProgressUpdate struct {
+	Type              string `json:"type"` // "start", "file_progress", "status"
+	FileName          string `json:"file,omitempty"`
+	CurrentBytes      int64  `json:"current,omitempty"`
+	TotalBytes        int64  `json:"total,omitempty"`
+	OverallTotalBytes int64  `json:"overall_total,omitempty"`
+}
+
+// progressReader wraps an io.Reader to send progress updates through an io.Writer.
+type progressReader struct {
+	reader     io.Reader
+	writer     io.Writer
+	fileName   string
+	totalSize  int64
+	bytesRead  int64
+	updateLock sync.Mutex
+}
+
+func (pr *progressReader) Write(p []byte) (int, error) {
+	pr.updateLock.Lock()
+	defer pr.updateLock.Unlock()
+
+	n, err := pr.writer.Write(p)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to write progress update")
+	}
+	return n, err
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.reader.Read(p)
+	if n > 0 {
+		pr.bytesRead += int64(n)
+		update := ProgressUpdate{
+			Type:         "file_progress",
+			FileName:     pr.fileName,
+			CurrentBytes: pr.bytesRead,
+			TotalBytes:   pr.totalSize,
+		}
+		jsonUpdate, _ := json.Marshal(update)
+		// Add a newline to delimit JSON objects for the decoder
+		pr.Write(append(jsonUpdate, '\n'))
+	}
+	return n, err
+}
 
 func ParseGameData(data string) (Game, error) {
 	var rawResponse Game
@@ -71,10 +118,21 @@ func DownloadGameFiles(
 	accessToken string, game Game, downloadPath string,
 	gameLanguage string, platformName string, extrasFlag bool, dlcFlag bool, resumeFlag bool,
 	flattenFlag bool, skipPatchesFlag bool, numThreads int,
-	progressWriter io.Writer,
+	updateWriter io.Writer,
 ) error {
-	client := &http.Client{}
+	// This transport is configured for large file downloads. It has connection
+	// timeouts but no total timeout, preventing failures on slow networks.
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	client := &http.Client{Transport: transport}
 	clientNoRedirect := &http.Client{
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -84,6 +142,14 @@ func DownloadGameFiles(
 		log.Error().Err(err).Msgf("Failed to create download path %s", downloadPath)
 		return err
 	}
+
+	totalDownloadSize, err := game.EstimateStorageSize(gameLanguage, platformName, extrasFlag, dlcFlag)
+	if err != nil {
+		return fmt.Errorf("failed to estimate total download size: %w", err)
+	}
+	startUpdate := ProgressUpdate{Type: "start", OverallTotalBytes: totalDownloadSize}
+	jsonStart, _ := json.Marshal(startUpdate)
+	fmt.Fprintln(updateWriter, string(jsonStart))
 
 	findFileLocation := func(ctx context.Context, url string) (string, error) {
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -152,7 +218,7 @@ func DownloadGameFiles(
 		if task.resume {
 			if fileInfo, statErr := os.Stat(filePath); statErr == nil {
 				startOffset = fileInfo.Size()
-				file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0o644)
+				file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
 			} else if os.IsNotExist(statErr) {
 				file, err = os.Create(filePath)
 			} else {
@@ -180,7 +246,10 @@ func DownloadGameFiles(
 
 		totalSize := headResp.ContentLength
 		if resumeFlag && totalSize > 0 && startOffset >= totalSize {
-			fmt.Fprintf(progressWriter, "Skipping already downloaded file: %s\n", fileName)
+			// File is already complete, send a final progress update for it.
+			finalUpdate := ProgressUpdate{Type: "file_progress", FileName: fileName, CurrentBytes: startOffset, TotalBytes: totalSize}
+			jsonUpdate, _ := json.Marshal(finalUpdate)
+			fmt.Fprintln(updateWriter, string(jsonUpdate))
 			return nil
 		}
 
@@ -203,22 +272,16 @@ func DownloadGameFiles(
 			return fmt.Errorf("failed to download %s: HTTP %d", fileName, getResp.StatusCode)
 		}
 
-		progressBar := progressbar.NewOptions64(
-			totalSize,
-			progressbar.OptionSetDescription(fmt.Sprintf("Downloading %s", fileName)),
-			progressbar.OptionShowBytes(true),
-			progressbar.OptionSetWriter(progressWriter),
-			progressbar.OptionThrottle(500*time.Millisecond),
-			progressbar.OptionClearOnFinish(),
-			progressbar.OptionSpinnerType(14),
-		)
-		if startOffset > 0 {
-			_ = progressBar.Set64(startOffset)
+		progressReader := &progressReader{
+			reader:    getResp.Body,
+			writer:    updateWriter,
+			fileName:  fileName,
+			totalSize: totalSize,
+			bytesRead: startOffset, // Start counting from the offset
 		}
 
-		progressReader := progressbar.NewReader(getResp.Body, progressBar)
 		buffer := make([]byte, 32*1024)
-		_, err = io.CopyBuffer(file, &progressReader, buffer)
+		_, err = io.CopyBuffer(file, progressReader, buffer)
 		if err != nil {
 			if ctx.Err() == context.Canceled {
 				return ctx.Err()
@@ -226,9 +289,6 @@ func DownloadGameFiles(
 			_ = os.Remove(filePath)
 			return fmt.Errorf("failed to save file %s: %w", filePath, err)
 		}
-
-		_ = progressBar.Finish()
-		fmt.Fprintf(progressWriter, "Finished downloading: %s\n", fileName)
 		return nil
 	}
 
@@ -247,7 +307,7 @@ func DownloadGameFiles(
 	go func() {
 		defer wg.Done()
 		enqueueErr = func() error {
-			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, "", resumeFlag, flattenFlag, skipPatchesFlag, progressWriter); err != nil {
+			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, "", resumeFlag, flattenFlag, skipPatchesFlag, updateWriter); err != nil {
 				return err
 			}
 			if extrasFlag {
@@ -256,7 +316,7 @@ func DownloadGameFiles(
 				}
 			}
 			if dlcFlag {
-				if err := enqueueDLCs(ctx, enqueue, &game, gameLanguage, platformName, extrasFlag, resumeFlag, flattenFlag, skipPatchesFlag, progressWriter); err != nil {
+				if err := enqueueDLCs(ctx, enqueue, &game, gameLanguage, platformName, extrasFlag, resumeFlag, flattenFlag, skipPatchesFlag, updateWriter); err != nil {
 					return err
 				}
 			}
@@ -288,7 +348,7 @@ func DownloadGameFiles(
 		metadata, err := json.MarshalIndent(game, "", "  ")
 		if err == nil {
 			if ensureDirExists(filepath.Dir(metadataPath)) == nil {
-				_ = os.WriteFile(metadataPath, metadata, 0o644)
+				_ = os.WriteFile(metadataPath, metadata, 0644)
 			}
 		}
 	}
@@ -297,7 +357,7 @@ func DownloadGameFiles(
 	return nil
 }
 
-func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform, subDirPrefix string, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
+func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform, subDirPrefix string, resume, flatten, skipPatches bool, updateWriter io.Writer) error {
 	for _, download := range game.Downloads {
 		if !strings.EqualFold(download.Language, lang) {
 			continue
@@ -314,7 +374,6 @@ func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game
 					continue
 				}
 				if skipPatches && (strings.Contains(*file.ManualURL, "patch") || strings.Contains(file.Name, "patch")) {
-					fmt.Fprintf(progressWriter, "Skipping patch: %s\n", file.Name)
 					continue
 				}
 				task := downloadTask{
@@ -362,11 +421,11 @@ func enqueueExtras(ctx context.Context, enqueue func(downloadTask), extras []Ext
 	return nil
 }
 
-func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
+func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool, updateWriter io.Writer) error {
 	for _, dlc := range game.DLCs {
 		dlcSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title))
 		dlcGame := Game{Title: dlc.Title, Downloads: dlc.ParsedDownloads}
-		if err := enqueueGameFiles(ctx, enqueue, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches, progressWriter); err != nil {
+		if err := enqueueGameFiles(ctx, enqueue, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches, updateWriter); err != nil {
 			return err
 		}
 		if extras {

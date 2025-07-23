@@ -155,7 +155,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, nu
 	}
 
 	var filesToProcess []string
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			appendLog(logOutput, fmt.Sprintf("Access error: %q: %v", path, err))
 			return nil
@@ -200,7 +200,7 @@ func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, nu
 		}
 		if saveToFile {
 			hashFilePath := path + "." + algo
-			if err := os.WriteFile(hashFilePath, []byte(hashVal), 0o644); err != nil {
+			if err := os.WriteFile(hashFilePath, []byte(hashVal), 0644); err != nil {
 				appendLog(logOutput, fmt.Sprintf("Error writing hash to %s: %v", hashFilePath, err))
 			} else {
 				hfMutex.Lock()
@@ -295,7 +295,7 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	platformSelect.SetSelected("windows")
 
 	unitLabel := widget.NewLabel("Size Unit")
-	unitSelect := widget.NewSelect([]string{"mb", "gb"}, nil)
+	unitSelect := widget.NewSelect([]string{"gb", "mb"}, nil)
 	unitSelect.SetSelected("gb")
 
 	extrasCheck := widget.NewCheck("Include Extras", nil)
@@ -401,16 +401,18 @@ func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag
 	appendLog(logOutput, fmt.Sprintf("Estimating size for Game: %s (ID: %d)", nestedData.Title, gameIDInt))
 	appendLog(logOutput, fmt.Sprintf("Params: Lang=%s, Platform=%s, Extras=%t, DLCs=%t", langFullName, platformName, extrasFlag, dlcFlag))
 
-	totalSizeMB, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
+	totalSizeBytes, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
 	if err != nil {
 		return handleError("Failed to calculate storage size", err)
 	}
 
 	appendLog(logOutput, "--- Estimation Complete ---")
 	if sizeUnit == "gb" {
-		appendLog(logOutput, fmt.Sprintf("Total Estimated Download Size: %.2f GB", totalSizeMB/1024))
-	} else {
-		appendLog(logOutput, fmt.Sprintf("Total Estimated Download Size: %.0f MB", totalSizeMB))
+		sizeInGB := float64(totalSizeBytes) / (1024 * 1024 * 1024)
+		appendLog(logOutput, fmt.Sprintf("Total Estimated Download Size: %.2f GB", sizeInGB))
+	} else { // mb
+		sizeInMB := float64(totalSizeBytes) / (1024 * 1024)
+		appendLog(logOutput, fmt.Sprintf("Total Estimated Download Size: %.2f MB", sizeInMB))
 	}
 
 	return nil

@@ -1,20 +1,53 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
+
+// cliProgressWriter handles progress updates for the CLI.
+type cliProgressWriter struct {
+	bar *progressbar.ProgressBar
+}
+
+func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
+	scanner := bufio.NewScanner(strings.NewReader(string(p)))
+	for scanner.Scan() {
+		var update client.ProgressUpdate
+		if err := json.Unmarshal(scanner.Bytes(), &update); err == nil {
+			switch update.Type {
+			case "start":
+				cw.bar = progressbar.NewOptions64(
+					update.OverallTotalBytes,
+					progressbar.OptionSetDescription("Downloading game..."),
+					progressbar.OptionSetWriter(os.Stderr),
+					progressbar.OptionShowBytes(true),
+					progressbar.OptionThrottle(100*time.Millisecond),
+					progressbar.OptionClearOnFinish(),
+					progressbar.OptionSpinnerType(14),
+				)
+			case "file_progress":
+				cw.bar.Set64(update.CurrentBytes)
+				cw.bar.Describe(fmt.Sprintf("Downloading %s", update.FileName))
+			}
+		}
+	}
+	return len(p), nil
+}
 
 func downloadCmd(authService *auth.Service) *cobra.Command {
 	var language, platformName string
@@ -49,12 +82,6 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	return cmd
 }
 
-// isValidLanguage checks if a given language code is valid.
-func isValidLanguage(lang string) bool {
-	_, ok := client.GameLanguages[lang]
-	return ok
-}
-
 func executeDownload(authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
@@ -63,14 +90,15 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 		fmt.Println("Number of threads must be between 1 and 20.")
 		return
 	}
-	if !isValidLanguage(language) {
+
+	languageFullName, ok := client.GameLanguages[language]
+	if !ok {
 		fmt.Println("Invalid language code. Supported languages are:")
 		for langCode, langName := range client.GameLanguages {
 			fmt.Printf("'%s' for %s\n", langCode, langName)
 		}
 		return
 	}
-	languageFullName := client.GameLanguages[language]
 
 	user, err := authService.RefreshToken()
 	if err != nil {
@@ -107,7 +135,7 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
 	ctx := context.Background()
-	progressWriter := io.Writer(os.Stderr)
+	progressWriter := &cliProgressWriter{}
 
 	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
 	if err != nil {

@@ -115,14 +115,14 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 	var hfMutex sync.Mutex
 
 	workerFunc := func(ctx context.Context, path string) error {
-		hashVal, err := hasher.GenerateHash(path, algo)
+		hash, err := hasher.GenerateHash(path, algo)
 		if err != nil {
 			log.Error().Err(err).Str("file", path).Msg("Error generating hash")
 			return err
 		}
 		if saveToFile {
 			hashFilePath := path + "." + algo
-			err = os.WriteFile(hashFilePath, []byte(hashVal), 0o644)
+			err = os.WriteFile(hashFilePath, []byte(hash), 0644)
 			if err != nil {
 				log.Error().Err(err).Str("file", hashFilePath).Msg("Error writing hash to file")
 				return err
@@ -131,7 +131,7 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 			hashFiles = append(hashFiles, hashFilePath)
 			hfMutex.Unlock()
 		} else {
-			fmt.Printf("%s hash for \"%s\": %s\n", algo, path, hashVal)
+			fmt.Printf("%s hash for \"%s\": %s\n", algo, path, hash)
 		}
 		return nil
 	}
@@ -165,15 +165,12 @@ func sizeCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&platformName, "platform", "p", "windows", "Platform name [all, windows, mac, linux]; all means all platforms")
 	cmd.Flags().BoolVarP(&extrasFlag, "extras", "e", true, "Include extra content files? [true, false]")
 	cmd.Flags().BoolVarP(&dlcFlag, "dlcs", "d", true, "Include DLC files? [true, false]")
-	cmd.Flags().StringVarP(&sizeUnit, "unit", "u", "mb", "Size unit to display [mb, gb]")
+	cmd.Flags().StringVarP(&sizeUnit, "unit", "u", "gb", "Size unit to display [gb, mb, kb, b]")
 	return cmd
 }
 
 func estimateStorageSize(gameID, language, platformName string, extrasFlag, dlcFlag bool, sizeUnit string) error {
 	sizeUnit = strings.ToLower(sizeUnit)
-	if sizeUnit != "mb" && sizeUnit != "gb" {
-		return fmt.Errorf("invalid size unit: \"%s\". Unit must be mb or gb", sizeUnit)
-	}
 
 	langFullName, ok := client.GameLanguages[language]
 	if !ok {
@@ -201,16 +198,22 @@ func estimateStorageSize(gameID, language, platformName string, extrasFlag, dlcF
 	log.Info().Msgf("Game title: \"%s\"\n", nestedData.Title)
 	log.Info().Msgf("Download parameters: Language=%s; Platform=%s; Extras=%t; DLCs=%t\n", langFullName, platformName, extrasFlag, dlcFlag)
 
-	totalSizeMB, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
+	totalSizeBytes, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
 	if err != nil {
 		return fmt.Errorf("failed to calculate storage size: %w", err)
 	}
 
-	if strings.ToLower(sizeUnit) == "gb" {
-		totalSizeGB := totalSizeMB / 1024
-		fmt.Printf("Total download size: %.2f GB\n", totalSizeGB)
-	} else {
-		fmt.Printf("Total download size: %.0f MB\n", totalSizeMB)
+	switch sizeUnit {
+	case "gb":
+		fmt.Printf("Total download size: %.2f GB\n", float64(totalSizeBytes)/(1024*1024*1024))
+	case "mb":
+		fmt.Printf("Total download size: %.2f MB\n", float64(totalSizeBytes)/(1024*1024))
+	case "kb":
+		fmt.Printf("Total download size: %.2f KB\n", float64(totalSizeBytes)/1024)
+	case "b":
+		fmt.Printf("Total download size: %d B\n", totalSizeBytes)
+	default:
+		return fmt.Errorf("invalid size unit: \"%s\". Unit must be one of [gb, mb, kb, b]", sizeUnit)
 	}
 
 	return nil
