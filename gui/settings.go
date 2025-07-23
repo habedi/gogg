@@ -62,10 +62,14 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		soundPathLabel.SetText("Default")
 	})
 
+	testSoundBtn := widget.NewButton("Test", func() {
+		go PlayNotificationSound()
+	})
+
 	soundConfigBox := container.NewVBox(
 		widget.NewLabel("Current sound file:"),
 		soundPathLabel,
-		container.NewHBox(selectSoundBtn, resetSoundBtn),
+		container.NewHBox(selectSoundBtn, resetSoundBtn, testSoundBtn),
 	)
 
 	// --- Layout ---

@@ -72,4 +72,5 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 	targetDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
 	_ = task.Status.Set(fmt.Sprintf("Completed. Files in: %s", targetDir))
 	_ = task.Progress.Set(1.0)
+	go PlayNotificationSound()
 }
