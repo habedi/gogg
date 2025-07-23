@@ -124,14 +124,17 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 
 func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
 	var execPath string
-	if p, err := exec.LookPath("google-chrome"); err == nil {
-		execPath = p
-	} else if p, err := exec.LookPath("chromium"); err == nil {
-		execPath = p
-	} else if p, err := exec.LookPath("chrome"); err == nil {
-		execPath = p
-	} else {
-		return nil, nil, fmt.Errorf("no Chrome or Chromium executable found in PATH")
+	// Search for browsers in order of preference
+	browserExecutables := []string{"google-chrome", "chromium", "chrome", "msedge"}
+	for _, browser := range browserExecutables {
+		if p, err := exec.LookPath(browser); err == nil {
+			execPath = p
+			break
+		}
+	}
+
+	if execPath == "" {
+		return nil, nil, fmt.Errorf("no Chrome, Chromium, or Edge executable found in PATH")
 	}
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
