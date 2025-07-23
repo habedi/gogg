@@ -40,15 +40,9 @@ format: ## Format Go files
 	@$(GO) fmt ./...
 
 .PHONY: test
-test: format ## Run the tests
-	$(ECHO) "Running non-UI tests..."
-	@$(GO) test -v $(shell $(GO) list ./... | grep -v './gui') --cover --coverprofile=non_ui_coverage.out --race
-	$(ECHO) "Running UI tests..."
-	@$(GO) test -v -p 1 ./gui/... --cover --coverprofile=ui_coverage.out --race
-	$(ECHO) "Merging coverage reports..."
-	@echo "mode: set" > $(COVER_PROFILE)
-	@tail -n +2 -q non_ui_coverage.out ui_coverage.out >> $(COVER_PROFILE)
-	@rm -f non_ui_coverage.out ui_coverage.out
+test: format ## Run tests with coverage
+	$(ECHO) "Running all tests with coverage"
+	@$(GO) test -v ./... --cover --coverprofile=$(COVER_PROFILE) --race
 
 .PHONY: showcov
 showcov: test ## Display test coverage report
