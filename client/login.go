@@ -66,7 +66,7 @@ func (c *GogClient) PerformTokenRefresh(refreshToken string) (accessToken string
 	return result.AccessToken, result.RefreshToken, result.ExpiresIn, nil
 }
 
-func Login(loginURL string, username string, password string, headless bool) error {
+func (c *GogClient) Login(loginURL string, username string, password string, headless bool) error {
 	if username == "" || password == "" {
 		return fmt.Errorf("username and password cannot be empty")
 	}
@@ -105,7 +105,7 @@ func Login(loginURL string, username string, password string, headless bool) err
 		return err
 	}
 
-	token, refreshToken, expiresAt, err := exchangeCodeForToken(code)
+	token, refreshToken, expiresAt, err := c.exchangeCodeForToken(code)
 	if err != nil {
 		return fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
@@ -192,8 +192,7 @@ func extractAuthCode(authURL string) (string, error) {
 	return code, nil
 }
 
-func exchangeCodeForToken(code string) (string, string, string, error) {
-	tokenURL := "https://auth.gog.com/token"
+func (c *GogClient) exchangeCodeForToken(code string) (string, string, string, error) {
 	query := url.Values{
 		"client_id":     {"46899977096215655"},
 		"client_secret": {"9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"},
@@ -202,7 +201,7 @@ func exchangeCodeForToken(code string) (string, string, string, error) {
 		"redirect_uri":  {"https://embed.gog.com/on_login_success?origin=client"},
 	}
 
-	resp, err := http.PostForm(tokenURL, query)
+	resp, err := http.PostForm(c.TokenURL, query)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to exchange code for token: %w", err)
 	}

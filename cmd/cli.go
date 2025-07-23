@@ -21,7 +21,7 @@ func Execute() {
 
 	authService := auth.NewService(tokenStore, gogClient)
 
-	rootCmd := createRootCmd(authService)
+	rootCmd := createRootCmd(authService, gogClient)
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show help for a command")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -30,7 +30,7 @@ func Execute() {
 	}
 }
 
-func createRootCmd(authService *auth.Service) *cobra.Command {
+func createRootCmd(authService *auth.Service, gogClient *client.GogClient) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "gogg",
 		Short: "A Downloader for GOG",
@@ -40,7 +40,7 @@ func createRootCmd(authService *auth.Service) *cobra.Command {
 		catalogueCmd(authService),
 		downloadCmd(authService),
 		versionCmd(),
-		loginCmd(),
+		loginCmd(gogClient),
 		fileCmd(),
 		guiCmd(authService),
 	)

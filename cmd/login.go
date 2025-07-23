@@ -11,7 +11,7 @@ import (
 	"golang.org/x/term"
 )
 
-func loginCmd() *cobra.Command {
+func loginCmd(gogClient *client.GogClient) *cobra.Command {
 	var gogUsername, gogPassword string
 	var headless bool
 
@@ -25,7 +25,7 @@ func loginCmd() *cobra.Command {
 			gogPassword = promptForPassword("GOG password: ")
 
 			if validateCredentials(gogUsername, gogPassword) {
-				if err := client.Login(client.GOGLoginURL, gogUsername, gogPassword, headless); err != nil {
+				if err := gogClient.Login(client.GOGLoginURL, gogUsername, gogPassword, headless); err != nil {
 					cmd.PrintErrln("Error: Failed to login to GOG.com.")
 				} else {
 					cmd.Println("Login was successful.")

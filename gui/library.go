@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/auth"
+	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 )
 
@@ -157,7 +158,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		game := gameRaw.(db.Game)
 		threads, _ := strconv.Atoi(threadsEntry.Text)
 		lang := langSelect.Selected
-		langFull, _ := gameLanguages[lang]
+		langFull, _ := client.GameLanguages[lang]
 
 		go executeDownload(
 			authService, dm, game,

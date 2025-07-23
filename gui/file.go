@@ -293,8 +293,8 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	langLabel := widget.NewLabel("Language")
 	langSelect := widget.NewSelect(
 		func() []string {
-			keys := make([]string, 0, len(gameLanguages))
-			for k := range gameLanguages {
+			keys := make([]string, 0, len(client.GameLanguages))
+			for k := range client.GameLanguages {
 				keys = append(keys, k)
 			}
 			return keys
@@ -391,7 +391,7 @@ func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag
 		return handleError(fmt.Sprintf("Invalid size unit: \"%s\". Use mb or gb.", sizeUnit), nil)
 	}
 
-	langFullName, ok := gameLanguages[languageCode]
+	langFullName, ok := client.GameLanguages[languageCode]
 	if !ok {
 		return handleError("Invalid language code.", nil)
 	}

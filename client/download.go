@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/habedi/gogg/pkg/pool"
 	"github.com/rs/zerolog/log"
 	"github.com/schollz/progressbar/v3"
 )
@@ -231,76 +232,52 @@ func DownloadGameFiles(
 		return nil
 	}
 
-	taskChan := make(chan downloadTask, numThreads*2)
-	var wg sync.WaitGroup
-	var downloadErrors sync.Map
+	var tasks []downloadTask
+	var tasksMutex sync.Mutex
 
-	for i := 0; i < numThreads; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case task, ok := <-taskChan:
-					if !ok {
-						return
-					}
-					if err := downloadFile(ctx, task); err != nil {
-						if err != context.Canceled && err != context.DeadlineExceeded {
-							log.Error().Err(err).Str("file", task.fileName).Msg("Worker failed to download file")
-						}
-						downloadErrors.Store(task.fileName, err)
-					}
-				}
-			}
-		}(i)
+	enqueue := func(t downloadTask) {
+		tasksMutex.Lock()
+		defer tasksMutex.Unlock()
+		tasks = append(tasks, t)
 	}
 
 	var enqueueErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		defer close(taskChan)
+		defer wg.Done()
 		enqueueErr = func() error {
-			if err := enqueueGameFiles(ctx, taskChan, game, gameLanguage, platformName, resumeFlag, flattenFlag, skipPatchesFlag, progressWriter); err != nil {
+			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, resumeFlag, flattenFlag, skipPatchesFlag, progressWriter); err != nil {
 				return err
 			}
 			if extrasFlag {
-				if err := enqueueExtras(ctx, taskChan, game.Extras, "extras", resumeFlag, flattenFlag); err != nil {
+				if err := enqueueExtras(ctx, enqueue, game.Extras, "extras", resumeFlag, flattenFlag); err != nil {
 					return err
 				}
 			}
 			if dlcFlag {
-				if err := enqueueDLCs(ctx, taskChan, &game, gameLanguage, platformName, extrasFlag, resumeFlag, flattenFlag, skipPatchesFlag, progressWriter); err != nil {
+				if err := enqueueDLCs(ctx, enqueue, &game, gameLanguage, platformName, extrasFlag, resumeFlag, flattenFlag, skipPatchesFlag, progressWriter); err != nil {
 					return err
 				}
 			}
 			return nil
 		}()
 	}()
-
 	wg.Wait()
 
 	if enqueueErr != nil {
 		return enqueueErr
 	}
 
-	var firstError error
-	errorCount := 0
-	downloadErrors.Range(func(key, value interface{}) bool {
-		errorCount++
-		err := value.(error)
-		if firstError == nil && err != context.Canceled && err != context.DeadlineExceeded {
-			firstError = fmt.Errorf("failed on %s: %w", key.(string), err)
-		}
-		return true
-	})
+	downloadErrors := pool.Run(ctx, tasks, numThreads, downloadFile)
 
-	if errorCount > 0 {
-		if firstError != nil {
-			return firstError
+	if len(downloadErrors) > 0 {
+		for _, err := range downloadErrors {
+			if err != context.Canceled && err != context.DeadlineExceeded {
+				log.Error().Err(err).Msg("Worker failed to download file")
+			}
 		}
-		return fmt.Errorf("%d download tasks failed or were cancelled", errorCount)
+		return fmt.Errorf("%d download tasks failed or were cancelled, first error: %w", len(downloadErrors), downloadErrors[0])
 	}
 
 	select {
@@ -320,7 +297,7 @@ func DownloadGameFiles(
 	return nil
 }
 
-func enqueueGameFiles(ctx context.Context, tasks chan<- downloadTask, game Game, lang, platform string, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
+func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform string, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
 	for _, download := range game.Downloads {
 		if !strings.EqualFold(download.Language, lang) {
 			continue
@@ -348,9 +325,10 @@ func enqueueGameFiles(ctx context.Context, tasks chan<- downloadTask, game Game,
 					flatten:  flatten,
 				}
 				select {
-				case tasks <- task:
 				case <-ctx.Done():
 					return ctx.Err()
+				default:
+					enqueue(task)
 				}
 			}
 		}
@@ -358,7 +336,7 @@ func enqueueGameFiles(ctx context.Context, tasks chan<- downloadTask, game Game,
 	return nil
 }
 
-func enqueueExtras(ctx context.Context, tasks chan<- downloadTask, extras []Extra, subDir string, resume, flatten bool) error {
+func enqueueExtras(ctx context.Context, enqueue func(downloadTask), extras []Extra, subDir string, resume, flatten bool) error {
 	for _, extra := range extras {
 		if extra.ManualURL == "" {
 			continue
@@ -375,23 +353,24 @@ func enqueueExtras(ctx context.Context, tasks chan<- downloadTask, extras []Extr
 			flatten:  flatten,
 		}
 		select {
-		case tasks <- task:
 		case <-ctx.Done():
 			return ctx.Err()
+		default:
+			enqueue(task)
 		}
 	}
 	return nil
 }
 
-func enqueueDLCs(ctx context.Context, tasks chan<- downloadTask, game *Game, lang, platform string, extras, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
+func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool, progressWriter io.Writer) error {
 	for _, dlc := range game.DLCs {
 		dlcSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title))
 		dlcGame := Game{Downloads: dlc.ParsedDownloads}
-		if err := enqueueGameFiles(ctx, tasks, dlcGame, lang, platform, resume, flatten, skipPatches, progressWriter); err != nil {
+		if err := enqueueGameFiles(ctx, enqueue, dlcGame, lang, platform, resume, flatten, skipPatches, progressWriter); err != nil {
 			return err
 		}
 		if extras {
-			if err := enqueueExtras(ctx, tasks, dlc.Extras, filepath.Join(dlcSubDir, "extras"), resume, flatten); err != nil {
+			if err := enqueueExtras(ctx, enqueue, dlc.Extras, filepath.Join(dlcSubDir, "extras"), resume, flatten); err != nil {
 				return err
 			}
 		}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -20,74 +19,39 @@ import (
 
 func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish func()) {
 	progress := widget.NewProgressBar()
+	statusLabel := widget.NewLabel("Preparing to refresh...")
 	ctx, cancel := context.WithCancel(context.Background())
-	content := container.NewVBox(widget.NewLabel("Downloading latest game data..."), progress, widget.NewButton("Cancel", cancel))
+	content := container.NewVBox(statusLabel, progress, widget.NewButton("Cancel", cancel))
 	dlg := dialog.NewCustom("Refreshing Catalogue", "Dismiss", content, win)
 	dlg.Show()
 
 	go func() {
-		defer onFinish()
-		defer dlg.Hide()
+		defer runOnMain(func() {
+			onFinish()
+			dlg.Hide()
+		})
 
-		token, err := authService.RefreshToken()
-		if err != nil || token == nil {
-			showErrorDialog(win, "Failed to refresh token. Did you login?", err)
-			return
+		statusLabel.SetText("Fetching game list...")
+		progressCb := func(p float64) {
+			runOnMain(func() {
+				statusLabel.SetText(fmt.Sprintf("Processing games... (%.0f%%)", p*100))
+				progress.SetValue(p)
+			})
 		}
 
-		gameIDs, err := client.FetchIdOfOwnedGames(token.AccessToken, "https://embed.gog.com/user/data/games")
-		if err != nil {
-			showErrorDialog(win, "Failed to fetch list of owned games", err)
-			return
-		}
+		err := client.RefreshCatalogue(ctx, authService, 10, progressCb)
 
-		if len(gameIDs) == 0 {
-			dialog.ShowInformation("Info", "No games found in your GOG account.", win)
-			return
-		}
-		if err := db.EmptyCatalogue(); err != nil {
-			showErrorDialog(win, "Failed to clear existing catalogue", err)
-			return
-		}
-
-		total := float64(len(gameIDs))
-		progress.Max = total
-		var wg sync.WaitGroup
-		taskChan := make(chan int, 10)
-
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for id := range taskChan {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						url := fmt.Sprintf("https://embed.gog.com/account/gameDetails/%d.json", id)
-						details, raw, fetchErr := client.FetchGameData(token.AccessToken, url)
-						if fetchErr == nil && details.Title != "" {
-							_ = db.PutInGame(id, details.Title, raw)
-						}
-						runOnMain(func() { progress.SetValue(progress.Value + 1) })
-					}
+		runOnMain(func() {
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
+				} else {
+					showErrorDialog(win, "Failed to refresh catalogue", err)
 				}
-			}()
-		}
-
-		for _, id := range gameIDs {
-			select {
-			case <-ctx.Done():
-				break
-			case taskChan <- id:
+				return
 			}
-		}
-		close(taskChan)
-		wg.Wait()
-
-		if ctx.Err() == nil {
-			dialog.ShowInformation("Success", fmt.Sprintf("Successfully refreshed catalogue with %d games.", len(gameIDs)), win)
-		}
+			dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
+		})
 	}()
 }
 

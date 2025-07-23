@@ -49,6 +49,12 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	return cmd
 }
 
+// isValidLanguage checks if a given language code is valid.
+func isValidLanguage(lang string) bool {
+	_, ok := client.GameLanguages[lang]
+	return ok
+}
+
 func executeDownload(authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
@@ -59,13 +65,12 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 	}
 	if !isValidLanguage(language) {
 		fmt.Println("Invalid language code. Supported languages are:")
-		for langCode, langName := range gameLanguages {
+		for langCode, langName := range client.GameLanguages {
 			fmt.Printf("'%s' for %s\n", langCode, langName)
 		}
 		return
-	} else {
-		language = gameLanguages[language]
 	}
+	languageFullName := client.GameLanguages[language]
 
 	user, err := authService.RefreshToken()
 	if err != nil {
@@ -99,12 +104,12 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 		return
 	}
 
-	logDownloadParameters(parsedGameData, gameID, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
+	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
 	ctx := context.Background()
 	progressWriter := io.Writer(os.Stderr)
 
-	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
+	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
 	if err != nil {
 		if err == context.Canceled || err == context.DeadlineExceeded {
 			log.Warn().Err(err).Msg("Download operation cancelled or timed out.")

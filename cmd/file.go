@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -12,13 +13,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/pool"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +38,7 @@ func fileCmd() *cobra.Command {
 func hashCmd() *cobra.Command {
 	var saveToFileFlag, cleanFlag, recursiveFlag bool
 	var algo string
+	var numThreads int
 
 	cmd := &cobra.Command{
 		Use:   "hash [fileDir]",
@@ -48,13 +50,15 @@ func hashCmd() *cobra.Command {
 				log.Error().Msgf("Unsupported hash algorithm: %s", algo)
 				return
 			}
-			generateHashFiles(dir, algo, recursiveFlag, saveToFileFlag, cleanFlag)
+			generateHashFiles(dir, algo, recursiveFlag, saveToFileFlag, cleanFlag, numThreads)
 		},
 	}
 	cmd.Flags().StringVarP(&algo, "algo", "a", "md5", "Hash algorithm to use [md5, sha1, sha256, sha512]")
 	cmd.Flags().BoolVarP(&recursiveFlag, "recursive", "r", true, "Process files in subdirectories? [true, false]")
 	cmd.Flags().BoolVarP(&saveToFileFlag, "save", "s", false, "Save hash to files? [true, false]")
 	cmd.Flags().BoolVarP(&cleanFlag, "clean", "c", false, "Remove old hash files before generating new ones? [true, false]")
+	cmd.Flags().IntVarP(&numThreads, "threads", "t", 4, "Number of worker threads to use for hashing [1-16]")
+
 	return cmd
 }
 
@@ -92,70 +96,62 @@ func removeHashFiles(dir string, recursive bool) {
 	}
 }
 
-func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool) {
-	exclusionList := []string{".git", ".gitignore", ".DS_Store", "Thumbs.db", "desktop.ini", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm", "*.md5", "*.sha1", "*.sha256", "*.sha512", "*.cksum", "*.sum", "*.sig", "*.asc", "*.gpg"}
-	var hashFiles []string
-	var wg sync.WaitGroup
-	fileChan := make(chan string)
-	numWorkers := runtime.NumCPU() - 2
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
+func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numThreads int) {
 	if clean {
 		log.Info().Msgf("Cleaning old hash files from %s and its subdirectories", dir)
 		removeHashFiles(dir, true)
 	}
-	go func() {
-		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				log.Error().Msgf("Error accessing path %q: %v", path, err)
-				return err
+
+	exclusionList := []string{".git", ".gitignore", ".DS_Store", "Thumbs.db", "desktop.ini", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm", "*.md5", "*.sha1", "*.sha256", "*.sha512", "*.cksum", "*.sum", "*.sig", "*.asc", "*.gpg"}
+	var filesToProcess []string
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Error().Msgf("Error accessing path %q: %v", path, err)
+			return err
+		}
+		if info.IsDir() {
+			if path != dir && !recursive {
+				return filepath.SkipDir
 			}
-			if info.IsDir() {
-				if path != dir && !recursive {
-					return filepath.SkipDir
-				}
+			return nil
+		}
+		for _, pattern := range exclusionList {
+			matched, _ := filepath.Match(pattern, info.Name())
+			if matched {
 				return nil
 			}
-			for _, pattern := range exclusionList {
-				matched, _ := filepath.Match(pattern, info.Name())
-				if matched {
-					return nil
-				}
-			}
-			fileChan <- path
-			return nil
-		})
-		if err != nil {
-			log.Error().Msgf("Error walking the path %q: %v", dir, err)
 		}
-		close(fileChan)
-	}()
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for path := range fileChan {
-				hash, err := generateHash(path, algo)
-				if err != nil {
-					log.Error().Msgf("Error generating hash for file %s: %v", path, err)
-					continue
-				}
-				if saveToFile {
-					hashFilePath := path + "." + algo
-					err = os.WriteFile(hashFilePath, []byte(hash), 0o644)
-					if err != nil {
-						log.Error().Msgf("Error writing hash to file %s: %v", hashFilePath, err)
-						continue
-					}
-					hashFiles = append(hashFiles, hashFilePath)
-				} else {
-					fmt.Printf("%s hash for \"%s\": %s\n", algo, path, hash)
-				}
+		filesToProcess = append(filesToProcess, path)
+		return nil
+	})
+
+	var hashFiles []string
+	var hfMutex sync.Mutex
+
+	workerFunc := func(ctx context.Context, path string) error {
+		hash, err := generateHash(path, algo)
+		if err != nil {
+			log.Error().Err(err).Str("file", path).Msg("Error generating hash")
+			return err
+		}
+		if saveToFile {
+			hashFilePath := path + "." + algo
+			err = os.WriteFile(hashFilePath, []byte(hash), 0o644)
+			if err != nil {
+				log.Error().Err(err).Str("file", hashFilePath).Msg("Error writing hash to file")
+				return err
 			}
-		}()
+			hfMutex.Lock()
+			hashFiles = append(hashFiles, hashFilePath)
+			hfMutex.Unlock()
+		} else {
+			fmt.Printf("%s hash for \"%s\": %s\n", algo, path, hash)
+		}
+		return nil
 	}
-	wg.Wait()
+
+	_ = pool.Run(context.Background(), filesToProcess, numThreads, workerFunc)
+
 	if saveToFile {
 		fmt.Println("Generated hash files:")
 		for _, file := range hashFiles {
@@ -218,7 +214,7 @@ func estimateStorageSize(gameID, language, platformName string, extrasFlag, dlcF
 		return fmt.Errorf("invalid size unit: \"%s\". Unit must be mb or gb", sizeUnit)
 	}
 
-	langFullName, ok := gameLanguages[language]
+	langFullName, ok := client.GameLanguages[language]
 	if !ok {
 		return fmt.Errorf("invalid language code")
 	}

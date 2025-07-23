@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"fyne.io/fyne/v2/data/binding"
 	"path/filepath"
 	"strings"
+
+	"fyne.io/fyne/v2/data/binding"
 
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
@@ -27,8 +28,8 @@ func (pw *progressWriter) Write(p []byte) (n int, err error) {
 
 func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Game,
 	downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag,
-	flattenFlag, skipPatchesFlag bool, numThreads int) {
-
+	flattenFlag, skipPatchesFlag bool, numThreads int,
+) {
 	ctx, cancel := context.WithCancel(context.Background())
 	task := &DownloadTask{
 		ID:         game.ID,
@@ -59,7 +60,6 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads,
 		pWriter,
 	)
-
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			task.Status.Set("Cancelled")

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,14 +19,17 @@ type mockTokenStorer struct {
 }
 
 func (m *mockTokenStorer) GetTokenRecord() (*db.Token, error) {
-	return nil, m.getTokenErr
+	if m.getTokenErr != nil {
+		return nil, m.getTokenErr
+	}
+	return &db.Token{RefreshToken: "valid-refresh-token"}, nil
 }
 func (m *mockTokenStorer) UpsertTokenRecord(token *db.Token) error { return nil }
 
 type mockTokenRefresher struct{}
 
 func (m *mockTokenRefresher) PerformTokenRefresh(refreshToken string) (string, string, int64, error) {
-	return "", "", 0, nil
+	return "new-access-token", "new-refresh-token", 3600, nil
 }
 
 func initTestDB(t *testing.T) {
@@ -38,8 +40,11 @@ func initTestDB(t *testing.T) {
 		t.Fatalf("failed to init db: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := db.CloseDB(); err != nil {
-			t.Errorf("failed to close db: %v", err)
+		if db.Db != nil {
+			if err := db.CloseDB(); err != nil {
+				t.Errorf("failed to close db: %v", err)
+			}
+			db.Db = nil
 		}
 	})
 }
@@ -52,22 +57,14 @@ func addTestGame(t *testing.T, id int, title, data string) {
 }
 
 func captureCombinedOutput(cmd *cobra.Command, args ...string) (string, error) {
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		return "", err
-	}
-	os.Stdout = w
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
 	cmd.SetArgs(args)
-	cmdErr := cmd.Execute()
-	w.Close()
-	os.Stdout = oldStdout
-	pipeOutput, _ := io.ReadAll(r)
-	r.Close()
-	return buf.String() + string(pipeOutput), cmdErr
+
+	err := cmd.Execute() // Always use Execute() to get the full Cobra lifecycle, including flag parsing.
+
+	return buf.String(), err
 }
 
 func TestListCmd(t *testing.T) {
@@ -118,6 +115,9 @@ func TestSearchCmd(t *testing.T) {
 	}
 	if !strings.Contains(output, "Awesome Game") {
 		t.Errorf("expected output to contain 'Awesome Game', got: %s", output)
+	}
+	if !strings.Contains(output, "Not So Awesome") {
+		t.Errorf("expected output to contain 'Not So Awesome', got: %s", output)
 	}
 	addTestGame(t, 30, "ID Game", dummyData)
 	searchCommand = searchCmd()
@@ -205,9 +205,10 @@ func TestRefreshCmd(t *testing.T) {
 	if err != nil {
 		t.Errorf("refresh command execution error: %v", err)
 	}
-	if !strings.Contains(output, "Error: Failed to refresh the access token") &&
-		!strings.Contains(output, "Did you login?") {
-		t.Errorf("expected refresh command to complain about missing token, got: %s", output)
+
+	expectedErrorMsg := "Error: Failed to refresh catalogue. Please check the logs for details."
+	if !strings.Contains(output, expectedErrorMsg) {
+		t.Errorf("expected refresh command to fail with message '%s', got: %s", expectedErrorMsg, output)
 	}
 }
 

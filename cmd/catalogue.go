@@ -1,13 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/habedi/gogg/auth"
@@ -56,7 +56,7 @@ func listGames(cmd *cobra.Command, args []string) {
 		cmd.Println("Game catalogue is empty. Did you refresh the catalogue?")
 		return
 	}
-	table := tablewriter.NewWriter(os.Stdout)
+	table := tablewriter.NewWriter(cmd.OutOrStdout())
 	table.SetHeader([]string{"Row ID", "Game ID", "Game Title"})
 	table.SetColMinWidth(2, 60)
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
@@ -146,79 +146,27 @@ func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads 
 		cmd.PrintErrln("Error: Number of threads should be between 1 and 20.")
 		return
 	}
-	token, err := authService.RefreshToken()
-	if err != nil || token == nil {
-		cmd.PrintErrln("Error: Failed to refresh the access token. Did you login?")
-		return
-	}
-	games, err := client.FetchIdOfOwnedGames(token.AccessToken,
-		"https://embed.gog.com/user/data/games")
-	if err != nil {
-		if strings.Contains(err.Error(), "401") {
-			cmd.PrintErrln("Error: Failed to fetch the list of owned games. Please use `login` command to login.")
-		}
-		log.Info().Msgf("Failed to fetch owned games: %v\n", err)
-		return
-	} else if len(games) == 0 {
-		log.Info().Msg("No games found in the GOG account.")
-		return
-	} else {
-		log.Info().Msgf("Found %d games IDs in the GOG account.\n", len(games))
-	}
-	if err := db.EmptyCatalogue(); err != nil {
-		log.Fatal().Err(err).Msg("Failed to empty the game catalogue.")
-		return
-	}
-	log.Info().Msg("Games table truncated. Starting data refresh...")
-	bar := progressbar.NewOptions(len(games),
+
+	bar := progressbar.NewOptions(1000,
 		progressbar.OptionSetDescription("Refreshing catalogue..."),
 		progressbar.OptionSetWidth(20),
-		progressbar.OptionShowCount(),
 		progressbar.OptionShowIts(),
 		progressbar.OptionClearOnFinish(),
+		progressbar.OptionSetPredictTime(false),
+		progressbar.OptionSetWriter(cmd.ErrOrStderr()), // Use command's error stream
 	)
-	type gameTask struct {
-		gameID     int
-		details    client.Game
-		rawDetails string
-		err        error
+
+	progressCb := func(progress float64) {
+		_ = bar.Set(int(progress * 1000))
 	}
-	taskChan := make(chan gameTask, 10)
-	var wg sync.WaitGroup
-	for i := 0; i < numThreads; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for task := range taskChan {
-				url := fmt.Sprintf("https://embed.gog.com/account/gameDetails/%d.json",
-					task.gameID)
-				task.details, task.rawDetails, task.err = client.FetchGameData(token.AccessToken,
-					url)
-				if task.err != nil {
-					log.Info().Msgf("Failed to fetch game details for game ID %d: %v\n",
-						task.gameID, task.err)
-				}
-				if task.err == nil && task.details.Title != "" {
-					err = db.PutInGame(task.gameID, task.details.Title, task.rawDetails)
-					if err != nil {
-						log.Info().Msgf("Failed to insert game details for game ID %d: %v in the catalogue\n",
-							task.gameID, err)
-					}
-				}
-				_ = bar.Add(1)
-			}
-		}()
+
+	err := client.RefreshCatalogue(context.Background(), authService, numThreads, progressCb)
+	if err != nil {
+		cmd.PrintErrln("Error: Failed to refresh catalogue. Please check the logs for details.")
+		log.Error().Err(err).Msg("Failed to refresh the game catalogue")
+		return
 	}
-	go func() {
-		for _, gameID := range games {
-			taskChan <- gameTask{gameID: gameID}
-		}
-		close(taskChan)
-	}()
-	wg.Wait()
-	if err := bar.Finish(); err != nil {
-		log.Error().Err(err).Msg("Failed to finish progress bar")
-	}
+
 	cmd.Println("Refreshed the game catalogue successfully.")
 }
 
@@ -272,7 +220,7 @@ func searchGames(cmd *cobra.Command, query string, searchByID bool) {
 		cmd.Println("No game(s) found matching the query. Please check the search term or ID.")
 		return
 	}
-	table := tablewriter.NewWriter(os.Stdout)
+	table := tablewriter.NewWriter(cmd.OutOrStdout())
 	table.SetHeader([]string{"Row ID", "Game ID", "Title"})
 	table.SetColMinWidth(2, 50)
 	table.SetAlignment(tablewriter.ALIGN_LEFT)

@@ -45,18 +45,3 @@ func appendLog(logOutput *widget.Entry, msg string) {
 		logOutput.SetText(nw)
 	})
 }
-
-// gameLanguages is a map of language codes to their full names.
-var gameLanguages = map[string]string{
-	"en":      "English",
-	"fr":      "Français",
-	"de":      "Deutsch",
-	"es":      "Español",
-	"it":      "Italiano",
-	"ru":      "Русский",
-	"pl":      "Polski",
-	"pt-BR":   "Português do Brasil",
-	"zh-Hans": "简体中文",
-	"ja":      "日本語",
-	"ko":      "한국어",
-}
