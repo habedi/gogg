@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"fyne.io/fyne/v2/canvas"
 	"net/url"
 	"runtime"
 
@@ -15,6 +16,10 @@ var goggRepo = "https://github.com/habedi/gogg"
 func ShowAboutUI(version string) fyne.CanvasObject {
 	platform := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
 	goVersion := runtime.Version()
+
+	logoImage := canvas.NewImageFromResource(AppLogo)
+	logoImage.SetMinSize(fyne.NewSize(128, 128))
+	logoImage.FillMode = canvas.ImageFillContain
 
 	versionLbl := widget.NewLabel(fmt.Sprintf("Version: %s", version))
 	goLbl := widget.NewLabel(fmt.Sprintf("Go version: %s", goVersion))
@@ -40,6 +45,8 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 		"",
 		"",
 		container.NewVBox(
+			container.NewCenter(logoImage),
+			widget.NewSeparator(),
 			container.NewVBox(
 				titleLbl,
 				subtitleLbl,

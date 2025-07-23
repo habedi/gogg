@@ -11,6 +11,7 @@ import (
 
 func Run(version string, authService *auth.Service) {
 	myApp := app.NewWithID("com.habedi.gogg")
+	myApp.SetIcon(AppLogo)
 
 	themePref := myApp.Preferences().StringWithFallback("theme", "light")
 	if themePref == "dark" {
