@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -17,6 +18,8 @@ type DownloadTask struct {
 	Status     binding.String
 	Progress   binding.Float
 	CancelFunc context.CancelFunc
+	// This will hold the text for concurrent, per-file progress.
+	FileStatus binding.String
 }
 
 type DownloadManager struct {
@@ -40,37 +43,44 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 	list := widget.NewListWithData(
 		dm.Tasks,
 		func() fyne.CanvasObject {
-			progress := widget.NewProgressBar()
-			status := widget.NewLabel("Status")
-			status.Wrapping = fyne.TextWrapWord
-			cancelBtn := widget.NewButton("Cancel", nil)
 			title := widget.NewLabel("Game Title")
 			title.TextStyle = fyne.TextStyle{Bold: true}
+			cancelBtn := widget.NewButton("Cancel", nil)
+			status := widget.NewLabel("Status")
+			status.Wrapping = fyne.TextWrapWord
+			progress := widget.NewProgressBar()
+			fileStatus := widget.NewLabel("")
+			fileStatus.TextStyle = fyne.TextStyle{Monospace: true}
+			fileStatus.Wrapping = fyne.TextWrapWord
 
-			return container.NewBorder(
-				title,                               // Top
-				nil,                                 // Bottom
-				nil,                                 // Left
-				cancelBtn,                           // Right
-				container.NewVBox(status, progress), // Center
-			)
+			topRow := container.NewHBox(title, layout.NewSpacer(), cancelBtn)
+			content := container.NewVBox(topRow, status, progress, fileStatus)
+
+			// Wrap the content in a Card to help with layout management.
+			return widget.NewCard("", "", content)
 		},
 		func(item binding.DataItem, obj fyne.CanvasObject) {
-			taskRaw, _ := item.(binding.Untyped).Get()
+			taskRaw, err := item.(binding.Untyped).Get()
+			if err != nil {
+				return
+			}
 			task := taskRaw.(*DownloadTask)
 
-			border := obj.(*fyne.Container)
+			// The object is now a Card.
+			card := obj.(*widget.Card)
+			contentVBox := card.Content.(*fyne.Container)
+			topRowHBox := contentVBox.Objects[0].(*fyne.Container)
 
-			vbox := border.Objects[0].(*fyne.Container)
-			title := border.Objects[1].(*widget.Label)
-			cancelBtn := border.Objects[2].(*widget.Button)
-
-			status := vbox.Objects[0].(*widget.Label)
-			progress := vbox.Objects[1].(*widget.ProgressBar)
+			title := topRowHBox.Objects[0].(*widget.Label)
+			cancelBtn := topRowHBox.Objects[2].(*widget.Button)
+			status := contentVBox.Objects[1].(*widget.Label)
+			progress := contentVBox.Objects[2].(*widget.ProgressBar)
+			fileStatus := contentVBox.Objects[3].(*widget.Label)
 
 			title.SetText(task.Title)
 			status.Bind(task.Status)
 			progress.Bind(task.Progress)
+			fileStatus.Bind(task.FileStatus)
 
 			cancelBtn.OnTapped = func() {
 				if task.CancelFunc != nil {

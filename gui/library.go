@@ -162,6 +162,28 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 
 		gameRaw, _ := selectedGame.Get()
 		game := gameRaw.(db.Game)
+
+		// Check if this game is already downloading
+		isAlreadyDownloading := false
+		dm.mu.RLock()
+		currentTasks, _ := dm.Tasks.Get()
+		for _, taskRaw := range currentTasks {
+			task := taskRaw.(*DownloadTask)
+			status, _ := task.Status.Get()
+			isFinalState := strings.HasPrefix(status, "Completed") || status == "Cancelled" || strings.HasPrefix(status, "Error")
+
+			if task.ID == game.ID && !isFinalState {
+				isAlreadyDownloading = true
+				break
+			}
+		}
+		dm.mu.RUnlock()
+
+		if isAlreadyDownloading {
+			dialog.ShowInformation("In Progress", "This game is already in the download queue.", win)
+			return
+		}
+
 		threads, _ := strconv.Atoi(threadsSelect.Selected)
 		lang := langSelect.Selected
 		langFull := client.GameLanguages[lang]

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/habedi/gogg/auth"
@@ -19,9 +21,27 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// formatBytes converts a byte count into a human-readable string (KB, MB, GB).
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
 // cliProgressWriter handles progress updates for the CLI.
 type cliProgressWriter struct {
-	bar *progressbar.ProgressBar
+	bar             *progressbar.ProgressBar
+	fileProgress    map[string]struct{ current, total int64 }
+	fileBytes       map[string]int64
+	downloadedBytes int64
+	mu              sync.RWMutex
 }
 
 func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
@@ -29,26 +49,67 @@ func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
 	for scanner.Scan() {
 		var update client.ProgressUpdate
 		if err := json.Unmarshal(scanner.Bytes(), &update); err == nil {
+			cw.mu.Lock()
 			switch update.Type {
 			case "start":
 				cw.bar = progressbar.NewOptions64(
 					update.OverallTotalBytes,
-					progressbar.OptionSetDescription("Downloading game..."),
+					progressbar.OptionSetDescription("Downloading..."),
 					progressbar.OptionSetWriter(os.Stderr),
 					progressbar.OptionShowBytes(true),
-					progressbar.OptionThrottle(100*time.Millisecond),
+					progressbar.OptionThrottle(200*time.Millisecond),
 					progressbar.OptionClearOnFinish(),
 					progressbar.OptionSpinnerType(14),
 				)
+				cw.fileProgress = make(map[string]struct{ current, total int64 })
+				cw.fileBytes = make(map[string]int64)
 			case "file_progress":
 				if cw.bar != nil {
-					_ = cw.bar.Set64(update.CurrentBytes)
-					cw.bar.Describe(fmt.Sprintf("Downloading %s", update.FileName))
+					diff := update.CurrentBytes - cw.fileBytes[update.FileName]
+					cw.fileBytes[update.FileName] = update.CurrentBytes
+					cw.downloadedBytes += diff
+					_ = cw.bar.Set64(cw.downloadedBytes)
+
+					cw.fileProgress[update.FileName] = struct{ current, total int64 }{update.CurrentBytes, update.TotalBytes}
+					if update.CurrentBytes >= update.TotalBytes && update.TotalBytes > 0 {
+						delete(cw.fileProgress, update.FileName)
+					}
+					cw.bar.Describe(cw.getFileStatusString())
 				}
 			}
+			cw.mu.Unlock()
 		}
 	}
 	return len(p), nil
+}
+
+// getFileStatusString builds a compact string of current file progresses.
+func (cw *cliProgressWriter) getFileStatusString() string {
+	if len(cw.fileProgress) == 0 {
+		return "Finalizing..."
+	}
+
+	files := make([]string, 0, len(cw.fileProgress))
+	for f := range cw.fileProgress {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Downloading %d files: ", len(files)))
+	for i, file := range files {
+		shortName := file
+		if len(shortName) > 25 {
+			shortName = "..." + shortName[len(shortName)-22:]
+		}
+		progress := cw.fileProgress[file]
+		sizeStr := fmt.Sprintf("%s/%s", formatBytes(progress.current), formatBytes(progress.total))
+		sb.WriteString(fmt.Sprintf("%s %s", shortName, sizeStr))
+		if i < len(files)-1 {
+			sb.WriteString(" | ")
+		}
+	}
+	return sb.String()
 }
 
 func downloadCmd(authService *auth.Service) *cobra.Command {
