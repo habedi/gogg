@@ -4,12 +4,12 @@ BINARY_NAME := $(or $(GOGG_BINARY), $(notdir $(REPO)))
 BINARY := bin/$(BINARY_NAME)
 COVER_PROFILE := coverage.txt
 GO_FILES := $(shell find . -type f -name '*.go')
-COVER_FLAGS := --cover --coverprofile=$(COVER_PROFILE)
 EXTRA_TMP_FILES := $(shell find . -type f -name 'gogg_catalogue_*.csv' -o -name '*_output.txt')
 GO ?= go
 MAIN ?= ./main.go
 ECHO := @echo
 RELEASE_FLAGS := -ldflags="-s -w" -trimpath
+FYNE_TAGS := -tags desktop,gl
 
 # Adjust PATH if necessary (append /snap/bin if not present)
 PATH := $(if $(findstring /snap/bin,$(PATH)),$(PATH),/snap/bin:$(PATH))
@@ -43,15 +43,12 @@ format: ## Format Go files
 test: format ## Run the tests
 	$(ECHO) "Running non-UI tests..."
 	@$(GO) test -v $(shell $(GO) list ./... | grep -v './gui') --cover --coverprofile=non_ui_coverage.out --race
-	$(ECHO) "Running UI tests (individually to avoid race conditions)..."
-	@$(GO) test -v -p 1 -run ^TestCatalogueListUI$ ./gui/... --cover --coverprofile=ui_coverage_1.out --race
-	@$(GO) test -v -p 1 -run ^TestSearchCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_2.out --race
-	@$(GO) test -v -p 1 -run ^TestRefreshCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_3.out --race
-	@$(GO) test -v -p 1 -run ^TestExportCatalogueUI$ ./gui/... --cover --coverprofile=ui_coverage_4.out --race
+	$(ECHO) "Running UI tests..."
+	@$(GO) test -v -p 1 ./gui/... --cover --coverprofile=ui_coverage.out --race
 	$(ECHO) "Merging coverage reports..."
 	@echo "mode: set" > $(COVER_PROFILE)
-	@tail -n +2 -q non_ui_coverage.out ui_coverage_*.out >> $(COVER_PROFILE)
-	@rm -f non_ui_coverage.out ui_coverage_*.out
+	@tail -n +2 -q non_ui_coverage.out ui_coverage.out >> $(COVER_PROFILE)
+	@rm -f non_ui_coverage.out ui_coverage.out
 
 .PHONY: showcov
 showcov: test ## Display test coverage report
@@ -59,11 +56,11 @@ showcov: test ## Display test coverage report
 	@$(GO) tool cover -func=$(COVER_PROFILE)
 
 .PHONY: build
-build: format ## Build the binary for the current platform (Linux and Windows)
+build: format ## Build the binary for the current platform
 	$(ECHO) "Tidying dependencies..."
 	@$(GO) mod tidy
 	$(ECHO) "Building the binary..."
-	@$(GO) build -o $(BINARY)
+	@$(GO) build $(FYNE_TAGS) -o $(BINARY) $(MAIN)
 	@$(ECHO) "Build complete: $(BINARY)"
 
 .PHONY: build-macos
@@ -75,7 +72,7 @@ build-macos: format ## Build binary for macOS (v14 and newer; arm64)
 	export CGO_ENABLED=1 ;\
 	export CGO_CFLAGS="$$(pkg-config --cflags glfw3)" ;\
 	export CGO_LDFLAGS="$$(pkg-config --libs glfw3)" ;\
-	GOARCH=arm64 $(GO) build -v -tags desktop,gl -ldflags="-s -w" -o $(BINARY) $(MAIN) ;\
+	GOARCH=arm64 $(GO) build -v $(FYNE_TAGS) -ldflags="-s -w" -o $(BINARY) $(MAIN) ;\
 	echo "Build complete: $(BINARY)"
 
 .PHONY: run
@@ -132,7 +129,7 @@ release: ## Build the release binary for current platform (Linux and Windows)
 	$(ECHO) "Tidying dependencies..."
 	@$(GO) mod tidy
 	$(ECHO) "Building the release binary..."
-	@$(GO) build $(RELEASE_FLAGS) -o $(BINARY) $(MAIN)
+	@$(GO) build $(RELEASE_FLAGS) $(FYNE_TAGS) -o $(BINARY) $(MAIN)
 	@$(ECHO) "Build complete: $(BINARY)"
 
 .PHONY: release-macos
@@ -144,7 +141,7 @@ release-macos: ## Build release binary for macOS (v14 and newer; arm64)
 	export CGO_ENABLED=1 ;\
 	export CGO_CFLAGS="$$(pkg-config --cflags glfw3)" ;\
 	export CGO_LDFLAGS="$$(pkg-config --libs glfw3)" ;\
-	GOARCH=arm64 $(GO) build $(RELEASE_FLAGS) -o $(BINARY) $(MAIN) ;\
+	GOARCH=arm64 $(GO) build $(RELEASE_FLAGS) $(FYNE_TAGS) -o $(BINARY) $(MAIN) ;\
 	echo "Build complete: $(BINARY)"
 
 .PHONY: setup-hooks
