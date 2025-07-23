@@ -18,6 +18,15 @@ import (
 )
 
 func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) fyne.CanvasObject {
+	// Check for login token first
+	token, _ := db.GetTokenRecord()
+	if token == nil {
+		return container.NewCenter(
+			widget.NewLabelWithStyle("Not logged in. Please run 'gogg login' from your terminal.",
+				fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		)
+	}
+
 	allGames, _ := db.GetCatalogue()
 	gamesList := binding.NewUntypedList()
 	_ = gamesList.Set(untypedSlice(allGames))
@@ -103,7 +112,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			return
 		}
 		game := gameRaw.(db.Game)
-		detailTitle.SetText(game.Title)
+		detailTitle.SetText(fmt.Sprintf("Download Options for: %s", game.Title))
 		downloadForm.Show()
 	}))
 
