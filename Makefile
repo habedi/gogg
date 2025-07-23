@@ -100,7 +100,7 @@ install-snap: ## Install Snap (for Debian-based systems)
 install-deps: ## Install development dependencies (for Debian-based systems)
 	$(ECHO) "Installing dependencies..."
 	@sudo apt-get install -y make libgl1-mesa-dev libx11-dev xorg-dev \
-	libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config
+	libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config libasound2-dev
 	@$(MAKE) install-snap
 	@sudo snap install go --classic
 	@sudo snap install golangci-lint --classic
