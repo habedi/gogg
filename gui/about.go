@@ -2,11 +2,11 @@ package gui
 
 import (
 	"fmt"
-	"fyne.io/fyne/v2/canvas"
 	"net/url"
 	"runtime"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
@@ -21,7 +21,8 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 	logoImage.SetMinSize(fyne.NewSize(128, 128))
 	logoImage.FillMode = canvas.ImageFillContain
 
-	versionLbl := widget.NewLabel(fmt.Sprintf("Version: %s", version))
+	// Use the new CopyableLabel for the version
+	versionLbl := NewCopyableLabel(fmt.Sprintf("Version: %s", version))
 	goLbl := widget.NewLabel(fmt.Sprintf("Go version: %s", goVersion))
 	platformLbl := widget.NewLabel(fmt.Sprintf("Platform: %s", platform))
 

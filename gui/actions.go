@@ -22,7 +22,8 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 	statusLabel := widget.NewLabel("Preparing to refresh...")
 	ctx, cancel := context.WithCancel(context.Background())
 	content := container.NewVBox(statusLabel, progress, widget.NewButton("Cancel", cancel))
-	dlg := dialog.NewCustom("Refreshing Catalogue", "Dismiss", content, win)
+	dlg := dialog.NewCustom("Refreshing Catalogue", "Hide", content, win)
+	dlg.Resize(fyne.NewSize(400, 200))
 	dlg.Show()
 
 	go func() {

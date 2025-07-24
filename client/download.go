@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -159,7 +160,7 @@ func DownloadGameFiles(
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
 		resp, err := clientNoRedirect.Do(req)
 		if err != nil {
-			if ctx.Err() == context.Canceled {
+			if errors.Is(ctx.Err(), context.Canceled) {
 				return "", ctx.Err()
 			}
 			return "", err
@@ -307,7 +308,7 @@ func DownloadGameFiles(
 	go func() {
 		defer wg.Done()
 		enqueueErr = func() error {
-			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, "", resumeFlag, flattenFlag, skipPatchesFlag, updateWriter); err != nil {
+			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, "", resumeFlag, flattenFlag, skipPatchesFlag); err != nil {
 				return err
 			}
 			if extrasFlag {
@@ -316,7 +317,7 @@ func DownloadGameFiles(
 				}
 			}
 			if dlcFlag {
-				if err := enqueueDLCs(ctx, enqueue, &game, gameLanguage, platformName, extrasFlag, resumeFlag, flattenFlag, skipPatchesFlag, updateWriter); err != nil {
+				if err := enqueueDLCs(ctx, enqueue, &game, gameLanguage, platformName, extrasFlag, resumeFlag, flattenFlag, skipPatchesFlag); err != nil {
 					return err
 				}
 			}
@@ -357,7 +358,7 @@ func DownloadGameFiles(
 	return nil
 }
 
-func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform, subDirPrefix string, resume, flatten, skipPatches bool, updateWriter io.Writer) error {
+func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform, subDirPrefix string, resume, flatten, skipPatches bool) error {
 	for _, download := range game.Downloads {
 		if !strings.EqualFold(download.Language, lang) {
 			continue
@@ -421,11 +422,11 @@ func enqueueExtras(ctx context.Context, enqueue func(downloadTask), extras []Ext
 	return nil
 }
 
-func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool, updateWriter io.Writer) error {
+func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool) error {
 	for _, dlc := range game.DLCs {
 		dlcSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title))
 		dlcGame := Game{Title: dlc.Title, Downloads: dlc.ParsedDownloads}
-		if err := enqueueGameFiles(ctx, enqueue, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches, updateWriter); err != nil {
+		if err := enqueueGameFiles(ctx, enqueue, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches); err != nil {
 			return err
 		}
 		if extras {

@@ -1,7 +1,9 @@
 package gui
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -18,47 +20,33 @@ import (
 )
 
 func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) fyne.CanvasObject {
-	// Check for login token first
 	token, _ := db.GetTokenRecord()
 	if token == nil {
-		return container.NewCenter(
-			widget.NewLabelWithStyle("Not logged in. Please run 'gogg login' from your terminal.",
-				fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		)
+		return container.NewCenter(container.NewVBox(
+			widget.NewIcon(theme.WarningIcon()),
+			widget.NewLabelWithStyle("Not logged in.", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+			widget.NewLabel("Please run 'gogg login' from your terminal to authenticate."),
+		))
 	}
 
 	allGames, _ := db.GetCatalogue()
-	gamesList := binding.NewUntypedList()
-	_ = gamesList.Set(untypedSlice(allGames))
+	gamesListBinding := binding.NewUntypedList()
+	if len(allGames) > 0 {
+		_ = gamesListBinding.Set(untypedSlice(allGames))
+	}
 
-	selectedGame := binding.NewUntyped()
+	selectedGameBinding := binding.NewUntyped()
+
+	var listPlaceholder fyne.CanvasObject
+	var gameListWidget *widget.List
 
 	// --- LEFT PANE (MASTER) ---
-	gameListWidget := widget.NewListWithData(gamesList,
-		func() fyne.CanvasObject {
-			return widget.NewLabel("Game Title")
-		},
-		func(item binding.DataItem, obj fyne.CanvasObject) {
-			gameRaw, _ := item.(binding.Untyped).Get()
-			game := gameRaw.(db.Game)
-			obj.(*widget.Label).SetText(game.Title)
-		},
-	)
-
-	gameListWidget.OnSelected = func(id widget.ListItemID) {
-		gameRaw, _ := gamesList.GetValue(id)
-		_ = selectedGame.Set(gameRaw)
-	}
-	gameListWidget.OnUnselected = func(id widget.ListItemID) {
-		_ = selectedGame.Set(nil)
-	}
-
 	searchEntry := widget.NewEntry()
-	searchEntry.SetPlaceHolder("Search catalogue...")
+	searchEntry.SetPlaceHolder("Type game title to search...")
 	searchEntry.OnChanged = func(s string) {
 		s = strings.ToLower(s)
 		if s == "" {
-			_ = gamesList.Set(untypedSlice(allGames))
+			_ = gamesListBinding.Set(untypedSlice(allGames))
 			return
 		}
 		filtered := make([]interface{}, 0)
@@ -67,53 +55,95 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				filtered = append(filtered, game)
 			}
 		}
-		_ = gamesList.Set(filtered)
+		_ = gamesListBinding.Set(filtered)
+	}
+
+	refreshUI := func() {
+		allGames, _ = db.GetCatalogue()
+		_ = gamesListBinding.Set(untypedSlice(allGames))
+		if gameListWidget != nil {
+			gameListWidget.Refresh()
+		}
+		if gamesListBinding.Length() > 0 && listPlaceholder != nil {
+			listPlaceholder.Hide()
+			if gameListWidget != nil {
+				gameListWidget.Show()
+			}
+		}
 	}
 
 	refreshBtn := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
 		searchEntry.SetText("")
-		RefreshCatalogueAction(win, authService, func() {
-			allGames, _ = db.GetCatalogue()
-			_ = gamesList.Set(untypedSlice(allGames))
-		})
+		RefreshCatalogueAction(win, authService, refreshUI)
 	})
 
 	var exportBtn *widget.Button
 	exportBtn = widget.NewButtonWithIcon("Export", theme.DocumentSaveIcon(), func() {
 		popup := widget.NewPopUpMenu(fyne.NewMenu("",
-			fyne.NewMenuItem("Export as CSV", func() { ExportCatalogueAction(win, "csv") }),
-			fyne.NewMenuItem("Export as JSON", func() { ExportCatalogueAction(win, "json") }),
+			fyne.NewMenuItem("Export Game List as CSV", func() { ExportCatalogueAction(win, "csv") }),
+			fyne.NewMenuItem("Export Full Catalogue as JSON", func() { ExportCatalogueAction(win, "json") }),
 		), win.Canvas())
 		popup.ShowAtPosition(win.Content().Position().Add(fyne.NewPos(exportBtn.Position().X, exportBtn.Position().Y+exportBtn.Size().Height)))
 	})
 	toolbar := container.NewHBox(refreshBtn, exportBtn)
 
+	listContent := container.NewStack()
+	if gamesListBinding.Length() == 0 {
+		listPlaceholder = container.NewCenter(container.NewVBox(
+			widget.NewIcon(theme.InfoIcon()),
+			widget.NewLabel("Your library is empty or hasn't been synced."),
+			widget.NewButton("Refresh Catalogue Now", func() {
+				RefreshCatalogueAction(win, authService, refreshUI)
+			}),
+		))
+		listContent.Add(listPlaceholder)
+	} else {
+		gameListWidget = widget.NewListWithData(gamesListBinding,
+			func() fyne.CanvasObject {
+				return widget.NewLabel("Game Title")
+			},
+			func(item binding.DataItem, obj fyne.CanvasObject) {
+				gameRaw, _ := item.(binding.Untyped).Get()
+				game := gameRaw.(db.Game)
+				obj.(*widget.Label).SetText(game.Title)
+			},
+		)
+		gameListWidget.OnSelected = func(id widget.ListItemID) {
+			gameRaw, _ := gamesListBinding.GetValue(id)
+			_ = selectedGameBinding.Set(gameRaw)
+		}
+		gameListWidget.OnUnselected = func(id widget.ListItemID) {
+			_ = selectedGameBinding.Set(nil)
+		}
+		listContent.Add(gameListWidget)
+	}
+
 	leftPane := container.NewBorder(
 		container.NewVBox(searchEntry, widget.NewSeparator()),
 		toolbar, nil, nil,
-		gameListWidget,
+		listContent,
 	)
 
 	// --- RIGHT PANE (DETAIL) ---
 	detailTitle := widget.NewLabelWithStyle("Select a game from the list", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	downloadForm := createDownloadForm(win, authService, dm, selectedGame)
+	accordion := createDetailsAccordion(win, authService, dm, selectedGameBinding)
 	rightPane := container.NewBorder(
 		container.NewVBox(detailTitle, widget.NewSeparator()),
 		nil, nil, nil,
-		container.NewVScroll(downloadForm),
+		accordion,
 	)
-	downloadForm.Hide()
+	accordion.Hide()
 
-	selectedGame.AddListener(binding.NewDataListener(func() {
-		gameRaw, _ := selectedGame.Get()
+	selectedGameBinding.AddListener(binding.NewDataListener(func() {
+		gameRaw, _ := selectedGameBinding.Get()
 		if gameRaw == nil {
-			downloadForm.Hide()
+			accordion.Hide()
 			detailTitle.SetText("Select a game from the list")
 			return
 		}
 		game := gameRaw.(db.Game)
-		detailTitle.SetText(fmt.Sprintf("Download Options for: %s", game.Title))
-		downloadForm.Show()
+		detailTitle.SetText(game.Title)
+		accordion.Show()
 	}))
 
 	return container.NewHSplit(leftPane, rightPane)
@@ -127,16 +157,74 @@ func untypedSlice(games []db.Game) []interface{} {
 	return out
 }
 
+func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *DownloadManager, selectedGame binding.Untyped) *widget.Accordion {
+	// Details View
+	detailsLabel := widget.NewLabel("Game details will appear here.")
+	detailsLabel.Wrapping = fyne.TextWrapWord
+
+	// Download Form
+	downloadForm := createDownloadForm(win, authService, dm, selectedGame)
+
+	accordion := widget.NewAccordion(
+		widget.NewAccordionItem("Download Options", downloadForm),
+	)
+	accordion.Open(0) // Open download options by default
+
+	selectedGame.AddListener(binding.NewDataListener(func() {
+		gameRaw, _ := selectedGame.Get()
+		if gameRaw == nil {
+			detailsLabel.SetText("Select a game to see its details.")
+			return
+		}
+		game := gameRaw.(db.Game)
+
+		var gameDetails map[string]interface{}
+		if err := json.Unmarshal([]byte(game.Data), &gameDetails); err != nil {
+			detailsLabel.SetText("Error parsing game details.")
+			return
+		}
+
+		desc, ok := gameDetails["description"].(map[string]interface{})
+		if ok {
+			fullDesc, _ := desc["full"].(string)
+			detailsLabel.SetText(fullDesc)
+		} else {
+			detailsLabel.SetText("No description available.")
+		}
+	}))
+
+	return accordion
+}
+
 func createDownloadForm(win fyne.Window, authService *auth.Service, dm *DownloadManager, selectedGame binding.Untyped) fyne.CanvasObject {
+	prefs := fyne.CurrentApp().Preferences()
 	downloadPathEntry := widget.NewEntry()
+	downloadPathEntry.SetText(prefs.StringWithFallback("lastDownloadPath", ""))
 	downloadPathEntry.SetPlaceHolder("Enter download path")
 
-	langSelect := widget.NewSelect([]string{"en", "fr", "de", "es", "it", "ru", "pl", "pt-BR", "zh-Hans", "ja", "ko"}, nil)
+	browseBtn := widget.NewButton("Browse...", func() {
+		folderDialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+			if err != nil || uri == nil {
+				return
+			}
+			downloadPathEntry.SetText(uri.Path())
+		}, win)
+
+		folderDialog.Resize(fyne.NewSize(800, 600))
+		folderDialog.Show()
+	})
+	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, downloadPathEntry)
+
+	langCodes := make([]string, 0, len(client.GameLanguages))
+	for code := range client.GameLanguages {
+		langCodes = append(langCodes, code)
+	}
+	sort.Strings(langCodes)
+	langSelect := widget.NewSelect(langCodes, nil)
 	langSelect.SetSelected("en")
 
 	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, nil)
 	platformSelect.SetSelected("windows")
-
 	threadOptions := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
 	threadsSelect := widget.NewSelect(threadOptions, nil)
 	threadsSelect.SetSelected("5")
@@ -148,9 +236,9 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	resumeCheck := widget.NewCheck("Resume Downloads", nil)
 	resumeCheck.SetChecked(true)
 	flattenCheck := widget.NewCheck("Flatten Directory", nil)
-	flattenCheck.SetChecked(false)
+	flattenCheck.SetChecked(true)
 	skipPatchesCheck := widget.NewCheck("Skip Patches", nil)
-	skipPatchesCheck.SetChecked(false)
+	skipPatchesCheck.SetChecked(true)
 
 	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), nil)
 	downloadBtn.Importance = widget.HighImportance
@@ -162,31 +250,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 
 		gameRaw, _ := selectedGame.Get()
 		game := gameRaw.(db.Game)
-
-		// Check if this game is already downloading
-		isAlreadyDownloading := false
-		dm.mu.RLock()
-		currentTasks, _ := dm.Tasks.Get()
-		for _, taskRaw := range currentTasks {
-			task := taskRaw.(*DownloadTask)
-			status, _ := task.Status.Get()
-			isFinalState := strings.HasPrefix(status, "Completed") || status == "Cancelled" || strings.HasPrefix(status, "Error")
-
-			if task.ID == game.ID && !isFinalState {
-				isAlreadyDownloading = true
-				break
-			}
-		}
-		dm.mu.RUnlock()
-
-		if isAlreadyDownloading {
-			dialog.ShowInformation("In Progress", "This game is already in the download queue.", win)
-			return
-		}
-
 		threads, _ := strconv.Atoi(threadsSelect.Selected)
-		lang := langSelect.Selected
-		langFull := client.GameLanguages[lang]
+		langFull := client.GameLanguages[langSelect.Selected]
 
 		go executeDownload(
 			authService, dm, game,
@@ -195,23 +260,17 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			flattenCheck.Checked, skipPatchesCheck.Checked,
 			threads,
 		)
-		dialog.ShowInformation("Started", fmt.Sprintf("Download for '%s' has started.\nCheck the Downloads tab for progress.", game.Title), win)
+		dialog.ShowInformation("Started", fmt.Sprintf("Download for '%s' has started.", game.Title), win)
 	}
 
-	form := &widget.Form{
-		Items: []*widget.FormItem{
-			{Text: "Download Path", Widget: downloadPathEntry},
-			{Text: "Platform", Widget: platformSelect},
-			{Text: "Language", Widget: langSelect},
-			{Text: "Threads", Widget: threadsSelect},
-		},
-	}
-
-	return container.NewVBox(
-		form,
-		container.NewHBox(extrasCheck, dlcsCheck, skipPatchesCheck),
-		container.NewHBox(resumeCheck, flattenCheck),
-		layout.NewSpacer(),
-		downloadBtn,
+	form := widget.NewForm(
+		widget.NewFormItem("Download Path", pathContainer),
+		widget.NewFormItem("Platform", platformSelect),
+		widget.NewFormItem("Language", langSelect),
+		widget.NewFormItem("Threads", threadsSelect),
 	)
+
+	checkboxes := container.New(layout.NewGridLayout(3), extrasCheck, dlcsCheck, skipPatchesCheck, resumeCheck, flattenCheck)
+
+	return container.NewVBox(form, checkboxes, layout.NewSpacer(), downloadBtn)
 }

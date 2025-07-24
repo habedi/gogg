@@ -2,21 +2,21 @@ package gui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
-	"sync"
+	"sync/atomic"
 
-	"encoding/json"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/validation"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
@@ -24,280 +24,264 @@ import (
 	"github.com/habedi/gogg/pkg/pool"
 )
 
-func HashUI(win fyne.Window) fyne.CanvasObject {
-	dirLabel := widget.NewLabel("Path")
-	dirEntry := widget.NewEntry()
-	dirEntry.SetPlaceHolder("The path to the scan")
+type hashResult struct {
+	File string
+	Hash string
+}
 
-	if cwd, err := os.Getwd(); err == nil {
-		dirEntry.SetText(filepath.Join(cwd, "games"))
+type sizeResult struct {
+	Key   string
+	Value string
+}
+
+// resizableTable is a custom widget that wraps a table to make its columns resize dynamically.
+type resizableTable struct {
+	widget.BaseWidget
+	table        *widget.Table
+	hashColWidth float32
+}
+
+func newResizableTable(table *widget.Table, hashColWidth float32) *resizableTable {
+	rt := &resizableTable{
+		table:        table,
+		hashColWidth: hashColWidth,
 	}
+	rt.ExtendBaseWidget(rt)
+	return rt
+}
 
-	browseBtn := widget.NewButton("Browse", func() {
-		initialDir := dirEntry.Text
-		if _, err := os.Stat(initialDir); os.IsNotExist(err) {
-			initialDir, _ = os.Getwd()
-		}
-		dirURI, _ := storage.ParseURI("file://" + initialDir)
-		listableURI, _ := storage.ListerForURI(dirURI)
-		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
-			runOnMainV2(func() {
-				if err != nil {
-					dialog.ShowError(err, win)
-					return
-				}
-				if uri != nil {
-					dirEntry.SetText(uri.Path())
-				}
-			})
+func (rt *resizableTable) CreateRenderer() fyne.WidgetRenderer {
+	return &resizableTableRenderer{
+		resizableTable: rt,
+	}
+}
+
+type resizableTableRenderer struct {
+	resizableTable *resizableTable
+}
+
+func (r *resizableTableRenderer) Layout(size fyne.Size) {
+	r.resizableTable.table.Resize(size)
+	pathColWidth := size.Width - r.resizableTable.hashColWidth - theme.Padding()
+	if pathColWidth < 200 {
+		pathColWidth = 200
+	}
+	r.resizableTable.table.SetColumnWidth(0, pathColWidth)
+	r.resizableTable.table.SetColumnWidth(1, r.resizableTable.hashColWidth)
+}
+
+func (r *resizableTableRenderer) MinSize() fyne.Size {
+	return r.resizableTable.table.MinSize()
+}
+
+func (r *resizableTableRenderer) Refresh() {
+	r.resizableTable.table.Refresh()
+}
+
+func (r *resizableTableRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.resizableTable.table}
+}
+
+func (r *resizableTableRenderer) Destroy() {}
+
+func HashUI(win fyne.Window) fyne.CanvasObject {
+	dirEntry := widget.NewEntry()
+	dirEntry.SetPlaceHolder("Path to scan")
+
+	browseBtn := widget.NewButton("Browse...", func() {
+		folderDialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+			if err != nil || uri == nil {
+				return
+			}
+			dirEntry.SetText(uri.Path())
 		}, win)
-		if listableURI != nil {
-			fd.SetLocation(listableURI)
-		}
-		fd.Resize(fyne.NewSize(800, 600))
-		fd.SetConfirmText("Select")
-		fd.Show()
-	})
-	dirRow := container.NewBorder(nil, nil, dirLabel, browseBtn, dirEntry)
 
-	algoLabel := widget.NewLabel("Hash Algorithm")
+		folderDialog.Resize(fyne.NewSize(800, 600))
+		folderDialog.Show()
+	})
+	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, dirEntry)
+
 	algoSelect := widget.NewSelect(hasher.HashAlgorithms, nil)
 	algoSelect.SetSelected("md5")
-	algoBox := container.NewHBox(algoLabel, algoSelect)
-
-	threadOptions := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
-	threadsSelect := widget.NewSelect(threadOptions, nil)
+	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, nil)
 	threadsSelect.SetSelected("4")
-	threadsBox := container.NewHBox(widget.NewLabel("Threads"), threadsSelect)
-
 	recursiveCheck := widget.NewCheck("Recursive", nil)
 	recursiveCheck.SetChecked(true)
-	saveCheck := widget.NewCheck("Save to File", nil)
 	cleanCheck := widget.NewCheck("Remove Old Hash Files", nil)
-	optionsBox := container.NewHBox(recursiveCheck, saveCheck, cleanCheck)
 
-	generateBtn := widget.NewButton("Generate Hashes", nil)
-
-	topContent := container.NewVBox(
-		dirRow,
-		algoBox,
-		threadsBox,
-		optionsBox,
-		generateBtn,
+	form := widget.NewForm(
+		widget.NewFormItem("Directory", pathContainer),
+		widget.NewFormItem("Algorithm", algoSelect),
+		widget.NewFormItem("Threads", threadsSelect),
 	)
 
-	logOutput := widget.NewMultiLineEntry()
-	logOutput.SetPlaceHolder("Logs and results will appear here")
-	logOutput.Wrapping = fyne.TextWrapWord
-	logOutput.SetMinRowsVisible(8)
+	generateBtn := widget.NewButton("Generate File Hashes", nil)
+	progressBar := widget.NewProgressBar()
+	progressBar.Hide()
 
-	clearLogBtn := widget.NewButton("Clear Logs", func() {
-		logOutput.SetText("")
-	})
+	topContent := container.NewVBox(form, container.NewHBox(recursiveCheck, cleanCheck), generateBtn, progressBar)
 
-	bottomContent := container.NewBorder(
-		nil,
-		container.NewHBox(layout.NewSpacer(), clearLogBtn),
-		nil,
-		nil,
-		logOutput,
+	resultsData := binding.NewUntypedList()
+	const hashColWidth float32 = 540
+
+	table := widget.NewTable(
+		func() (int, int) { return resultsData.Length(), 2 },
+		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func(id widget.TableCellID, cell fyne.CanvasObject) {
+			item, err := resultsData.GetValue(id.Row)
+			if err != nil {
+				return
+			}
+			res := item.(hashResult)
+			label := cell.(*widget.Label)
+			if id.Col == 0 {
+				label.SetText(res.File)
+			} else {
+				label.SetText(res.Hash)
+			}
+		},
 	)
+	// Use the custom resizableTable widget
+	resizableTableWidget := newResizableTable(table, hashColWidth)
 
-	split := container.NewVSplit(topContent, bottomContent)
-	split.SetOffset(0.35)
+	header := container.NewGridWithColumns(2,
+		widget.NewLabelWithStyle("File Path (relative to directory)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("Hash", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+	)
 
 	generateBtn.OnTapped = func() {
 		dir := dirEntry.Text
 		if dir == "" {
-			dialog.ShowError(fmt.Errorf("please select a directory"), win)
+			dialog.ShowError(errors.New("please select a directory"), win)
 			return
 		}
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			dialog.ShowError(fmt.Errorf("selected directory does not exist: %s", dir), win)
+		if _, statErr := os.Stat(dir); statErr != nil {
+			dialog.ShowError(fmt.Errorf("directory does not exist: %w", statErr), win)
 			return
 		}
-		algo := algoSelect.Selected
-		recursive := recursiveCheck.Checked
-		saveToFile := saveCheck.Checked
-		clean := cleanCheck.Checked
-		numThreads, _ := strconv.Atoi(threadsSelect.Selected)
-		logOutput.SetText("")
+
+		_ = resultsData.Set(make([]interface{}, 0))
+		progressBar.SetValue(0)
+		progressBar.Show()
 		generateBtn.Disable()
+
 		go func() {
-			defer runOnMainV2(func() { generateBtn.Enable() })
-			generateHashFilesUI(dir, algo, recursive, saveToFile, clean, numThreads, win, logOutput)
+			defer runOnMain(func() {
+				generateBtn.Enable()
+				progressBar.Hide()
+			})
+			numThreads, _ := strconv.Atoi(threadsSelect.Selected)
+			generateHashFilesUI(dir, algoSelect.Selected, recursiveCheck.Checked, cleanCheck.Checked, numThreads, resultsData, progressBar)
 		}()
 	}
 
-	return split
+	return container.NewBorder(topContent, nil, nil, nil, container.NewBorder(header, nil, nil, nil, resizableTableWidget))
 }
 
-func generateHashFilesUI(dir, algo string, recursive, saveToFile, clean bool, numThreads int, win fyne.Window, logOutput *widget.Entry) {
-	if !hasher.IsValidHashAlgo(algo) {
-		runOnMainV2(func() {
-			appendLog(logOutput, fmt.Sprintf("ERROR: Unsupported hash algorithm: %s", algo))
-			dialog.ShowError(fmt.Errorf("unsupported hash algorithm: %s", algo), win)
-		})
-		return
-	}
-
+func generateHashFilesUI(dir, algo string, recursive, clean bool, numThreads int, results binding.UntypedList, progress *widget.ProgressBar) {
 	if clean {
-		appendLog(logOutput, fmt.Sprintf("Cleaning old hash files from '%s'", dir))
-		removeHashFilesUI(dir, recursive, logOutput)
-	}
-
-	appendLog(logOutput, fmt.Sprintf("Starting hash generation (Algo: %s, Threads: %d, Recursive: %t, Save: %t)", algo, numThreads, recursive, saveToFile))
-
-	exclusionList := []string{
-		".git", ".gitignore", ".DS_Store", "Thumbs.db",
-		"desktop.ini", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm",
-		"*.md5", "*.sha1", "*.sha256", "*.sha512", "*.cksum", "*.sum", "*.sig", "*.asc", "*.gpg",
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if info != nil && !info.IsDir() {
+				for _, a := range hasher.HashAlgorithms {
+					if strings.HasSuffix(info.Name(), "."+a) {
+						_ = os.Remove(path)
+						break
+					}
+				}
+			}
+			return nil
+		})
 	}
 
 	var filesToProcess []string
-	walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			appendLog(logOutput, fmt.Sprintf("Access error: %q: %v", path, err))
+	exclusionList := []string{".*", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm"}
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || (info != nil && info.IsDir()) {
 			return nil
 		}
-		if info.IsDir() {
-			if path != dir && !recursive {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		excluded := false
 		for _, pattern := range exclusionList {
 			if matched, _ := filepath.Match(pattern, info.Name()); matched {
-				excluded = true
-				break
+				return nil
 			}
 		}
-		if !excluded {
-			for _, ha := range hasher.HashAlgorithms {
-				if strings.HasSuffix(info.Name(), "."+ha) {
-					excluded = true
-					break
-				}
-			}
-		}
-		if !excluded {
-			filesToProcess = append(filesToProcess, path)
-		}
+		filesToProcess = append(filesToProcess, path)
 		return nil
 	})
-	if walkErr != nil {
-		appendLog(logOutput, fmt.Sprintf("ERROR walking directory %s: %v", dir, walkErr))
+
+	totalFiles := len(filesToProcess)
+	if totalFiles == 0 {
+		return
 	}
+	progress.Max = float64(totalFiles)
 
-	var hashFiles []string
-	var hfMutex sync.Mutex
-	var countMutex sync.Mutex
-	processedCount := 0
-
+	var processedCount atomic.Int64
 	workerFunc := func(ctx context.Context, path string) error {
 		hashVal, err := hasher.GenerateHash(path, algo)
-		if err != nil {
-			appendLog(logOutput, fmt.Sprintf("Error hashing %s: %v", path, err))
-			return nil // Don't stop the pool for one file error
-		}
-		if saveToFile {
-			hashFilePath := path + "." + algo
-			if err := os.WriteFile(hashFilePath, []byte(hashVal), 0644); err != nil {
-				appendLog(logOutput, fmt.Sprintf("Error writing hash to %s: %v", hashFilePath, err))
-			} else {
-				hfMutex.Lock()
-				hashFiles = append(hashFiles, hashFilePath)
-				hfMutex.Unlock()
+		if err == nil {
+			relativePath, relErr := filepath.Rel(dir, path)
+			if relErr != nil {
+				relativePath = filepath.Base(path)
 			}
-		} else {
-			appendLog(logOutput, fmt.Sprintf("\"%s\": %s", path, hashVal))
+			runOnMain(func() {
+				_ = results.Append(hashResult{File: relativePath, Hash: hashVal})
+			})
 		}
-		countMutex.Lock()
-		processedCount++
-		if processedCount%100 == 0 {
-			appendLog(logOutput, fmt.Sprintf("Processed %d files", processedCount))
-		}
-		countMutex.Unlock()
+		newCount := processedCount.Add(1)
+		runOnMain(func() {
+			progress.SetValue(float64(newCount))
+		})
 		return nil
 	}
 
 	pool.Run(context.Background(), filesToProcess, numThreads, workerFunc)
-
-	countMutex.Lock()
-	finalCount := processedCount
-	countMutex.Unlock()
-
-	if saveToFile {
-		appendLog(logOutput, "--- Hash Generation Complete ---")
-		hfMutex.Lock()
-		total := len(hashFiles)
-		hfMutex.Unlock()
-		appendLog(logOutput, fmt.Sprintf("Generated %d hash file(s).", total))
-	} else {
-		appendLog(logOutput, "--- Hash Calculation Complete ---")
-		appendLog(logOutput, fmt.Sprintf("Finished processing %d files. Hashes logged above.", finalCount))
-	}
-}
-
-func removeHashFilesUI(dir string, recursive bool, logOutput *widget.Entry) {
-	removedCount := 0
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			appendLog(logOutput, fmt.Sprintf("Access error during clean: %q: %v", path, err))
-			return nil
-		}
-		if info.IsDir() {
-			if path != dir && !recursive {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		for _, algo := range hasher.HashAlgorithms {
-			if strings.HasSuffix(path, "."+algo) {
-				if rmErr := os.Remove(path); rmErr != nil {
-					appendLog(logOutput, fmt.Sprintf("Error removing %s: %v", path, rmErr))
-				} else {
-					appendLog(logOutput, fmt.Sprintf("Removed %s", path))
-					removedCount++
-				}
-				break
-			}
-		}
-		return nil
-	})
-	appendLog(logOutput, fmt.Sprintf("Finished cleaning old hash files in %s. Removed %d file(s).", dir, removedCount))
 }
 
 func SizeUI(win fyne.Window) fyne.CanvasObject {
-	gameIDEntry := widget.NewEntry()
-	gameIDEntry.SetPlaceHolder("Enter a game ID (numbers only)")
-	gameIDEntry.Validator = validation.NewRegexp(`^\d+$`, "Game ID must be a number")
-	gameIDRow := container.NewBorder(
-		widget.NewLabel("Game ID"), nil, nil, nil, gameIDEntry,
-	)
+	games, err := db.GetCatalogue()
+	if err != nil {
+		return widget.NewLabel("Error loading game catalogue: " + err.Error())
+	}
 
-	langLabel := widget.NewLabel("Language")
-	langSelect := widget.NewSelect(
-		func() []string {
-			keys := make([]string, 0, len(client.GameLanguages))
-			for k := range client.GameLanguages {
-				keys = append(keys, k)
+	gameMap := make(map[string]int)
+	allGameTitles := make([]string, len(games))
+	for i, game := range games {
+		gameMap[game.Title] = game.ID
+		allGameTitles[i] = game.Title
+	}
+	sort.Strings(allGameTitles)
+
+	gameSelect := widget.NewSelect(allGameTitles, nil)
+	gameSelect.PlaceHolder = "Select a game..."
+
+	filterEntry := widget.NewEntry()
+	filterEntry.SetPlaceHolder("Type game title to filter...")
+	filterEntry.OnChanged = func(s string) {
+		s = strings.ToLower(s)
+		if s == "" {
+			gameSelect.Options = allGameTitles
+		} else {
+			filtered := make([]string, 0)
+			for _, title := range allGameTitles {
+				if strings.Contains(strings.ToLower(title), s) {
+					filtered = append(filtered, title)
+				}
 			}
-			return keys
-		}(),
-		nil,
-	)
+			gameSelect.Options = filtered
+		}
+		gameSelect.ClearSelected()
+		gameSelect.Refresh()
+	}
+
+	langCodes := make([]string, 0, len(client.GameLanguages))
+	for code := range client.GameLanguages {
+		langCodes = append(langCodes, code)
+	}
+	sort.Strings(langCodes)
+	langSelect := widget.NewSelect(langCodes, nil)
 	langSelect.SetSelected("en")
 
-	platformLabel := widget.NewLabel("Platform")
-	platformSelect := widget.NewSelect(
-		[]string{"all", "windows", "mac", "linux"},
-		nil,
-	)
+	platformSelect := widget.NewSelect([]string{"all", "windows", "mac", "linux"}, nil)
 	platformSelect.SetSelected("windows")
-
-	unitLabel := widget.NewLabel("Size Unit")
 	unitSelect := widget.NewSelect([]string{"gb", "mb"}, nil)
 	unitSelect.SetSelected("gb")
 
@@ -306,117 +290,113 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	dlcsCheck := widget.NewCheck("Include DLCs", nil)
 	dlcsCheck.SetChecked(true)
 
+	form := widget.NewForm(
+		widget.NewFormItem("Filter", filterEntry),
+		widget.NewFormItem("Game", gameSelect),
+		widget.NewFormItem("Language", langSelect),
+		widget.NewFormItem("Platform", platformSelect),
+		widget.NewFormItem("Unit", unitSelect),
+	)
+
 	estimateBtn := widget.NewButton("Estimate Size", nil)
-	logOutput := widget.NewMultiLineEntry()
-	logOutput.SetPlaceHolder("Logs and results will appear here")
-	logOutput.Wrapping = fyne.TextWrapWord
-	logOutput.SetMinRowsVisible(8)
+	topContent := container.NewVBox(form, container.NewHBox(extrasCheck, dlcsCheck), estimateBtn)
 
-	clearLogBtn := widget.NewButton("Clear Logs", func() {
-		logOutput.SetText("")
-	})
-
-	top := container.NewVBox(
-		gameIDRow,
-		container.NewGridWithColumns(2, langLabel, langSelect),
-		container.NewGridWithColumns(2, platformLabel, platformSelect),
-		container.NewGridWithColumns(2, unitLabel, unitSelect),
-		container.NewHBox(extrasCheck, dlcsCheck),
-		estimateBtn,
+	resultsData := binding.NewUntypedList()
+	resultsTable := widget.NewTable(
+		func() (int, int) { return resultsData.Length(), 2 },
+		func() fyne.CanvasObject { return widget.NewLabel("Template") },
+		func(id widget.TableCellID, cell fyne.CanvasObject) {
+			item, err := resultsData.GetValue(id.Row)
+			if err != nil {
+				return
+			}
+			res := item.(sizeResult)
+			label := cell.(*widget.Label)
+			if id.Col == 0 {
+				label.SetText(res.Key)
+				label.TextStyle.Bold = true
+			} else {
+				label.SetText(res.Value)
+				label.TextStyle.Bold = false
+			}
+			label.Refresh()
+		},
 	)
-
-	bottom := container.NewBorder(
-		nil,
-		container.NewHBox(layout.NewSpacer(), clearLogBtn),
-		nil,
-		nil,
-		logOutput,
-	)
-
-	split := container.NewVSplit(top, bottom)
-	split.SetOffset(0.3)
+	resultsTable.SetColumnWidth(0, 150)
+	resultsTable.SetColumnWidth(1, 400)
 
 	estimateBtn.OnTapped = func() {
-		if gameIDEntry.Validate() != nil {
-			dialog.ShowError(errors.New("invalid Game ID, must be a positive number"), win)
+		selectedGame := gameSelect.Selected
+		if selectedGame == "" {
+			dialog.ShowError(errors.New("please select a game"), win)
 			return
 		}
-		logOutput.SetText("")
-		go func() {
-			_ = estimateStorageSizeUI(
-				strings.TrimSpace(gameIDEntry.Text),
-				langSelect.Selected,
-				platformSelect.Selected,
-				extrasCheck.Checked,
-				dlcsCheck.Checked,
-				unitSelect.Selected,
-				win,
-				logOutput,
-			)
-		}()
+		gameID := gameMap[selectedGame]
+
+		go estimateStorageSizeUI(
+			strconv.Itoa(gameID),
+			langSelect.Selected, platformSelect.Selected,
+			extrasCheck.Checked, dlcsCheck.Checked,
+			unitSelect.Selected, resultsData,
+		)
 	}
 
-	return split
+	return container.NewBorder(topContent, nil, nil, nil, resultsTable)
 }
 
-func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag, dlcFlag bool, sizeUnit string, win fyne.Window, logOutput *widget.Entry) error {
-	handleError := func(msg string, err error) error {
-		fullMsg := msg
-		if err != nil {
-			fullMsg = fmt.Sprintf("%s: %v", msg, err)
-		}
-		appendLog(logOutput, fullMsg)
-		return errors.New(fullMsg)
-	}
-
-	if gameID == "" {
-		return handleError("Game ID cannot be empty.", nil)
-	}
-
-	sizeUnit = strings.ToLower(sizeUnit)
-	if sizeUnit != "mb" && sizeUnit != "gb" {
-		return handleError(fmt.Sprintf("Invalid size unit: \"%s\". Use mb or gb.", sizeUnit), nil)
-	}
+func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag, dlcFlag bool, sizeUnit string, results binding.UntypedList) {
+	_ = results.Set(make([]interface{}, 0))
 
 	langFullName, ok := client.GameLanguages[languageCode]
 	if !ok {
-		return handleError("Invalid language code.", nil)
+		_ = results.Append(sizeResult{"Error", "Invalid language code."})
+		return
 	}
 
-	gameIDInt, err := strconv.Atoi(gameID)
-	if err != nil {
-		return handleError("Invalid game ID.", err)
-	}
-
+	gameIDInt, _ := strconv.Atoi(gameID)
 	game, err := db.GetGameByID(gameIDInt)
-	if err != nil {
-		return handleError("Failed to retrieve game data from DB", err)
-	}
-	if game == nil {
-		return handleError(fmt.Sprintf("Game with ID %d not found.", gameIDInt), nil)
+	if err != nil || game == nil {
+		_ = results.Append(sizeResult{"Error", "Failed to retrieve game from database."})
+		return
 	}
 
 	var nestedData client.Game
 	if err := json.Unmarshal([]byte(game.Data), &nestedData); err != nil {
-		return handleError("Failed to unmarshal game data", err)
+		_ = results.Append(sizeResult{"Error", "Failed to parse game data."})
+		return
 	}
-
-	appendLog(logOutput, fmt.Sprintf("Estimating size for Game: %s (ID: %d)", nestedData.Title, gameIDInt))
-	appendLog(logOutput, fmt.Sprintf("Params: Lang=%s, Platform=%s, Extras=%t, DLCs=%t", langFullName, platformName, extrasFlag, dlcFlag))
 
 	totalSizeBytes, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
 	if err != nil {
-		return handleError("Failed to calculate storage size", err)
+		_ = results.Append(sizeResult{"Error", "Failed to calculate size."})
+		return
 	}
 
-	appendLog(logOutput, "--- Estimation Complete ---")
+	var sizeStr string
 	if sizeUnit == "gb" {
 		sizeInGB := float64(totalSizeBytes) / (1024 * 1024 * 1024)
-		appendLog(logOutput, fmt.Sprintf("Total Estimated Download Size: %.2f GB", sizeInGB))
-	} else { // mb
+		sizeStr = fmt.Sprintf("%.2f GB", sizeInGB)
+	} else {
 		sizeInMB := float64(totalSizeBytes) / (1024 * 1024)
-		appendLog(logOutput, fmt.Sprintf("Total Estimated Download Size: %.2f MB", sizeInMB))
+		sizeStr = fmt.Sprintf("%.2f MB", sizeInMB)
 	}
 
-	return nil
+	boolToStr := func(b bool) string {
+		if b {
+			return "Yes"
+		}
+		return "No"
+	}
+
+	rows := []interface{}{
+		sizeResult{"Game", nestedData.Title},
+		sizeResult{"Platform", platformName},
+		sizeResult{"Language", langFullName},
+		sizeResult{"Extras Included", boolToStr(extrasFlag)},
+		sizeResult{"DLCs Included", boolToStr(dlcFlag)},
+		sizeResult{"Estimated Size", sizeStr},
+	}
+	runOnMain(func() {
+		_ = results.Set(rows)
+	})
 }

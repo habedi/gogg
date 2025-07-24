@@ -8,18 +8,19 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 type DownloadTask struct {
-	ID         int
-	Title      string
-	Status     binding.String
-	Progress   binding.Float
-	CancelFunc context.CancelFunc
-	// This will hold the text for concurrent, per-file progress.
-	FileStatus binding.String
+	ID           int
+	Title        string
+	Status       binding.String
+	Details      binding.String
+	Progress     binding.Float
+	CancelFunc   context.CancelFunc
+	FileStatus   binding.String
+	DownloadPath string // Path for the "Open Folder" button
 }
 
 type DownloadManager struct {
@@ -45,18 +46,20 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 		func() fyne.CanvasObject {
 			title := widget.NewLabel("Game Title")
 			title.TextStyle = fyne.TextStyle{Bold: true}
-			cancelBtn := widget.NewButton("Cancel", nil)
+			actionBtn := widget.NewButtonWithIcon("Cancel", theme.CancelIcon(), nil)
 			status := widget.NewLabel("Status")
 			status.Wrapping = fyne.TextWrapWord
+			details := widget.NewLabel("Details")
+			details.TextStyle = fyne.TextStyle{Italic: true}
 			progress := widget.NewProgressBar()
 			fileStatus := widget.NewLabel("")
 			fileStatus.TextStyle = fyne.TextStyle{Monospace: true}
 			fileStatus.Wrapping = fyne.TextWrapWord
 
-			topRow := container.NewHBox(title, layout.NewSpacer(), cancelBtn)
-			content := container.NewVBox(topRow, status, progress, fileStatus)
+			topRow := container.NewBorder(nil, nil, nil, actionBtn, title)
+			progressBox := container.NewVBox(details, progress)
+			content := container.NewVBox(topRow, status, progressBox, fileStatus)
 
-			// Wrap the content in a Card to help with layout management.
 			return widget.NewCard("", "", content)
 		},
 		func(item binding.DataItem, obj fyne.CanvasObject) {
@@ -66,35 +69,57 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			}
 			task := taskRaw.(*DownloadTask)
 
-			// The object is now a Card.
 			card := obj.(*widget.Card)
 			contentVBox := card.Content.(*fyne.Container)
-			topRowHBox := contentVBox.Objects[0].(*fyne.Container)
+			topRow := contentVBox.Objects[0].(*fyne.Container)
+			progressBox := contentVBox.Objects[2].(*fyne.Container)
 
-			title := topRowHBox.Objects[0].(*widget.Label)
-			cancelBtn := topRowHBox.Objects[2].(*widget.Button)
+			title := topRow.Objects[0].(*widget.Label)
+			actionBtn := topRow.Objects[1].(*widget.Button)
 			status := contentVBox.Objects[1].(*widget.Label)
-			progress := contentVBox.Objects[2].(*widget.ProgressBar)
+			details := progressBox.Objects[0].(*widget.Label)
+			progress := progressBox.Objects[1].(*widget.ProgressBar)
 			fileStatus := contentVBox.Objects[3].(*widget.Label)
 
 			title.SetText(task.Title)
 			status.Bind(task.Status)
+			details.Bind(task.Details)
 			progress.Bind(task.Progress)
 			fileStatus.Bind(task.FileStatus)
 
-			cancelBtn.OnTapped = func() {
-				if task.CancelFunc != nil {
-					task.CancelFunc()
+			s, _ := task.Status.Get()
+			isFinalState := false
+			if strings.HasPrefix(s, "Completed") {
+				isFinalState = true
+				actionBtn.SetIcon(theme.FolderOpenIcon())
+				actionBtn.SetText("Open Folder")
+				title.Importance = widget.LowImportance
+				actionBtn.OnTapped = func() { openFolder(task.DownloadPath) }
+			} else if s == "Cancelled" {
+				isFinalState = true
+				actionBtn.SetIcon(theme.CancelIcon())
+				actionBtn.SetText("Cancelled")
+				actionBtn.OnTapped = nil
+			} else if strings.HasPrefix(s, "Error") {
+				isFinalState = true
+				actionBtn.SetIcon(theme.ErrorIcon())
+				actionBtn.SetText("Error")
+				actionBtn.OnTapped = nil
+			} else {
+				actionBtn.SetIcon(theme.CancelIcon())
+				actionBtn.SetText("Cancel")
+				title.Importance = widget.MediumImportance
+				actionBtn.OnTapped = func() {
+					if task.CancelFunc != nil {
+						task.CancelFunc()
+					}
 				}
-				cancelBtn.Disable()
 			}
 
-			s, _ := task.Status.Get()
-			isFinalState := strings.HasPrefix(s, "Completed") || s == "Cancelled" || strings.HasPrefix(s, "Error")
 			if isFinalState {
-				cancelBtn.Disable()
+				actionBtn.Disable()
 			} else {
-				cancelBtn.Enable()
+				actionBtn.Enable()
 			}
 		},
 	)

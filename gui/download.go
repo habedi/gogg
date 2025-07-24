@@ -6,18 +6,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 )
 
-// formatBytes converts a byte count into a human-readable string (KB, MB, GB).
 func formatBytes(b int64) string {
 	const unit = 1024
 	if b < unit {
@@ -31,8 +33,6 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-// progressUpdater handles JSON messages from the download client
-// and updates the GUI bindings.
 type progressUpdater struct {
 	task              *DownloadTask
 	totalBytes        int64
@@ -41,6 +41,10 @@ type progressUpdater struct {
 	fileProgress      map[string]struct{ current, total int64 }
 	mu                sync.Mutex
 	incompleteMessage []byte
+	lastUpdateTime    time.Time
+	lastBytes         int64
+	speeds            []float64
+	speedAvgSize      int
 }
 
 func (pu *progressUpdater) Write(p []byte) (n int, err error) {
@@ -62,6 +66,7 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 		switch update.Type {
 		case "start":
 			pu.totalBytes = update.OverallTotalBytes
+			pu.lastUpdateTime = time.Now()
 		case "file_progress":
 			diff := update.CurrentBytes - pu.fileBytes[update.FileName]
 			pu.downloadedBytes += diff
@@ -72,8 +77,8 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 				_ = pu.task.Progress.Set(progress)
 			}
 			_ = pu.task.Status.Set("Downloading files...")
+			pu.updateSpeedAndETA()
 
-			// Update the map for per-file progress text
 			pu.fileProgress[update.FileName] = struct{ current, total int64 }{update.CurrentBytes, update.TotalBytes}
 			if update.CurrentBytes >= update.TotalBytes && update.TotalBytes > 0 {
 				delete(pu.fileProgress, update.FileName)
@@ -85,7 +90,45 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// updateFileStatusText builds and sets the multi-line string for per-file progress.
+func (pu *progressUpdater) updateSpeedAndETA() {
+	now := time.Now()
+	elapsed := now.Sub(pu.lastUpdateTime).Seconds()
+
+	if elapsed < 1.0 {
+		return
+	}
+
+	bytesSinceLast := pu.downloadedBytes - pu.lastBytes
+	currentSpeed := float64(bytesSinceLast) / elapsed
+
+	if pu.speedAvgSize == 0 {
+		pu.speedAvgSize = 5
+	}
+	pu.speeds = append(pu.speeds, currentSpeed)
+	if len(pu.speeds) > pu.speedAvgSize {
+		pu.speeds = pu.speeds[1:]
+	}
+
+	var totalSpeed float64
+	for _, s := range pu.speeds {
+		totalSpeed += s
+	}
+	avgSpeed := totalSpeed / float64(len(pu.speeds))
+
+	pu.lastUpdateTime = now
+	pu.lastBytes = pu.downloadedBytes
+
+	detailsStr := fmt.Sprintf("Speed: %s/s", formatBytes(int64(avgSpeed)))
+	remainingBytes := pu.totalBytes - pu.downloadedBytes
+	if avgSpeed > 0 && remainingBytes > 0 {
+		etaSeconds := float64(remainingBytes) / avgSpeed
+		duration, _ := time.ParseDuration(fmt.Sprintf("%fs", math.Round(etaSeconds)))
+		detailsStr += fmt.Sprintf(" | ETA: %s", duration.Truncate(time.Second).String())
+	}
+
+	_ = pu.task.Details.Set(detailsStr)
+}
+
 func (pu *progressUpdater) updateFileStatusText() {
 	if len(pu.fileProgress) == 0 {
 		_ = pu.task.FileStatus.Set("")
@@ -122,24 +165,32 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 	flattenFlag, skipPatchesFlag bool, numThreads int) {
 
 	ctx, cancel := context.WithCancel(context.Background())
-	task := &DownloadTask{
-		ID:         game.ID,
-		Title:      game.Title,
-		Status:     binding.NewString(),
-		Progress:   binding.NewFloat(),
-		CancelFunc: cancel,
-		FileStatus: binding.NewString(),
-	}
-	_ = task.Status.Set("Preparing...")
-	_ = dm.AddTask(task)
-
-	token, err := authService.RefreshToken()
-	if err != nil {
-		_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
-		return
-	}
 
 	parsedGameData, err := client.ParseGameData(game.Data)
+	if err != nil {
+		fmt.Printf("Error parsing game data for %s: %v\n", game.Title, err)
+		cancel() // Call cancel before returning to prevent context leak
+		return
+	}
+	targetDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
+
+	task := &DownloadTask{
+		ID:           game.ID,
+		Title:        game.Title,
+		Status:       binding.NewString(),
+		Details:      binding.NewString(),
+		Progress:     binding.NewFloat(),
+		CancelFunc:   cancel,
+		FileStatus:   binding.NewString(),
+		DownloadPath: targetDir,
+	}
+	_ = task.Status.Set("Preparing...")
+	_ = task.Details.Set("Speed: N/A | ETA: N/A")
+	_ = dm.AddTask(task)
+
+	fyne.CurrentApp().Preferences().SetString("lastDownloadPath", downloadPath)
+
+	token, err := authService.RefreshToken()
 	if err != nil {
 		_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
 		return
@@ -163,13 +214,14 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		} else {
 			_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
 		}
-		_ = task.FileStatus.Set("") // Clear per-file status on error
+		_ = task.FileStatus.Set("")
+		_ = task.Details.Set("")
 		return
 	}
 
-	targetDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
 	_ = task.Status.Set(fmt.Sprintf("Completed. Files in: %s", targetDir))
+	_ = task.Details.Set("")
 	_ = task.Progress.Set(1.0)
-	_ = task.FileStatus.Set("") // Clear per-file status on completion
+	_ = task.FileStatus.Set("")
 	go PlayNotificationSound()
 }
