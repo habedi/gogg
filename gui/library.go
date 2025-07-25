@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -42,21 +43,29 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	var gameListWidget *widget.List
 
 	// --- LEFT PANE (MASTER) ---
+	var debounceTimer *time.Timer
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Type game title to search...")
 	searchEntry.OnChanged = func(s string) {
-		s = strings.ToLower(s)
-		if s == "" {
-			_ = gamesListBinding.Set(untypedSlice(allGames))
-			return
+		if debounceTimer != nil {
+			debounceTimer.Stop()
 		}
-		filtered := make([]interface{}, 0)
-		for _, game := range allGames {
-			if strings.Contains(strings.ToLower(game.Title), s) {
-				filtered = append(filtered, game)
-			}
-		}
-		_ = gamesListBinding.Set(filtered)
+		debounceTimer = time.AfterFunc(200*time.Millisecond, func() {
+			runOnMain(func() {
+				searchStr := strings.ToLower(s)
+				if searchStr == "" {
+					_ = gamesListBinding.Set(untypedSlice(allGames))
+					return
+				}
+				filtered := make([]interface{}, 0)
+				for _, game := range allGames {
+					if strings.Contains(strings.ToLower(game.Title), searchStr) {
+						filtered = append(filtered, game)
+					}
+				}
+				_ = gamesListBinding.Set(filtered)
+			})
+		})
 	}
 
 	refreshUI := func() {

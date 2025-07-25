@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
@@ -34,55 +36,78 @@ type sizeResult struct {
 	Value string
 }
 
-// resizableTable is a custom widget that wraps a table to make its columns resize dynamically.
-type resizableTable struct {
+// hashRow is a custom widget for a single row in our hash results list.
+type hashRow struct {
 	widget.BaseWidget
-	table        *widget.Table
-	hashColWidth float32
+	file, hash *CopyableLabel
+	layout     fyne.Layout
 }
 
-func newResizableTable(table *widget.Table, hashColWidth float32) *resizableTable {
-	rt := &resizableTable{
-		table:        table,
-		hashColWidth: hashColWidth,
+// newHashRow creates a new row widget.
+func newHashRow() *hashRow {
+	row := &hashRow{
+		file: NewCopyableLabel(""),
+		hash: NewCopyableLabel(""),
 	}
-	rt.ExtendBaseWidget(rt)
-	return rt
+	row.layout = newColumnLayout()
+	row.ExtendBaseWidget(row)
+	return row
 }
 
-func (rt *resizableTable) CreateRenderer() fyne.WidgetRenderer {
-	return &resizableTableRenderer{
-		resizableTable: rt,
+// SetTexts sets the text for the file and hash labels.
+func (r *hashRow) SetTexts(file, hash string) {
+	r.file.SetText(file)
+	r.hash.SetText(hash)
+}
+
+// SetHeaderStyle applies bold styling for the header row.
+func (r *hashRow) SetHeaderStyle() {
+	r.file.TextStyle.Bold = true
+	r.hash.TextStyle.Bold = true
+}
+
+func (r *hashRow) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(container.New(r.layout, r.file, r.hash))
+}
+
+// columnLayout defines a simple two-column layout with a fixed right column.
+type columnLayout struct{}
+
+const hashColWidth float32 = 530
+
+func newColumnLayout() fyne.Layout {
+	return &columnLayout{}
+}
+
+func (c *columnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) != 2 {
+		return
 	}
+	// Right column (hash)
+	hashSize := fyne.NewSize(hashColWidth, objects[1].MinSize().Height)
+	objects[1].Resize(hashSize)
+	objects[1].Move(fyne.NewPos(size.Width-hashColWidth, 0))
+
+	// Left column (file path)
+	filePathSize := fyne.NewSize(size.Width-hashColWidth-theme.Padding(), objects[0].MinSize().Height)
+	objects[0].Resize(filePathSize)
+	objects[0].Move(fyne.NewPos(0, 0))
 }
 
-type resizableTableRenderer struct {
-	resizableTable *resizableTable
-}
-
-func (r *resizableTableRenderer) Layout(size fyne.Size) {
-	r.resizableTable.table.Resize(size)
-	pathColWidth := size.Width - r.resizableTable.hashColWidth - theme.Padding()
-	if pathColWidth < 200 {
-		pathColWidth = 200
+func (c *columnLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) != 2 {
+		return fyne.Size{}
 	}
-	r.resizableTable.table.SetColumnWidth(0, pathColWidth)
-	r.resizableTable.table.SetColumnWidth(1, r.resizableTable.hashColWidth)
+	minWidth := objects[0].MinSize().Width + objects[1].MinSize().Width + theme.Padding()
+	minHeight := float32(0)
+	if h := objects[0].MinSize().Height; h > minHeight {
+		minHeight = h
+	}
+	if h := objects[1].MinSize().Height; h > minHeight {
+		minHeight = h
+	}
+	return fyne.NewSize(minWidth, minHeight)
 }
-
-func (r *resizableTableRenderer) MinSize() fyne.Size {
-	return r.resizableTable.table.MinSize()
-}
-
-func (r *resizableTableRenderer) Refresh() {
-	r.resizableTable.table.Refresh()
-}
-
-func (r *resizableTableRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.resizableTable.table}
-}
-
-func (r *resizableTableRenderer) Destroy() {}
 
 func HashUI(win fyne.Window) fyne.CanvasObject {
 	dirEntry := widget.NewEntry()
@@ -95,13 +120,19 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 			}
 			dirEntry.SetText(uri.Path())
 		}, win)
-
 		folderDialog.Resize(fyne.NewSize(800, 600))
 		folderDialog.Show()
 	})
 	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, dirEntry)
 
-	algoSelect := widget.NewSelect(hasher.HashAlgorithms, nil)
+	guiHashAlgos := make([]string, 0)
+	for _, algo := range hasher.HashAlgorithms {
+		if algo != "sha512" {
+			guiHashAlgos = append(guiHashAlgos, algo)
+		}
+	}
+
+	algoSelect := widget.NewSelect(guiHashAlgos, nil)
 	algoSelect.SetSelected("md5")
 	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, nil)
 	threadsSelect.SetSelected("4")
@@ -122,31 +153,22 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	topContent := container.NewVBox(form, container.NewHBox(recursiveCheck, cleanCheck), generateBtn, progressBar)
 
 	resultsData := binding.NewUntypedList()
-	const hashColWidth float32 = 540
 
-	table := widget.NewTable(
-		func() (int, int) { return resultsData.Length(), 2 },
-		func() fyne.CanvasObject { return widget.NewLabel("") },
-		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			item, err := resultsData.GetValue(id.Row)
-			if err != nil {
-				return
-			}
-			res := item.(hashResult)
-			label := cell.(*widget.Label)
-			if id.Col == 0 {
-				label.SetText(res.File)
-			} else {
-				label.SetText(res.Hash)
-			}
+	header := newHashRow()
+	header.SetTexts("File Path", "Hash")
+	header.SetHeaderStyle()
+
+	resultsList := widget.NewListWithData(
+		resultsData,
+		func() fyne.CanvasObject {
+			return newHashRow()
 		},
-	)
-	// Use the custom resizableTable widget
-	resizableTableWidget := newResizableTable(table, hashColWidth)
-
-	header := container.NewGridWithColumns(2,
-		widget.NewLabelWithStyle("File Path (relative to directory)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabelWithStyle("Hash", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			res := item.(binding.Untyped)
+			val, _ := res.Get()
+			row := obj.(*hashRow)
+			row.SetTexts(val.(hashResult).File, val.(hashResult).Hash)
+		},
 	)
 
 	generateBtn.OnTapped = func() {
@@ -175,7 +197,38 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		}()
 	}
 
-	return container.NewBorder(topContent, nil, nil, nil, container.NewBorder(header, nil, nil, nil, resizableTableWidget))
+	clearBtn := widget.NewButtonWithIcon("Clear Results", theme.DeleteIcon(), func() {
+		_ = resultsData.Set(make([]interface{}, 0))
+	})
+
+	copyBtn := widget.NewButtonWithIcon("Copy All (CSV)", theme.ContentCopyIcon(), func() {
+		items, _ := resultsData.Get()
+		if len(items) == 0 {
+			fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Nothing to copy."))
+			return
+		}
+
+		var sb strings.Builder
+		writer := csv.NewWriter(&sb)
+		_ = writer.Write([]string{"File", "Hash"}) // Header
+
+		for _, item := range items {
+			res := item.(hashResult)
+			_ = writer.Write([]string{res.File, res.Hash})
+		}
+		writer.Flush()
+
+		fyne.CurrentApp().Clipboard().SetContent(sb.String())
+		fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Hash results copied to clipboard."))
+	})
+
+	bottomBar := container.NewHBox(layout.NewSpacer(), clearBtn, copyBtn)
+
+	// FIX: Use a Border layout to ensure the list expands to fill available space.
+	listHeader := container.NewVBox(header, widget.NewSeparator())
+	listContainer := container.NewBorder(listHeader, nil, nil, nil, resultsList)
+
+	return container.NewBorder(topContent, bottomBar, nil, nil, listContainer)
 }
 
 func generateHashFilesUI(dir, algo string, recursive, clean bool, numThreads int, results binding.UntypedList, progress *widget.ProgressBar) {
@@ -196,7 +249,13 @@ func generateHashFilesUI(dir, algo string, recursive, clean bool, numThreads int
 	var filesToProcess []string
 	exclusionList := []string{".*", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm"}
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || (info != nil && info.IsDir()) {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if path != dir && !recursive {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		for _, pattern := range exclusionList {
@@ -304,14 +363,14 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	resultsData := binding.NewUntypedList()
 	resultsTable := widget.NewTable(
 		func() (int, int) { return resultsData.Length(), 2 },
-		func() fyne.CanvasObject { return widget.NewLabel("Template") },
+		func() fyne.CanvasObject { return NewCopyableLabel("Template") },
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
 			item, err := resultsData.GetValue(id.Row)
 			if err != nil {
 				return
 			}
 			res := item.(sizeResult)
-			label := cell.(*widget.Label)
+			label := cell.(*CopyableLabel)
 			if id.Col == 0 {
 				label.SetText(res.Key)
 				label.TextStyle.Bold = true
@@ -341,7 +400,34 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 		)
 	}
 
-	return container.NewBorder(topContent, nil, nil, nil, resultsTable)
+	clearBtn := widget.NewButtonWithIcon("Clear Results", theme.DeleteIcon(), func() {
+		_ = resultsData.Set(make([]interface{}, 0))
+	})
+
+	copyBtn := widget.NewButtonWithIcon("Copy All (CSV)", theme.ContentCopyIcon(), func() {
+		items, _ := resultsData.Get()
+		if len(items) == 0 {
+			fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Nothing to copy."))
+			return
+		}
+
+		var sb strings.Builder
+		writer := csv.NewWriter(&sb)
+		_ = writer.Write([]string{"Parameter", "Value"}) // Header
+
+		for _, item := range items {
+			res := item.(sizeResult)
+			_ = writer.Write([]string{res.Key, res.Value})
+		}
+		writer.Flush()
+
+		fyne.CurrentApp().Clipboard().SetContent(sb.String())
+		fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Size estimation results copied to clipboard."))
+	})
+
+	bottomBar := container.NewHBox(layout.NewSpacer(), clearBtn, copyBtn)
+
+	return container.NewBorder(topContent, bottomBar, nil, nil, resultsTable)
 }
 
 func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag, dlcFlag bool, sizeUnit string, results binding.UntypedList) {
