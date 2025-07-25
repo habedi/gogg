@@ -2,7 +2,6 @@ package gui
 
 import (
 	"context"
-	"strings"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -12,8 +11,17 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+const (
+	StatePreparing = iota
+	StateDownloading
+	StateCompleted
+	StateCancelled
+	StateError
+)
+
 type DownloadTask struct {
 	ID           int
+	State        int
 	Title        string
 	Status       binding.String
 	Details      binding.String
@@ -87,25 +95,25 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			progress.Bind(task.Progress)
 			fileStatus.Bind(task.FileStatus)
 
-			s, _ := task.Status.Get()
 			isFinalState := false
-			if strings.HasPrefix(s, "Completed") {
+			switch task.State {
+			case StateCompleted:
 				isFinalState = true
 				actionBtn.SetIcon(theme.FolderOpenIcon())
 				actionBtn.SetText("Open Folder")
 				title.Importance = widget.LowImportance
 				actionBtn.OnTapped = func() { openFolder(task.DownloadPath) }
-			} else if s == "Cancelled" {
+			case StateCancelled:
 				isFinalState = true
 				actionBtn.SetIcon(theme.CancelIcon())
 				actionBtn.SetText("Cancelled")
 				actionBtn.OnTapped = nil
-			} else if strings.HasPrefix(s, "Error") {
+			case StateError:
 				isFinalState = true
 				actionBtn.SetIcon(theme.ErrorIcon())
 				actionBtn.SetText("Error")
 				actionBtn.OnTapped = nil
-			} else {
+			default: // Preparing, Downloading
 				actionBtn.SetIcon(theme.CancelIcon())
 				actionBtn.SetText("Cancel")
 				title.Importance = widget.MediumImportance
@@ -133,8 +141,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 
 		for _, taskRaw := range currentTasks {
 			task := taskRaw.(*DownloadTask)
-			status, _ := task.Status.Get()
-			if !strings.HasPrefix(status, "Completed") && status != "Cancelled" && !strings.HasPrefix(status, "Error") {
+			if task.State != StateCompleted && task.State != StateCancelled && task.State != StateError {
 				keptTasks = append(keptTasks, task)
 			}
 		}

@@ -86,24 +86,24 @@ func ensureDirExists(path string) error {
 	}
 	if os.IsNotExist(err) {
 		log.Info().Msgf("Creating directory: %s", path)
-		return os.MkdirAll(path, os.ModePerm)
+		return os.MkdirAll(path, 0755)
 	}
 	log.Error().Err(err).Msgf("Error checking directory %s", path)
 	return err
 }
 
+var pathSanitizer = strings.NewReplacer(
+	"®", "",
+	":", "",
+	" ", "-",
+	"(", "",
+	")", "",
+	"™", "",
+)
+
 func SanitizePath(name string) string {
-	replacements := []struct {
-		old string
-		new string
-	}{
-		{"®", ""}, {":", ""}, {" ", "-"}, {"(", ""}, {")", ""}, {"™", ""},
-	}
 	name = strings.ToLower(name)
-	for _, r := range replacements {
-		name = strings.ReplaceAll(name, r.old, r.new)
-	}
-	return name
+	return pathSanitizer.Replace(name)
 }
 
 type downloadTask struct {

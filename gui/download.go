@@ -76,7 +76,10 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 				progress := float64(pu.downloadedBytes) / float64(pu.totalBytes)
 				_ = pu.task.Progress.Set(progress)
 			}
-			_ = pu.task.Status.Set("Downloading files...")
+			if pu.task.State == StatePreparing {
+				pu.task.State = StateDownloading
+				_ = pu.task.Status.Set("Downloading files...")
+			}
 			pu.updateSpeedAndETA()
 
 			pu.fileProgress[update.FileName] = struct{ current, total int64 }{update.CurrentBytes, update.TotalBytes}
@@ -177,6 +180,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 	task := &DownloadTask{
 		ID:           game.ID,
 		Title:        game.Title,
+		State:        StatePreparing,
 		Status:       binding.NewString(),
 		Details:      binding.NewString(),
 		Progress:     binding.NewFloat(),
@@ -192,6 +196,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 
 	token, err := authService.RefreshToken()
 	if err != nil {
+		task.State = StateError
 		_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
 		return
 	}
@@ -210,8 +215,10 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
+			task.State = StateCancelled
 			_ = task.Status.Set("Cancelled")
 		} else {
+			task.State = StateError
 			_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
 		}
 		_ = task.FileStatus.Set("")
@@ -219,6 +226,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		return
 	}
 
+	task.State = StateCompleted
 	_ = task.Status.Set(fmt.Sprintf("Completed. Files in: %s", targetDir))
 	_ = task.Details.Set("")
 	_ = task.Progress.Set(1.0)
