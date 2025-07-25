@@ -18,6 +18,15 @@ import (
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/rs/zerolog/log"
+)
+
+var (
+	// ErrDownloadInProgress is returned when a download for a game is already active.
+	ErrDownloadInProgress = errors.New("download already in progress")
+
+	activeDownloads      = make(map[int]struct{})
+	activeDownloadsMutex = &sync.Mutex{}
 )
 
 func formatBytes(b int64) string {
@@ -165,71 +174,90 @@ func (pu *progressUpdater) updateFileStatusText() {
 
 func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Game,
 	downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag,
-	flattenFlag, skipPatchesFlag bool, numThreads int) {
+	flattenFlag, skipPatchesFlag bool, numThreads int) error {
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	parsedGameData, err := client.ParseGameData(game.Data)
-	if err != nil {
-		fmt.Printf("Error parsing game data for %s: %v\n", game.Title, err)
-		cancel() // Call cancel before returning to prevent context leak
-		return
+	activeDownloadsMutex.Lock()
+	if _, exists := activeDownloads[game.ID]; exists {
+		log.Warn().Int("gameID", game.ID).Msg("Download is already in progress. Ignoring new request.")
+		activeDownloadsMutex.Unlock()
+		return ErrDownloadInProgress
 	}
-	targetDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
+	activeDownloads[game.ID] = struct{}{}
+	activeDownloadsMutex.Unlock()
 
-	task := &DownloadTask{
-		ID:           game.ID,
-		Title:        game.Title,
-		State:        StatePreparing,
-		Status:       binding.NewString(),
-		Details:      binding.NewString(),
-		Progress:     binding.NewFloat(),
-		CancelFunc:   cancel,
-		FileStatus:   binding.NewString(),
-		DownloadPath: targetDir,
-	}
-	_ = task.Status.Set("Preparing...")
-	_ = task.Details.Set("Speed: N/A | ETA: N/A")
-	_ = dm.AddTask(task)
+	go func() {
+		defer func() {
+			activeDownloadsMutex.Lock()
+			delete(activeDownloads, game.ID)
+			activeDownloadsMutex.Unlock()
+		}()
 
-	fyne.CurrentApp().Preferences().SetString("lastDownloadPath", downloadPath)
+		ctx, cancel := context.WithCancel(context.Background())
 
-	token, err := authService.RefreshToken()
-	if err != nil {
-		task.State = StateError
-		_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
-		return
-	}
+		parsedGameData, err := client.ParseGameData(game.Data)
+		if err != nil {
+			fmt.Printf("Error parsing game data for %s: %v\n", game.Title, err)
+			cancel() // Call cancel before returning to prevent context leak
+			return
+		}
+		targetDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
 
-	updater := &progressUpdater{
-		task:         task,
-		fileBytes:    make(map[string]int64),
-		fileProgress: make(map[string]struct{ current, total int64 }),
-	}
+		task := &DownloadTask{
+			ID:           game.ID,
+			Title:        game.Title,
+			State:        StatePreparing,
+			Status:       binding.NewString(),
+			Details:      binding.NewString(),
+			Progress:     binding.NewFloat(),
+			CancelFunc:   cancel,
+			FileStatus:   binding.NewString(),
+			DownloadPath: targetDir,
+		}
+		_ = task.Status.Set("Preparing...")
+		_ = task.Details.Set("Speed: N/A | ETA: N/A")
+		_ = dm.AddTask(task)
 
-	err = client.DownloadGameFiles(
-		ctx, token.AccessToken, parsedGameData, downloadPath, language, platformName,
-		extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads,
-		updater,
-	)
+		fyne.CurrentApp().Preferences().SetString("lastDownloadPath", downloadPath)
 
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			task.State = StateCancelled
-			_ = task.Status.Set("Cancelled")
-		} else {
+		token, err := authService.RefreshToken()
+		if err != nil {
 			task.State = StateError
 			_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
+			return
 		}
-		_ = task.FileStatus.Set("")
-		_ = task.Details.Set("")
-		return
-	}
 
-	task.State = StateCompleted
-	_ = task.Status.Set(fmt.Sprintf("Completed. Files in: %s", targetDir))
-	_ = task.Details.Set("")
-	_ = task.Progress.Set(1.0)
-	_ = task.FileStatus.Set("")
-	go PlayNotificationSound()
+		updater := &progressUpdater{
+			task:         task,
+			fileBytes:    make(map[string]int64),
+			fileProgress: make(map[string]struct{ current, total int64 }),
+		}
+
+		err = client.DownloadGameFiles(
+			ctx, token.AccessToken, parsedGameData, downloadPath, language, platformName,
+			extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads,
+			updater,
+		)
+
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				task.State = StateCancelled
+				_ = task.Status.Set("Cancelled")
+			} else {
+				task.State = StateError
+				_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
+			}
+			_ = task.FileStatus.Set("")
+			_ = task.Details.Set("")
+			return
+		}
+
+		task.State = StateCompleted
+		_ = task.Status.Set(fmt.Sprintf("Completed. Files in: %s", targetDir))
+		_ = task.Details.Set("")
+		_ = task.Progress.Set(1.0)
+		_ = task.FileStatus.Set("")
+		go PlayNotificationSound()
+	}()
+
+	return nil
 }

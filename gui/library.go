@@ -2,6 +2,7 @@ package gui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -253,14 +254,23 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		threads, _ := strconv.Atoi(threadsSelect.Selected)
 		langFull := client.GameLanguages[langSelect.Selected]
 
-		go executeDownload(
+		err := executeDownload(
 			authService, dm, game,
 			downloadPathEntry.Text, langFull, platformSelect.Selected,
 			extrasCheck.Checked, dlcsCheck.Checked, resumeCheck.Checked,
 			flattenCheck.Checked, skipPatchesCheck.Checked,
 			threads,
 		)
-		dialog.ShowInformation("Started", fmt.Sprintf("Download for '%s' has started.", game.Title), win)
+
+		if err != nil {
+			if errors.Is(err, ErrDownloadInProgress) {
+				dialog.ShowInformation("In Progress", "This game is already being downloaded.", win)
+			} else {
+				showErrorDialog(win, "Failed to start download", err)
+			}
+		} else {
+			dialog.ShowInformation("Started", fmt.Sprintf("Download for '%s' has started.", game.Title), win)
+		}
 	}
 
 	form := widget.NewForm(
