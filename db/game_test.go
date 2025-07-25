@@ -8,12 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // setupTestDBForGames sets up an in-memory SQLite database for testing purposes.
 // It returns a pointer to the gorm.DB instance.
 func setupTestDBForGames(t *testing.T) *gorm.DB {
-	dBOject, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	dBOject, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	require.NoError(t, err)
 	require.NoError(t, dBOject.AutoMigrate(&db.Game{}))
 	return dBOject

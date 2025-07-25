@@ -1,3 +1,4 @@
+default_stages: [ pre-push ]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -16,18 +17,17 @@ repos:
         entry: make format
         language: system
         pass_filenames: false
-        types: [ go ]
+        types: [ 'go' ]
 
       - id: lint
         name: Check code style
         entry: make lint
         language: system
         pass_filenames: false
-        types: [ go ]
+        types: [ 'go' ]
 
       - id: test
         name: Run tests
         entry: make test
         language: system
         pass_filenames: false
-        stages: [ pre-push ]

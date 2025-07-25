@@ -44,6 +44,15 @@ func RefreshCatalogue(
 	totalGames := float64(len(gameIDs))
 
 	workerFunc := func(ctx context.Context, id int) error {
+		// Defer the counter increment to guarantee it runs even if a fetch fails.
+		defer func() {
+			count := processedCount.Add(1)
+			if progressCb != nil {
+				progress := float64(count) / totalGames
+				progressCb(progress)
+			}
+		}()
+
 		url := fmt.Sprintf("https://embed.gog.com/account/gameDetails/%d.json", id)
 		details, raw, fetchErr := FetchGameData(token.AccessToken, url)
 		if fetchErr != nil {
@@ -56,11 +65,6 @@ func RefreshCatalogue(
 			}
 		}
 
-		count := processedCount.Add(1)
-		if progressCb != nil {
-			progress := float64(count) / totalGames
-			progressCb(progress)
-		}
 		return nil
 	}
 

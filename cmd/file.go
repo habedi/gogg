@@ -2,15 +2,8 @@ package cmd
 
 import (
 	"context"
-	"crypto/md5"
-	"crypto/sha1"
-	"crypto/sha256"
-	"crypto/sha512"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,12 +12,11 @@ import (
 
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/hasher"
 	"github.com/habedi/gogg/pkg/pool"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
-
-var hashAlgorithms = []string{"md5", "sha1", "sha256", "sha512"}
 
 func fileCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -46,29 +38,20 @@ func hashCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			dir := args[0]
-			if !isValidHashAlgo(algo) {
+			if !hasher.IsValidHashAlgo(algo) {
 				log.Error().Msgf("Unsupported hash algorithm: %s", algo)
 				return
 			}
 			generateHashFiles(dir, algo, recursiveFlag, saveToFileFlag, cleanFlag, numThreads)
 		},
 	}
-	cmd.Flags().StringVarP(&algo, "algo", "a", "md5", "Hash algorithm to use [md5, sha1, sha256, sha512]")
+	cmd.Flags().StringVarP(&algo, "algo", "a", "md5", fmt.Sprintf("Hash algorithm to use %v", hasher.HashAlgorithms))
 	cmd.Flags().BoolVarP(&recursiveFlag, "recursive", "r", true, "Process files in subdirectories? [true, false]")
 	cmd.Flags().BoolVarP(&saveToFileFlag, "save", "s", false, "Save hash to files? [true, false]")
 	cmd.Flags().BoolVarP(&cleanFlag, "clean", "c", false, "Remove old hash files before generating new ones? [true, false]")
 	cmd.Flags().IntVarP(&numThreads, "threads", "t", 4, "Number of worker threads to use for hashing [1-16]")
 
 	return cmd
-}
-
-func isValidHashAlgo(algo string) bool {
-	for _, validAlgo := range hashAlgorithms {
-		if strings.ToLower(algo) == validAlgo {
-			return true
-		}
-	}
-	return false
 }
 
 func removeHashFiles(dir string, recursive bool) {
@@ -80,7 +63,7 @@ func removeHashFiles(dir string, recursive bool) {
 		if info.IsDir() && !recursive {
 			return filepath.SkipDir
 		}
-		for _, algo := range hashAlgorithms {
+		for _, algo := range hasher.HashAlgorithms {
 			if strings.HasSuffix(path, "."+algo) {
 				if err := os.Remove(path); err != nil {
 					log.Error().Msgf("Error removing hash file %s: %v", path, err)
@@ -104,7 +87,7 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 
 	exclusionList := []string{".git", ".gitignore", ".DS_Store", "Thumbs.db", "desktop.ini", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm", "*.md5", "*.sha1", "*.sha256", "*.sha512", "*.cksum", "*.sum", "*.sig", "*.asc", "*.gpg"}
 	var filesToProcess []string
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Error().Msgf("Error accessing path %q: %v", path, err)
 			return err
@@ -124,19 +107,22 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 		filesToProcess = append(filesToProcess, path)
 		return nil
 	})
+	if walkErr != nil {
+		log.Error().Err(walkErr).Msg("Failed to walk directory for hashing")
+	}
 
 	var hashFiles []string
 	var hfMutex sync.Mutex
 
 	workerFunc := func(ctx context.Context, path string) error {
-		hash, err := generateHash(path, algo)
+		hash, err := hasher.GenerateHash(path, algo)
 		if err != nil {
 			log.Error().Err(err).Str("file", path).Msg("Error generating hash")
 			return err
 		}
 		if saveToFile {
 			hashFilePath := path + "." + algo
-			err = os.WriteFile(hashFilePath, []byte(hash), 0o644)
+			err = os.WriteFile(hashFilePath, []byte(hash), 0644)
 			if err != nil {
 				log.Error().Err(err).Str("file", hashFilePath).Msg("Error writing hash to file")
 				return err
@@ -160,31 +146,6 @@ func generateHashFiles(dir, algo string, recursive, saveToFile, clean bool, numT
 	}
 }
 
-func generateHash(filePath, algo string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	var hashAlgo hash.Hash
-	switch strings.ToLower(algo) {
-	case "md5":
-		hashAlgo = md5.New()
-	case "sha1":
-		hashAlgo = sha1.New()
-	case "sha256":
-		hashAlgo = sha256.New()
-	case "sha512":
-		hashAlgo = sha512.New()
-	default:
-		return "", fmt.Errorf("unsupported hash algorithm: %s", algo)
-	}
-	if _, err := io.Copy(hashAlgo, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hashAlgo.Sum(nil)), nil
-}
-
 func sizeCmd() *cobra.Command {
 	var language, platformName, sizeUnit string
 	var extrasFlag, dlcFlag bool
@@ -204,15 +165,12 @@ func sizeCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&platformName, "platform", "p", "windows", "Platform name [all, windows, mac, linux]; all means all platforms")
 	cmd.Flags().BoolVarP(&extrasFlag, "extras", "e", true, "Include extra content files? [true, false]")
 	cmd.Flags().BoolVarP(&dlcFlag, "dlcs", "d", true, "Include DLC files? [true, false]")
-	cmd.Flags().StringVarP(&sizeUnit, "unit", "u", "mb", "Size unit to display [mb, gb]")
+	cmd.Flags().StringVarP(&sizeUnit, "unit", "u", "gb", "Size unit to display [gb, mb, kb, b]")
 	return cmd
 }
 
 func estimateStorageSize(gameID, language, platformName string, extrasFlag, dlcFlag bool, sizeUnit string) error {
 	sizeUnit = strings.ToLower(sizeUnit)
-	if sizeUnit != "mb" && sizeUnit != "gb" {
-		return fmt.Errorf("invalid size unit: \"%s\". Unit must be mb or gb", sizeUnit)
-	}
 
 	langFullName, ok := client.GameLanguages[language]
 	if !ok {
@@ -240,16 +198,22 @@ func estimateStorageSize(gameID, language, platformName string, extrasFlag, dlcF
 	log.Info().Msgf("Game title: \"%s\"\n", nestedData.Title)
 	log.Info().Msgf("Download parameters: Language=%s; Platform=%s; Extras=%t; DLCs=%t\n", langFullName, platformName, extrasFlag, dlcFlag)
 
-	totalSizeMB, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
+	totalSizeBytes, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
 	if err != nil {
 		return fmt.Errorf("failed to calculate storage size: %w", err)
 	}
 
-	if strings.ToLower(sizeUnit) == "gb" {
-		totalSizeGB := totalSizeMB / 1024
-		fmt.Printf("Total download size: %.2f GB\n", totalSizeGB)
-	} else {
-		fmt.Printf("Total download size: %.0f MB\n", totalSizeMB)
+	switch sizeUnit {
+	case "gb":
+		fmt.Printf("Total download size: %.2f GB\n", float64(totalSizeBytes)/(1024*1024*1024))
+	case "mb":
+		fmt.Printf("Total download size: %.2f MB\n", float64(totalSizeBytes)/(1024*1024))
+	case "kb":
+		fmt.Printf("Total download size: %.2f KB\n", float64(totalSizeBytes)/1024)
+	case "b":
+		fmt.Printf("Total download size: %d B\n", totalSizeBytes)
+	default:
+		return fmt.Errorf("invalid size unit: \"%s\". Unit must be one of [gb, mb, kb, b]", sizeUnit)
 	}
 
 	return nil

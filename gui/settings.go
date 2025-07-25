@@ -15,7 +15,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		a := fyne.CurrentApp()
 		if selected == "Light" {
 			a.Preferences().SetString("theme", "light")
-			a.Settings().SetTheme(theme.LightTheme())
+			a.Settings().SetTheme(theme.DefaultTheme())
 		} else {
 			a.Preferences().SetString("theme", "dark")
 			a.Settings().SetTheme(NewCustomDarkTheme())
@@ -52,7 +52,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 			fyne.CurrentApp().Preferences().SetString("soundFilePath", path)
 			soundPathLabel.SetText(path)
 		}, win)
-		fd.SetFilter(storage.NewExtensionFileFilter([]string{".mp3"}))
+		fd.SetFilter(storage.NewExtensionFileFilter([]string{".mp3", ".ogg", ".aac"}))
 		fd.Resize(fyne.NewSize(800, 600))
 		fd.Show()
 	})
@@ -62,10 +62,14 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		soundPathLabel.SetText("Default")
 	})
 
+	testSoundBtn := widget.NewButton("Test", func() {
+		go PlayNotificationSound()
+	})
+
 	soundConfigBox := container.NewVBox(
 		widget.NewLabel("Current sound file:"),
 		soundPathLabel,
-		container.NewHBox(selectSoundBtn, resetSoundBtn),
+		container.NewHBox(selectSoundBtn, resetSoundBtn, testSoundBtn),
 	)
 
 	// --- Layout ---

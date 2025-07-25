@@ -1,20 +1,116 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
+
+// formatBytes converts a byte count into a human-readable string (KB, MB, GB).
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// cliProgressWriter handles progress updates for the CLI.
+type cliProgressWriter struct {
+	bar             *progressbar.ProgressBar
+	fileProgress    map[string]struct{ current, total int64 }
+	fileBytes       map[string]int64
+	downloadedBytes int64
+	mu              sync.RWMutex
+}
+
+func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
+	scanner := bufio.NewScanner(strings.NewReader(string(p)))
+	for scanner.Scan() {
+		var update client.ProgressUpdate
+		if err := json.Unmarshal(scanner.Bytes(), &update); err == nil {
+			cw.mu.Lock()
+			switch update.Type {
+			case "start":
+				cw.bar = progressbar.NewOptions64(
+					update.OverallTotalBytes,
+					progressbar.OptionSetDescription("Downloading..."),
+					progressbar.OptionSetWriter(os.Stderr),
+					progressbar.OptionShowBytes(true),
+					progressbar.OptionThrottle(200*time.Millisecond),
+					progressbar.OptionClearOnFinish(),
+					progressbar.OptionSpinnerType(14),
+				)
+				cw.fileProgress = make(map[string]struct{ current, total int64 })
+				cw.fileBytes = make(map[string]int64)
+			case "file_progress":
+				if cw.bar != nil {
+					diff := update.CurrentBytes - cw.fileBytes[update.FileName]
+					cw.fileBytes[update.FileName] = update.CurrentBytes
+					cw.downloadedBytes += diff
+					_ = cw.bar.Set64(cw.downloadedBytes)
+
+					cw.fileProgress[update.FileName] = struct{ current, total int64 }{update.CurrentBytes, update.TotalBytes}
+					if update.CurrentBytes >= update.TotalBytes && update.TotalBytes > 0 {
+						delete(cw.fileProgress, update.FileName)
+					}
+					cw.bar.Describe(cw.getFileStatusString())
+				}
+			}
+			cw.mu.Unlock()
+		}
+	}
+	return len(p), nil
+}
+
+// getFileStatusString builds a compact string of current file progresses.
+func (cw *cliProgressWriter) getFileStatusString() string {
+	if len(cw.fileProgress) == 0 {
+		return "Finalizing..."
+	}
+
+	files := make([]string, 0, len(cw.fileProgress))
+	for f := range cw.fileProgress {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Downloading %d files: ", len(files)))
+	for i, file := range files {
+		shortName := file
+		if len(shortName) > 25 {
+			shortName = "..." + shortName[len(shortName)-22:]
+		}
+		progress := cw.fileProgress[file]
+		sizeStr := fmt.Sprintf("%s/%s", formatBytes(progress.current), formatBytes(progress.total))
+		sb.WriteString(fmt.Sprintf("%s %s", shortName, sizeStr))
+		if i < len(files)-1 {
+			sb.WriteString(" | ")
+		}
+	}
+	return sb.String()
+}
 
 func downloadCmd(authService *auth.Service) *cobra.Command {
 	var language, platformName string
@@ -49,12 +145,6 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	return cmd
 }
 
-// isValidLanguage checks if a given language code is valid.
-func isValidLanguage(lang string) bool {
-	_, ok := client.GameLanguages[lang]
-	return ok
-}
-
 func executeDownload(authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
@@ -63,14 +153,15 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 		fmt.Println("Number of threads must be between 1 and 20.")
 		return
 	}
-	if !isValidLanguage(language) {
+
+	languageFullName, ok := client.GameLanguages[language]
+	if !ok {
 		fmt.Println("Invalid language code. Supported languages are:")
 		for langCode, langName := range client.GameLanguages {
 			fmt.Printf("'%s' for %s\n", langCode, langName)
 		}
 		return
 	}
-	languageFullName := client.GameLanguages[language]
 
 	user, err := authService.RefreshToken()
 	if err != nil {
@@ -107,7 +198,7 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
 	ctx := context.Background()
-	progressWriter := io.Writer(os.Stderr)
+	progressWriter := &cliProgressWriter{}
 
 	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"runtime"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
@@ -16,7 +17,12 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 	platform := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
 	goVersion := runtime.Version()
 
-	versionLbl := widget.NewLabel(fmt.Sprintf("Version: %s", version))
+	logoImage := canvas.NewImageFromResource(AppLogo)
+	logoImage.SetMinSize(fyne.NewSize(128, 128))
+	logoImage.FillMode = canvas.ImageFillContain
+
+	// Use the new CopyableLabel for the version
+	versionLbl := NewCopyableLabel(fmt.Sprintf("Version: %s", version))
 	goLbl := widget.NewLabel(fmt.Sprintf("Go version: %s", goVersion))
 	platformLbl := widget.NewLabel(fmt.Sprintf("Platform: %s", platform))
 
@@ -40,6 +46,8 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 		"",
 		"",
 		container.NewVBox(
+			container.NewCenter(logoImage),
+			widget.NewSeparator(),
 			container.NewVBox(
 				titleLbl,
 				subtitleLbl,

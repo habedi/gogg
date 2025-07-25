@@ -18,7 +18,25 @@ import (
 //go:embed assets/ding-small-bell-sfx-233008.mp3
 var defaultDingSound []byte
 
-var speakerOnce sync.Once
+var (
+	speakerOnce sync.Once
+	mixer       *beep.Mixer
+	sampleRate  beep.SampleRate
+)
+
+func initSpeaker(sr beep.SampleRate) {
+	speakerOnce.Do(func() {
+		sampleRate = sr
+		// The buffer size should be large enough to avoid under-runs.
+		bufferSize := sr.N(time.Second / 10)
+		if err := speaker.Init(sampleRate, bufferSize); err != nil {
+			log.Error().Err(err).Msg("Failed to initialize speaker")
+			return
+		}
+		mixer = &beep.Mixer{}
+		speaker.Play(mixer)
+	})
+}
 
 func PlayNotificationSound() {
 	a := fyne.CurrentApp()
@@ -50,16 +68,19 @@ func PlayNotificationSound() {
 		log.Error().Err(err).Msg("Failed to decode mp3 stream")
 		return
 	}
-	defer streamer.Close()
 
-	speakerOnce.Do(func() {
-		speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-	})
+	// Initialize the speaker with the format of the first sound played.
+	initSpeaker(format.SampleRate)
 
+	// Create a new streamer that is resampled to the mixer's sample rate.
+	resampled := beep.Resample(4, format.SampleRate, sampleRate, streamer)
+
+	// Add the resampled audio to the mixer. The mixer handles playing it.
 	done := make(chan bool)
-	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
+	mixer.Add(beep.Seq(resampled, beep.Callback(func() {
 		done <- true
 	})))
 
+	// Wait for this specific sound to finish.
 	<-done
 }

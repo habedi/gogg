@@ -10,20 +10,21 @@ import (
 )
 
 func Run(version string, authService *auth.Service) {
-	myApp := app.NewWithID("com.habedi.gogg")
+	myApp := app.NewWithID("com.github.habedi.gogg")
+	myApp.SetIcon(AppLogo)
 
 	themePref := myApp.Preferences().StringWithFallback("theme", "light")
 	if themePref == "dark" {
 		myApp.Settings().SetTheme(NewCustomDarkTheme())
 	} else {
-		myApp.Settings().SetTheme(theme.LightTheme())
+		myApp.Settings().SetTheme(theme.DefaultTheme())
 	}
 
 	myWindow := myApp.NewWindow("GOGG GUI")
 	dm := NewDownloadManager()
 
 	mainTabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("Library", theme.ListIcon(), LibraryTabUI(myWindow, authService, dm)),
+		container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), LibraryTabUI(myWindow, authService, dm)),
 		container.NewTabItemWithIcon("Downloads", theme.DownloadIcon(), DownloadsTabUI(dm)),
 		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
 		container.NewTabItemWithIcon("Settings", theme.SettingsIcon(), SettingsTabUI(myWindow)),
@@ -41,7 +42,7 @@ func FileTabUI(win fyne.Window) fyne.CanvasObject {
 	hashTab := HashUI(win)
 	sizeTab := SizeUI(win)
 	fileTabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("Hash Files", theme.ContentAddIcon(), hashTab),
+		container.NewTabItemWithIcon("File Hashes", theme.ContentAddIcon(), hashTab),
 		container.NewTabItemWithIcon("Storage Size", theme.ViewFullScreenIcon(), sizeTab),
 	)
 	fileTabs.SetTabLocation(container.TabLocationTop)

@@ -134,35 +134,36 @@ func parseOwnedGames(body []byte) ([]int, error) {
 	return response.Owned, nil
 }
 
-func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dlcFlag bool) (float64, error) {
-	totalSizeMB := 0.0
+func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dlcFlag bool) (int64, error) {
+	var totalSizeBytes int64
 
-	parseSize := func(sizeStr string) (float64, error) {
+	parseSize := func(sizeStr string) (int64, error) {
 		s := strings.TrimSpace(strings.ToLower(sizeStr))
 		var val float64
+		var err error
 		switch {
 		case strings.HasSuffix(s, " gb"):
-			_, err := fmt.Sscanf(s, "%f gb", &val)
+			_, err = fmt.Sscanf(s, "%f gb", &val)
 			if err != nil {
 				return 0, err
 			}
-			return val * 1024, nil
+			return int64(val * 1024 * 1024 * 1024), nil
 		case strings.HasSuffix(s, " mb"):
-			_, err := fmt.Sscanf(s, "%f mb", &val)
+			_, err = fmt.Sscanf(s, "%f mb", &val)
 			if err != nil {
 				return 0, err
 			}
-			return val, nil
+			return int64(val * 1024 * 1024), nil
 		case strings.HasSuffix(s, " kb"):
-			_, err := fmt.Sscanf(s, "%f kb", &val)
+			_, err = fmt.Sscanf(s, "%f kb", &val)
 			if err != nil {
 				return 0, err
 			}
-			return val / 1024, nil
+			return int64(val * 1024), nil
 		default:
 			bytesVal, err := strconv.ParseInt(s, 10, 64)
 			if err == nil {
-				return float64(bytesVal) / (1024 * 1024), nil
+				return bytesVal, nil
 			}
 			return 0, fmt.Errorf("unknown or missing size unit in '%s'", sizeStr)
 		}
@@ -171,7 +172,7 @@ func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dl
 	processFiles := func(files []PlatformFile) {
 		for _, file := range files {
 			if size, err := parseSize(file.Size); err == nil {
-				totalSizeMB += size
+				totalSizeBytes += size
 			}
 		}
 	}
@@ -195,7 +196,7 @@ func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dl
 	if extrasFlag {
 		for _, extra := range g.Extras {
 			if size, err := parseSize(extra.Size); err == nil {
-				totalSizeMB += size
+				totalSizeBytes += size
 			}
 		}
 	}
@@ -220,12 +221,12 @@ func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dl
 			if extrasFlag {
 				for _, extra := range dlc.Extras {
 					if size, err := parseSize(extra.Size); err == nil {
-						totalSizeMB += size
+						totalSizeBytes += size
 					}
 				}
 			}
 		}
 	}
 
-	return totalSizeMB, nil
+	return totalSizeBytes, nil
 }

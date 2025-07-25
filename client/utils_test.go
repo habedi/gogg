@@ -1,8 +1,6 @@
 package client
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,50 +34,4 @@ func TestParseRawDownloads(t *testing.T) {
 	file := dl.Platforms.Windows[0]
 	assert.Equal(t, "setup.exe", file.Name)
 	assert.Equal(t, "1GB", file.Size)
-}
-
-func TestParseGameData(t *testing.T) {
-	valid := `{"title":"Test","downloads":[],"extras":[],"dlcs":[]}`
-	g, err := ParseGameData(valid)
-	if err != nil {
-		t.Fatalf("Unexpected error parsing valid JSON: %v", err)
-	}
-	if g.Title != "Test" {
-		t.Errorf("Expected title Test, got %s", g.Title)
-	}
-	_, err = ParseGameData("invalid json")
-	if err == nil {
-		t.Error("Expected error parsing invalid JSON, got nil")
-	}
-}
-
-func TestSanitizePath(t *testing.T) {
-	cases := map[string]string{
-		"My Game® (Test)™":  "my-game-test",
-		"Spaces And:Colons": "spaces-andcolons",
-		"UPPER_case":        "upper_case",
-	}
-	for input, expected := range cases {
-		got := SanitizePath(input)
-		if got != expected {
-			t.Errorf("SanitizePath(%q) = %q; want %q", input, got, expected)
-		}
-	}
-}
-
-func TestEnsureDirExists(t *testing.T) {
-	tmp := t.TempDir()
-	path := filepath.Join(tmp, "subdir")
-	err := ensureDirExists(path)
-	assert.NoError(t, err)
-	info, err := os.Stat(path)
-	assert.NoError(t, err)
-	assert.True(t, info.IsDir())
-
-	filePath := filepath.Join(tmp, "file.txt")
-	os.WriteFile(filePath, []byte("data"), 0o644)
-	err = ensureDirExists(filePath)
-	if err == nil {
-		t.Error("Expected error when path exists and is not a directory, got nil")
-	}
 }

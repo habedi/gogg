@@ -85,13 +85,18 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 			log.Warn().Err(err).Msg("Headless login failed, retrying with window mode.")
 			fmt.Println("Headless login failed, retrying with window mode.")
 
-			ctx, cancel, err = createChromeContext(false)
+			// Cancel the first headless context before creating a new one.
+			cancel()
+
+			var headedCtx context.Context
+			var headedCancel context.CancelFunc
+			headedCtx, headedCancel, err = createChromeContext(false)
 			if err != nil {
 				return fmt.Errorf("failed to create Chrome context: %w", err)
 			}
-			defer cancel()
+			defer headedCancel() // Defer cancellation of the new headed context.
 
-			finalURL, err = performLogin(ctx, loginURL, username, password, false)
+			finalURL, err = performLogin(headedCtx, loginURL, username, password, false)
 			if err != nil {
 				return fmt.Errorf("failed to login: %w", err)
 			}
@@ -119,19 +124,28 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 
 func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
 	var execPath string
-	if p, err := exec.LookPath("google-chrome"); err == nil {
-		execPath = p
-	} else if p, err := exec.LookPath("chromium"); err == nil {
-		execPath = p
-	} else if p, err := exec.LookPath("chrome"); err == nil {
-		execPath = p
-	} else {
-		return nil, nil, fmt.Errorf("no Chrome or Chromium executable found in PATH")
+	// Search for browsers in order of preference
+	browserExecutables := []string{"google-chrome", "chromium", "chrome", "msedge"}
+	for _, browser := range browserExecutables {
+		if p, err := exec.LookPath(browser); err == nil {
+			execPath = p
+			break
+		}
+	}
+
+	if execPath == "" {
+		return nil, nil, fmt.Errorf("no Chrome, Chromium, or Edge executable found in PATH")
 	}
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(execPath),
+		chromedp.Flag("headless", headless),
 	)
+
+	if headless {
+		opts = append(opts, chromedp.Flag("disable-gpu", true))
+	}
+
 	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancelContext := chromedp.NewContext(allocatorCtx, chromedp.WithLogf(log.Info().Msgf))
 

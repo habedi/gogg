@@ -9,6 +9,9 @@ import (
 )
 
 func TestConfigureLogLevelFromEnv_Disabled(t *testing.T) {
+	originalLevel := zerolog.GlobalLevel()
+	t.Cleanup(func() { zerolog.SetGlobalLevel(originalLevel) })
+
 	testCases := []struct {
 		envVal      string
 		expectedLvl zerolog.Level
@@ -29,6 +32,9 @@ func TestConfigureLogLevelFromEnv_Disabled(t *testing.T) {
 }
 
 func TestConfigureLogLevelFromEnv_Debug(t *testing.T) {
+	originalLevel := zerolog.GlobalLevel()
+	t.Cleanup(func() { zerolog.SetGlobalLevel(originalLevel) })
+
 	testCases := []struct {
 		envVal      string
 		expectedLvl zerolog.Level
@@ -54,9 +60,7 @@ func TestSetupInterruptListener(t *testing.T) {
 		t.Error("expected non-nil channel from setupInterruptListener")
 	}
 
-	// Verify the channel receives signals.
 	go func() {
-		// Give the channel a moment then send an interrupt.
 		time.Sleep(10 * time.Millisecond)
 		stopChan <- os.Interrupt
 	}()
@@ -76,17 +80,18 @@ func TestHandleInterrupt(t *testing.T) {
 	exitCalled := make(chan int, 1)
 	var loggedMessage string
 
-	// Use fake functions to capture calls.
 	fakeFatalLog := func(msg string) {
 		loggedMessage = msg
+		// In a real scenario log.Fatal would os.Exit, so we simulate the exit part
+		exitCalled <- 1
 	}
+	// We don't need a fake exit anymore since log.Fatal now handles it.
 	fakeExit := func(code int) {
-		exitCalled <- code
+		// This function is no longer called by the modified handleInterrupt
 	}
 
 	go handleInterrupt(stopChan, fakeFatalLog, fakeExit)
 
-	// Send an interrupt signal.
 	stopChan <- os.Interrupt
 
 	select {
@@ -94,11 +99,11 @@ func TestHandleInterrupt(t *testing.T) {
 		if code != 1 {
 			t.Errorf("expected exit code 1, got %d", code)
 		}
-		if loggedMessage != "Interrupt signal received. Exiting..." {
-			t.Errorf("expected log message %q, got %q",
-				"Interrupt signal received. Exiting...", loggedMessage)
+		expectedMsg := "Interrupt signal received. Exiting..."
+		if loggedMessage != expectedMsg {
+			t.Errorf("expected log message %q, got %q", expectedMsg, loggedMessage)
 		}
 	case <-time.After(100 * time.Millisecond):
-		t.Error("exit function was not called on interrupt")
+		t.Error("fatal log function was not called on interrupt")
 	}
 }

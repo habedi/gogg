@@ -77,7 +77,7 @@ run: build ## Build and run the binary
 .PHONY: clean
 clean: ## Remove artifacts and temporary files
 	$(ECHO) "Cleaning up..."
-	@$(GO) clean -cache -testcache -modcache
+	@$(GO) clean #-cache -testcache -modcache
 	@find . -type f -name '*.got.*' -delete
 	@find . -type f -name '*.out' -delete
 	@find . -type f -name '*.snap' -delete
@@ -100,7 +100,7 @@ install-snap: ## Install Snap (for Debian-based systems)
 install-deps: ## Install development dependencies (for Debian-based systems)
 	$(ECHO) "Installing dependencies..."
 	@sudo apt-get install -y make libgl1-mesa-dev libx11-dev xorg-dev \
-	libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config
+	libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config libasound2-dev
 	@$(MAKE) install-snap
 	@sudo snap install go --classic
 	@sudo snap install golangci-lint --classic
@@ -139,15 +139,17 @@ release-macos: ## Build release binary for macOS (v14 and newer; arm64)
 	echo "Build complete: $(BINARY)"
 
 .PHONY: setup-hooks
-setup-hooks: ## Set up pre-commit hooks
-	@echo "Setting up pre-commit hooks..."
+setup-hooks: ## Install Git hooks (pre-commit and pre-push)
+	@echo "Setting up Git hooks..."
 	@if ! command -v pre-commit &> /dev/null; then \
 	   echo "pre-commit not found. Please install it using 'pip install pre-commit'"; \
 	   exit 1; \
 	fi
-	@pre-commit install --install-hooks
+	@pre-commit install --hook-type pre-commit
+	@pre-commit install --hook-type pre-push
+	@pre-commit install-hooks
 
 .PHONY: test-hooks
-test-hooks: ## Test pre-commit hooks on all files
-	@echo "Testing pre-commit hooks..."
-	@pre-commit run --all-files
+test-hooks: ## Test Git hooks on all files
+	@echo "Testing Git hooks..."
+	@pre-commit run --all-files --show-diff-on-failure

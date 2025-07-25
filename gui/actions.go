@@ -22,7 +22,8 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 	statusLabel := widget.NewLabel("Preparing to refresh...")
 	ctx, cancel := context.WithCancel(context.Background())
 	content := container.NewVBox(statusLabel, progress, widget.NewButton("Cancel", cancel))
-	dlg := dialog.NewCustom("Refreshing Catalogue", "Dismiss", content, win)
+	dlg := dialog.NewCustom("Refreshing Catalogue", "Hide", content, win)
+	dlg.Resize(fyne.NewSize(400, 200))
 	dlg.Show()
 
 	go func() {
@@ -50,7 +51,15 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 				}
 				return
 			}
-			dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
+
+			games, dbErr := db.GetCatalogue()
+			if dbErr != nil {
+				// Fallback message if we can't get the count
+				dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
+			} else {
+				successMsg := fmt.Sprintf("Successfully refreshed catalogue.\nYour library now contains %d games.", len(games))
+				dialog.ShowInformation("Success", successMsg, win)
+			}
 		})
 	}()
 }
