@@ -152,7 +152,7 @@ gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --ex
 --resume=true --threads=5 --flatten=true
 ```
 
------
+---
 
 ### Configuration
 
@@ -183,14 +183,14 @@ gogg catalogue list
 $env:GOGG_HOME = "D:\GoggData"; gogg catalogue list
 ```
 
------
+---
 
 ### GUI
 
 Since version `0.4.1`, Gogg has a GUI that provides most of the features of Gogg's CLI.
 The GUI can be started by running `gogg gui` from the command line.
 
------
+---
 
 ### Debug Mode
 
@@ -208,3 +208,58 @@ DEBUG_GOGG=true gogg <command>
 ```powershell
 $env:DEBUG_GOGG = "true"; gogg <command>
 ```
+
+---
+
+### Containerization
+
+Gogg provides a Docker image for easy deployment on servers or environments where you prefer containerization.
+The image is available on [GitHub Container Registry](https://github.com/habedi/gogg/pkgs/container/gogg).
+
+#### Running the Container
+
+Gogg's Docker container uses two volumes for persistent data: `/config` (for the database and application settings) and
+`/downloads` (for downloaded game files).
+To run the Gogg Docker container, use the following command:
+
+```bash
+docker run -d \
+  --name gogg \
+  --restart unless-stopped \
+  -v /your/host/path/for/config:/config \
+  -v /your/host/path/for/downloads:/downloads \
+  -e DEBUG_GOGG=false \
+  ghcr.io/habedi/gogg:latest version # Or any other command you want to run like `catalogue refresh`
+````
+
+**Key Volume Parameters:**
+
+* `-v /your/host/path/for/config:/config`: **Replace `/your/host/path/for/config`** with your desired absolute host path
+  for Gogg's database and settings.
+* `-v /your/host/path/for/downloads:/downloads`: **Replace `/your/host/path/for/downloads`** with your desired absolute
+  host path for downloaded game files.
+
+#### CLI Usage in Docker
+
+To execute Gogg's command-line interface within the Docker environment (e.g., for automated tasks):
+
+* Exec into a running container:** `docker exec -it gogg bash`
+* Run a one-off command:
+  ```bash
+  docker run --rm \
+    -v /your/host/path/for/config:/config \
+    -v /your/host/path/for/downloads:/downloads \
+    ghcr.io/habedi/gogg:latest catalogue refresh
+  ```
+
+When using download commands, make sure to use `/downloads` as the path *inside* the container for saving files.
+
+#### Permissions Troubleshooting
+
+If `permission denied` errors occur when mounting volumes:
+
+1. **Host Directory Permissions:** Ensure the user running Docker on your host has write access to your specified host
+   paths.
+2. **Container User Mapping (Recommended):** Align the container's `gogg` user (a non-root user within the container)
+   with your host user's UID and GID. Add `--user <YOUR_HOST_UID>:<YOUR_HOST_GID>` to your `docker run` command (e.g.,
+   `--user 1000:1000`).
