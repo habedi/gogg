@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -33,79 +32,108 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	allGames, _ := db.GetCatalogue()
 	gamesListBinding := binding.NewUntypedList()
-	_ = gamesListBinding.Set(untypedSlice(allGames))
-
 	selectedGameBinding := binding.NewUntyped()
+	isSortAscending := true
 
-	var listPlaceholder fyne.CanvasObject
-	var gameListWidget *widget.List
-	listContent := container.NewStack()
+	// --- LEFT PANE WIDGETS ---
+	gameCountLabel := widget.NewLabel("")
 
-	var refreshBtn *widget.Button
-
-	refreshUI := func() {
-		allGames, _ = db.GetCatalogue()
-		_ = gamesListBinding.Set(untypedSlice(allGames))
-
-		if gameListWidget == nil && gamesListBinding.Length() > 0 {
-			gameListWidget = widget.NewListWithData(gamesListBinding,
-				func() fyne.CanvasObject {
-					return widget.NewLabel("Game Title")
-				},
-				func(item binding.DataItem, obj fyne.CanvasObject) {
-					gameRaw, _ := item.(binding.Untyped).Get()
-					game := gameRaw.(db.Game)
-					obj.(*widget.Label).SetText(game.Title)
-				},
-			)
-			gameListWidget.OnSelected = func(id widget.ListItemID) {
-				gameRaw, _ := gamesListBinding.GetValue(id)
-				_ = selectedGameBinding.Set(gameRaw)
-			}
-			gameListWidget.OnUnselected = func(id widget.ListItemID) {
-				_ = selectedGameBinding.Set(nil)
-			}
-			listContent.Objects = []fyne.CanvasObject{gameListWidget}
-			listContent.Refresh()
-		} else if gameListWidget != nil {
-			gameListWidget.Refresh()
-		}
-	}
-
-	onFinishRefresh := func() {
-		refreshBtn.Enable()
-		refreshUI()
-	}
-
-	// --- LEFT PANE (MASTER) ---
-	var debounceTimer *time.Timer
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Type game title to search...")
-	searchEntry.OnChanged = func(s string) {
-		if debounceTimer != nil {
-			debounceTimer.Stop()
-		}
-		debounceTimer = time.AfterFunc(200*time.Millisecond, func() {
-			runOnMain(func() {
-				searchStr := strings.ToLower(s)
-				if searchStr == "" {
-					_ = gamesListBinding.Set(untypedSlice(allGames))
-					return
-				}
-				filtered := make([]interface{}, 0)
-				for _, game := range allGames {
-					if strings.Contains(strings.ToLower(game.Title), searchStr) {
-						filtered = append(filtered, game)
-					}
-				}
-				_ = gamesListBinding.Set(filtered)
+	clearSearchBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
+		searchEntry.SetText("")
+	})
+	searchEntry.ActionItem = clearSearchBtn
+	clearSearchBtn.Hide()
+
+	// --- List Widget (defined early to be accessible in closures) ---
+	gameListWidget := widget.NewListWithData(gamesListBinding,
+		func() fyne.CanvasObject {
+			return widget.NewLabel("Game Title")
+		},
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			gameRaw, _ := item.(binding.Untyped).Get()
+			game := gameRaw.(db.Game)
+			obj.(*widget.Label).SetText(game.Title)
+		},
+	)
+
+	// --- Central function to update the game list ---
+	updateDisplayedGames := func() {
+		searchTerm := strings.ToLower(searchEntry.Text)
+
+		displayGames := make([]db.Game, len(allGames))
+		copy(displayGames, allGames)
+
+		if isSortAscending {
+			sort.Slice(displayGames, func(i, j int) bool {
+				return strings.ToLower(displayGames[i].Title) < strings.ToLower(displayGames[j].Title)
 			})
-		})
+		} else {
+			sort.Slice(displayGames, func(i, j int) bool {
+				return strings.ToLower(displayGames[i].Title) > strings.ToLower(displayGames[j].Title)
+			})
+		}
+
+		if searchTerm != "" {
+			filtered := make([]db.Game, 0)
+			for _, game := range displayGames {
+				if strings.Contains(strings.ToLower(game.Title), searchTerm) {
+					filtered = append(filtered, game)
+				}
+			}
+			displayGames = filtered
+		}
+
+		_ = gamesListBinding.Set(untypedSlice(displayGames))
+		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(displayGames)))
+		if searchTerm == "" {
+			clearSearchBtn.Hide()
+		} else {
+			clearSearchBtn.Show()
+		}
 	}
 
+	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
+	updateDisplayedGames()
+
+	// --- List and Placeholders ---
+	listContent := container.NewStack()
+	gameListWidget.OnSelected = func(id widget.ListItemID) {
+		gameRaw, _ := gamesListBinding.GetValue(id)
+		_ = selectedGameBinding.Set(gameRaw)
+	}
+	gameListWidget.OnUnselected = func(id widget.ListItemID) {
+		_ = selectedGameBinding.Set(nil)
+	}
+
+	var refreshBtn *widget.Button
+	onFinishRefresh := func() {
+		allGames, _ = db.GetCatalogue()
+		updateDisplayedGames()
+		refreshBtn.Enable()
+		listContent.Objects = []fyne.CanvasObject{gameListWidget}
+		listContent.Refresh()
+	}
+
+	if len(allGames) == 0 {
+		placeholder := container.NewCenter(container.NewVBox(
+			widget.NewIcon(theme.InfoIcon()),
+			widget.NewLabel("Your library is empty or hasn't been synced."),
+			widget.NewButton("Refresh Catalogue Now", func() {
+				refreshBtn.Disable()
+				RefreshCatalogueAction(win, authService, onFinishRefresh)
+			}),
+		))
+		listContent.Add(placeholder)
+	} else {
+		listContent.Add(gameListWidget)
+	}
+
+	// --- Toolbar / Footer ---
 	refreshBtn = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
 		searchEntry.SetText("")
-		refreshBtn.Disable() // Disable button immediately on click
+		refreshBtn.Disable()
 		RefreshCatalogueAction(win, authService, onFinishRefresh)
 	})
 
@@ -117,45 +145,30 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		), win.Canvas())
 		popup.ShowAtPosition(win.Content().Position().Add(fyne.NewPos(exportBtn.Position().X, exportBtn.Position().Y+exportBtn.Size().Height)))
 	})
-	toolbar := container.NewHBox(refreshBtn, exportBtn)
 
-	// Initial UI setup
-	if gamesListBinding.Length() == 0 {
-		listPlaceholder = container.NewCenter(container.NewVBox(
-			widget.NewIcon(theme.InfoIcon()),
-			widget.NewLabel("Your library is empty or hasn't been synced."),
-			widget.NewButton("Refresh Catalogue Now", func() {
-				refreshBtn.Disable()
-				RefreshCatalogueAction(win, authService, onFinishRefresh)
-			}),
-		))
-		listContent.Add(listPlaceholder)
-	} else {
-		gameListWidget = widget.NewListWithData(gamesListBinding,
-			func() fyne.CanvasObject {
-				return widget.NewLabel("Game Title")
-			},
-			func(item binding.DataItem, obj fyne.CanvasObject) {
-				gameRaw, _ := item.(binding.Untyped).Get()
-				game := gameRaw.(db.Game)
-				obj.(*widget.Label).SetText(game.Title)
-			},
-		)
-		gameListWidget.OnSelected = func(id widget.ListItemID) {
-			gameRaw, _ := gamesListBinding.GetValue(id)
-			_ = selectedGameBinding.Set(gameRaw)
+	var sortBtn *widget.Button
+	sortBtn = widget.NewButton("Sort A-Z", func() {
+		isSortAscending = !isSortAscending
+		if isSortAscending {
+			sortBtn.SetText("Sort A-Z")
+		} else {
+			sortBtn.SetText("Sort Z-A")
 		}
-		gameListWidget.OnUnselected = func(id widget.ListItemID) {
-			_ = selectedGameBinding.Set(nil)
-		}
-		listContent.Add(gameListWidget)
-	}
+		updateDisplayedGames()
+		gameListWidget.Refresh() // Explicitly refresh the list widget
+	})
 
-	leftPane := container.NewBorder(
-		container.NewVBox(searchEntry, widget.NewSeparator()),
-		toolbar, nil, nil,
-		listContent,
+	toolbar := container.NewHBox(
+		refreshBtn,
+		exportBtn,
+		sortBtn,
+		layout.NewSpacer(),
+		gameCountLabel,
 	)
+
+	// --- LEFT PANE LAYOUT ---
+	leftTopContainer := container.NewVBox(searchEntry, widget.NewSeparator())
+	leftPane := container.NewBorder(leftTopContainer, toolbar, nil, nil, listContent)
 
 	// --- RIGHT PANE (DETAIL) ---
 	detailTitle := widget.NewLabelWithStyle("Select a game from the list", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
@@ -201,7 +214,7 @@ func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *Down
 	accordion := widget.NewAccordion(
 		widget.NewAccordionItem("Download Options", downloadForm),
 	)
-	accordion.Open(0) // Open download options by default
+	accordion.Open(0)
 
 	selectedGame.AddListener(binding.NewDataListener(func() {
 		gameRaw, _ := selectedGame.Get()

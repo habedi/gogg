@@ -13,11 +13,23 @@ func Run(version string, authService *auth.Service) {
 	myApp := app.NewWithID("com.github.habedi.gogg")
 	myApp.SetIcon(AppLogo)
 
-	// Set the app theme based on all user preferences
 	myApp.Settings().SetTheme(CreateThemeFromPreferences())
 
 	myWindow := myApp.NewWindow("GOGG GUI")
 	dm := NewDownloadManager()
+	prefs := myApp.Preferences()
+
+	// Restore window size
+	width := prefs.FloatWithFallback("windowWidth", 960)
+	height := prefs.FloatWithFallback("windowHeight", 640)
+	myWindow.Resize(fyne.NewSize(float32(width), float32(height)))
+
+	// SetOnClosed handler to save size
+	myWindow.SetOnClosed(func() {
+		size := myWindow.Canvas().Size()
+		prefs.SetFloat("windowWidth", float64(size.Width))
+		prefs.SetFloat("windowHeight", float64(size.Height))
+	})
 
 	mainTabs := container.NewAppTabs(
 		container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), LibraryTabUI(myWindow, authService, dm)),
@@ -29,7 +41,6 @@ func Run(version string, authService *auth.Service) {
 	mainTabs.SetTabLocation(container.TabLocationTop)
 
 	myWindow.SetContent(mainTabs)
-	myWindow.Resize(fyne.NewSize(960, 640))
 	myWindow.ShowAndRun()
 }
 
