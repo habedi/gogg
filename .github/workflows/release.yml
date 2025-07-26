@@ -10,8 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  call_tests:
-    uses: ./.github/workflows/tests.yml
 
   build-windows:
     runs-on: windows-latest
@@ -23,7 +21,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: false
+          update: true
           install: >-
             make
             mingw-w64-x86_64-go

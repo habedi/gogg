@@ -1,16 +1,16 @@
 digraph package_dependency_graph {
     // Global layout settings for a less packed appearance
-    rankdir = TD;
+    rankdir = LR; // Left to Right layout
 splines = curved;
 ranksep = 1.8;    // Increased distance between columns
     nodesep = 1.0;    // Increased distance between nodes
     compound = true;  // Improves layout with clusters
 
-graph [label="Gogg Application Architecture", labelloc=t, fontsize=16, fontname="Arial"];
+graph [label="Gogg Architecture", labelloc=t, fontsize=16, fontname="Arial"];
 node [shape=box, style="rounded,filled", fontname="Arial", margin="0.2,0.1"];
 
 subgraph cluster_drivers {
-label = "Drivers (UI Layer)";
+label = "UI Layer";
 style = "rounded,filled";
 color = "#e6f2fa";
 main [label = "main", fillcolor="#a7c7e7"];
@@ -19,7 +19,7 @@ gui [label = "gui", fillcolor="#a7c7e7"];
 }
 
 subgraph cluster_core {
-label = "Application Core (Service Layer)";
+label = "Service Layer";
 style = "rounded,filled";
 color = "#eaf7ec";
 auth [label = "auth", fillcolor="#d4edda"];
@@ -28,7 +28,7 @@ pkg_operations [label = "pkg/operations", fillcolor="#d4edda"];
 }
 
 subgraph cluster_infra {
-label = "Infrastructure (Adapter/Utility Layer)";
+label = "Adapter/Utility Layer";
 style = "rounded,filled";
 color = "#fef8e4";
 db [label = "db", fillcolor="#fff3cd"];

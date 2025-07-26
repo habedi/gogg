@@ -57,7 +57,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 
 	validateSoundPath := func(path string) {
 		if path == "" {
-			soundPathLabel.SetText("Default")
+			soundPathLabel.SetText("Default sound file")
 			soundStatusLabel.SetText("")
 			soundStatusLabel.Hide()
 			return
