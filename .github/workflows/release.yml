@@ -130,6 +130,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=ref,event=branch
+            type=ref,event=tag
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5

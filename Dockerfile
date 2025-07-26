@@ -1,45 +1,64 @@
 # ---- Builder Stage ----
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24-bookworm as builder
 
-# Install only what's needed for building a static binary
-RUN apk add --no-cache bash make musl-dev
+# Make sure /tmp exists and is writable
+RUN mkdir -p /tmp && chmod 1777 /tmp
 
-# Set static build environment
-ENV CGO_ENABLED=0
-ENV GOOS=linux
-ENV GOARCH=amd64
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        pkg-config \
+        libgl1-mesa-dev \
+        libx11-dev \
+        libxcursor-dev \
+        libxrandr-dev \
+        libxinerama-dev \
+        libxi-dev \
+        libxxf86vm-dev \
+        libasound2-dev \
+        ca-certificates \
+        htop nano duf ncdu \
+        && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /src
+WORKDIR /app
 
-# Leverage Docker cache
+# Go module download
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy source
 COPY . .
 
-# Optional: clean prior builds
-RUN make clean || true
-
-# Build static CLI binary
-RUN go build -trimpath -ldflags="-s -w -extldflags '-static'" -tags "cli" -o bin/gogg ./main.go
+# Build GUI (default)
+RUN go build -o bin/gogg .
 
 # ---- Final Stage ----
-FROM alpine:latest
+FROM debian:bookworm-slim
 
-# Add CA certs if gogg needs to do HTTPS calls
-RUN apk add --no-cache ca-certificates
+# GUI and network deps
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libgl1 \
+        libx11-6 \
+        libxcursor1 \
+        libxrandr2 \
+        libxinerama1 \
+        libxi6 \
+        libasound2 \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
 
-# Copy static binary
-COPY --from=builder /src/bin/gogg /usr/local/bin/gogg
+# Copy binary
+COPY --from=builder /app/bin/gogg /usr/local/bin/gogg
 
-# Create non-root user
-RUN addgroup -S gogg && adduser -S gogg -G gogg
+# Optional: non-root user
+RUN addgroup --system gogg && adduser --system --ingroup gogg gogg
 USER gogg
 
-# Volumes
+# Volumes for config & downloads
 VOLUME /config
-ENV GOGG_HOME=/config
 VOLUME /downloads
+ENV GOGG_HOME=/config
 
-# Run the CLI
 ENTRYPOINT ["gogg"]
