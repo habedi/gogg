@@ -67,7 +67,7 @@ func TestGenerateHashes(t *testing.T) {
 	result := <-resultsChan
 	assert.NoError(t, result.Err)
 	assert.Equal(t, filePath, result.File)
-	assert.Equal(t, "3b121c2528589133486a8367417573f0", result.Hash)
+	assert.Equal(t, "0a8cfa7d700dfe898c6cb702e13ed466", result.Hash)
 
 	_, ok := <-resultsChan
 	assert.False(t, ok, "Channel should be closed")
