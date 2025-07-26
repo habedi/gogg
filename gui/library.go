@@ -33,14 +33,49 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	allGames, _ := db.GetCatalogue()
 	gamesListBinding := binding.NewUntypedList()
-	if len(allGames) > 0 {
-		_ = gamesListBinding.Set(untypedSlice(allGames))
-	}
+	_ = gamesListBinding.Set(untypedSlice(allGames))
 
 	selectedGameBinding := binding.NewUntyped()
 
 	var listPlaceholder fyne.CanvasObject
 	var gameListWidget *widget.List
+	listContent := container.NewStack()
+
+	var refreshBtn *widget.Button
+
+	refreshUI := func() {
+		allGames, _ = db.GetCatalogue()
+		_ = gamesListBinding.Set(untypedSlice(allGames))
+
+		if gameListWidget == nil && gamesListBinding.Length() > 0 {
+			gameListWidget = widget.NewListWithData(gamesListBinding,
+				func() fyne.CanvasObject {
+					return widget.NewLabel("Game Title")
+				},
+				func(item binding.DataItem, obj fyne.CanvasObject) {
+					gameRaw, _ := item.(binding.Untyped).Get()
+					game := gameRaw.(db.Game)
+					obj.(*widget.Label).SetText(game.Title)
+				},
+			)
+			gameListWidget.OnSelected = func(id widget.ListItemID) {
+				gameRaw, _ := gamesListBinding.GetValue(id)
+				_ = selectedGameBinding.Set(gameRaw)
+			}
+			gameListWidget.OnUnselected = func(id widget.ListItemID) {
+				_ = selectedGameBinding.Set(nil)
+			}
+			listContent.Objects = []fyne.CanvasObject{gameListWidget}
+			listContent.Refresh()
+		} else if gameListWidget != nil {
+			gameListWidget.Refresh()
+		}
+	}
+
+	onFinishRefresh := func() {
+		refreshBtn.Enable()
+		refreshUI()
+	}
 
 	// --- LEFT PANE (MASTER) ---
 	var debounceTimer *time.Timer
@@ -68,23 +103,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		})
 	}
 
-	refreshUI := func() {
-		allGames, _ = db.GetCatalogue()
-		_ = gamesListBinding.Set(untypedSlice(allGames))
-		if gameListWidget != nil {
-			gameListWidget.Refresh()
-		}
-		if gamesListBinding.Length() > 0 && listPlaceholder != nil {
-			listPlaceholder.Hide()
-			if gameListWidget != nil {
-				gameListWidget.Show()
-			}
-		}
-	}
-
-	refreshBtn := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
+	refreshBtn = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
 		searchEntry.SetText("")
-		RefreshCatalogueAction(win, authService, refreshUI)
+		refreshBtn.Disable() // Disable button immediately on click
+		RefreshCatalogueAction(win, authService, onFinishRefresh)
 	})
 
 	var exportBtn *widget.Button
@@ -97,13 +119,14 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	})
 	toolbar := container.NewHBox(refreshBtn, exportBtn)
 
-	listContent := container.NewStack()
+	// Initial UI setup
 	if gamesListBinding.Length() == 0 {
 		listPlaceholder = container.NewCenter(container.NewVBox(
 			widget.NewIcon(theme.InfoIcon()),
 			widget.NewLabel("Your library is empty or hasn't been synced."),
 			widget.NewButton("Refresh Catalogue Now", func() {
-				RefreshCatalogueAction(win, authService, refreshUI)
+				refreshBtn.Disable()
+				RefreshCatalogueAction(win, authService, onFinishRefresh)
 			}),
 		))
 		listContent.Add(listPlaceholder)

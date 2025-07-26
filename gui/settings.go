@@ -10,31 +10,43 @@ import (
 )
 
 func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
+	prefs := fyne.CurrentApp().Preferences()
+	a := fyne.CurrentApp()
+
 	// --- Theme Settings ---
-	themeRadio := widget.NewRadioGroup([]string{"Light", "Dark"}, func(selected string) {
-		a := fyne.CurrentApp()
-		if selected == "Light" {
-			a.Preferences().SetString("theme", "light")
+	themeRadio := widget.NewRadioGroup([]string{"System Default", "Light", "Dark"}, func(selected string) {
+		switch selected {
+		case "Light":
+			prefs.SetString("theme", "light")
+			a.Settings().SetTheme(NewForcedTheme(theme.VariantLight))
+		case "Dark":
+			prefs.SetString("theme", "dark")
+			a.Settings().SetTheme(NewForcedTheme(theme.VariantDark))
+		default: // "System Default"
+			prefs.SetString("theme", "system")
 			a.Settings().SetTheme(theme.DefaultTheme())
-		} else {
-			a.Preferences().SetString("theme", "dark")
-			a.Settings().SetTheme(NewCustomDarkTheme())
 		}
 	})
-	if fyne.CurrentApp().Preferences().StringWithFallback("theme", "light") == "dark" {
-		themeRadio.SetSelected("Dark")
-	} else {
+
+	// Set the initial selected value for the radio group
+	switch prefs.StringWithFallback("theme", "system") {
+	case "light":
 		themeRadio.SetSelected("Light")
+	case "dark":
+		themeRadio.SetSelected("Dark")
+	default:
+		themeRadio.SetSelected("System Default")
 	}
+
 	themeBox := container.NewHBox(widget.NewLabel("UI Theme"), themeRadio)
 
 	// --- Sound Settings ---
 	soundCheck := widget.NewCheck("Play sound on download completion", func(checked bool) {
-		fyne.CurrentApp().Preferences().SetBool("soundEnabled", checked)
+		prefs.SetBool("soundEnabled", checked)
 	})
-	soundCheck.SetChecked(fyne.CurrentApp().Preferences().BoolWithFallback("soundEnabled", true))
+	soundCheck.SetChecked(prefs.BoolWithFallback("soundEnabled", true))
 
-	soundPathLabel := widget.NewLabel(fyne.CurrentApp().Preferences().String("soundFilePath"))
+	soundPathLabel := widget.NewLabel(prefs.String("soundFilePath"))
 	if soundPathLabel.Text == "" {
 		soundPathLabel.SetText("Default")
 	}
@@ -49,7 +61,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 				return
 			}
 			path := reader.URI().Path()
-			fyne.CurrentApp().Preferences().SetString("soundFilePath", path)
+			prefs.SetString("soundFilePath", path)
 			soundPathLabel.SetText(path)
 		}, win)
 		fd.SetFilter(storage.NewExtensionFileFilter([]string{".mp3", ".ogg", ".aac"}))
@@ -58,7 +70,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	})
 
 	resetSoundBtn := widget.NewButton("Reset", func() {
-		fyne.CurrentApp().Preferences().RemoveValue("soundFilePath")
+		prefs.RemoveValue("soundFilePath")
 		soundPathLabel.SetText("Default")
 	})
 

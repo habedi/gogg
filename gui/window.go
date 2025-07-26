@@ -13,10 +13,14 @@ func Run(version string, authService *auth.Service) {
 	myApp := app.NewWithID("com.github.habedi.gogg")
 	myApp.SetIcon(AppLogo)
 
-	themePref := myApp.Preferences().StringWithFallback("theme", "light")
-	if themePref == "dark" {
-		myApp.Settings().SetTheme(NewCustomDarkTheme())
-	} else {
+	// Set the app theme based on user preferences
+	themePref := myApp.Preferences().StringWithFallback("theme", "system")
+	switch themePref {
+	case "light":
+		myApp.Settings().SetTheme(NewForcedTheme(theme.VariantLight))
+	case "dark":
+		myApp.Settings().SetTheme(NewForcedTheme(theme.VariantDark))
+	default: // "system" or any other value
 		myApp.Settings().SetTheme(theme.DefaultTheme())
 	}
 

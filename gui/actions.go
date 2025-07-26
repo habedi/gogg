@@ -27,12 +27,6 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 	dlg.Show()
 
 	go func() {
-		defer runOnMain(func() {
-			onFinish()
-			dlg.Hide()
-		})
-
-		statusLabel.SetText("Fetching game list...")
 		progressCb := func(p float64) {
 			runOnMain(func() {
 				statusLabel.SetText(fmt.Sprintf("Processing games... (%.0f%%)", p*100))
@@ -43,23 +37,33 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 		err := client.RefreshCatalogue(ctx, authService, 10, progressCb)
 
 		runOnMain(func() {
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
+			// 1. First, always hide the progress dialog.
+			dlg.Hide()
+
+			// 2. Then, show the appropriate result dialog.
+			if errors.Is(err, context.Canceled) {
+				games, dbErr := db.GetCatalogue()
+				var msg string
+				if dbErr != nil {
+					msg = "Refresh was cancelled. Could not retrieve partial game count."
 				} else {
-					showErrorDialog(win, "Failed to refresh catalogue", err)
+					msg = fmt.Sprintf("Refresh was cancelled.\n%d games were loaded before stopping.", len(games))
 				}
-				return
+				dialog.ShowInformation("Refresh Cancelled", msg, win)
+			} else if err != nil {
+				showErrorDialog(win, "Failed to refresh catalogue", err)
+			} else { // Success
+				games, dbErr := db.GetCatalogue()
+				if dbErr != nil {
+					dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
+				} else {
+					successMsg := fmt.Sprintf("Successfully refreshed catalogue.\nYour library now contains %d games.", len(games))
+					dialog.ShowInformation("Success", successMsg, win)
+				}
 			}
 
-			games, dbErr := db.GetCatalogue()
-			if dbErr != nil {
-				// Fallback message if we can't get the count
-				dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
-			} else {
-				successMsg := fmt.Sprintf("Successfully refreshed catalogue.\nYour library now contains %d games.", len(games))
-				dialog.ShowInformation("Success", successMsg, win)
-			}
+			// 3. Finally, run the onFinish callback to update the UI (re-enable button, etc).
+			onFinish()
 		})
 	}()
 }
