@@ -152,7 +152,7 @@ gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --ex
 --resume=true --threads=5 --flatten=true
 ```
 
------
+---
 
 ### Configuration
 
@@ -183,14 +183,14 @@ gogg catalogue list
 $env:GOGG_HOME = "D:\GoggData"; gogg catalogue list
 ```
 
------
+---
 
 ### GUI
 
 Since version `0.4.1`, Gogg has a GUI that provides most of the features of Gogg's CLI.
 The GUI can be started by running `gogg gui` from the command line.
 
------
+---
 
 ### Debug Mode
 
@@ -209,7 +209,9 @@ DEBUG_GOGG=true gogg <command>
 $env:DEBUG_GOGG = "true"; gogg <command>
 ```
 
-### Docker Deployment
+---
+
+### Containerization
 
 Gogg provides a Docker image for easy deployment on servers or environments where you prefer containerization.
 The image is available on [GitHub Container Registry](https://github.com/habedi/gogg/pkgs/container/gogg).
