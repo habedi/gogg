@@ -17,7 +17,7 @@ gogg login
 ```
 
 > [!IMPORTANT]
-> The current Gogg release needs [Google Chrome](https://www.google.com/chrome/),
+> The current Gogg release might need [Google Chrome](https://www.google.com/chrome/),
 [Chromium](https://www.chromium.org/), or [Microsoft Edge](https://www.microsoft.com/edge)
 > as a dependency for the first-time authentication (logging into the GOG website using username and password).
 > So, make sure you have one of them installed on your machine.
