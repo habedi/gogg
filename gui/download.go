@@ -203,6 +203,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 
 		task := &DownloadTask{
 			ID:           game.ID,
+			InstanceID:   time.Now(),
 			Title:        game.Title,
 			State:        StatePreparing,
 			Status:       binding.NewString(),

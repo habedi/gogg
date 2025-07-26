@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -26,6 +27,7 @@ const (
 
 type DownloadTask struct {
 	ID           int
+	InstanceID   time.Time // Unique identifier for this specific download
 	State        int
 	Title        string
 	Status       binding.String
@@ -39,11 +41,11 @@ type DownloadTask struct {
 // PersistentDownloadTask is a serializable representation of a finished task.
 type PersistentDownloadTask struct {
 	ID           int       `json:"id"`
+	InstanceID   time.Time `json:"instance_id"`
 	State        int       `json:"state"`
 	Title        string    `json:"title"`
 	StatusText   string    `json:"status_text"`
 	DownloadPath string    `json:"download_path"`
-	Timestamp    time.Time `json:"timestamp"`
 }
 
 type DownloadManager struct {
@@ -108,15 +110,15 @@ func (dm *DownloadManager) loadHistory() {
 
 		uiTasks = append(uiTasks, &DownloadTask{
 			ID:           pTask.ID,
+			InstanceID:   pTask.InstanceID,
 			State:        pTask.State,
 			Title:        pTask.Title,
 			Status:       status,
 			Progress:     progress,
 			DownloadPath: pTask.DownloadPath,
-			// Non-persistent fields are left as zero-values
-			Details:    binding.NewString(),
-			FileStatus: binding.NewString(),
-			CancelFunc: nil,
+			Details:      binding.NewString(),
+			FileStatus:   binding.NewString(),
+			CancelFunc:   nil,
 		})
 	}
 	_ = dm.Tasks.Set(uiTasks)
@@ -136,11 +138,11 @@ func (dm *DownloadManager) PersistHistory() {
 			status, _ := task.Status.Get()
 			persistentTasks = append(persistentTasks, PersistentDownloadTask{
 				ID:           task.ID,
+				InstanceID:   task.InstanceID,
 				State:        task.State,
 				Title:        task.Title,
 				StatusText:   status,
 				DownloadPath: task.DownloadPath,
-				Timestamp:    time.Now(),
 			})
 		}
 	}
@@ -163,10 +165,16 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 	list := widget.NewListWithData(
 		dm.Tasks,
 		func() fyne.CanvasObject {
-			// This function remains the same
 			title := widget.NewLabel("Game Title")
 			title.TextStyle = fyne.TextStyle{Bold: true}
-			actionBtn := widget.NewButtonWithIcon("Cancel", theme.CancelIcon(), nil)
+
+			actionBtn := widget.NewButtonWithIcon("Action", theme.CancelIcon(), nil)
+			clearBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
+			clearBtn.Importance = widget.LowImportance
+
+			actionBox := container.NewHBox(actionBtn, clearBtn)
+			topRow := container.NewBorder(nil, nil, nil, actionBox, title)
+
 			status := widget.NewLabel("Status")
 			status.Wrapping = fyne.TextWrapWord
 			details := widget.NewLabel("Details")
@@ -176,14 +184,12 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			fileStatus.TextStyle = fyne.TextStyle{Monospace: true}
 			fileStatus.Wrapping = fyne.TextWrapWord
 
-			topRow := container.NewBorder(nil, nil, nil, actionBtn, title)
 			progressBox := container.NewVBox(details, progress)
 			content := container.NewVBox(topRow, status, progressBox, fileStatus)
 
 			return widget.NewCard("", "", content)
 		},
 		func(item binding.DataItem, obj fyne.CanvasObject) {
-			// This function also remains the same
 			taskRaw, err := item.(binding.Untyped).Get()
 			if err != nil {
 				return
@@ -193,11 +199,14 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			card := obj.(*widget.Card)
 			contentVBox := card.Content.(*fyne.Container)
 			topRow := contentVBox.Objects[0].(*fyne.Container)
-			progressBox := contentVBox.Objects[2].(*fyne.Container)
+			actionBox := topRow.Objects[1].(*fyne.Container)
 
 			title := topRow.Objects[0].(*widget.Label)
-			actionBtn := topRow.Objects[1].(*widget.Button)
+			actionBtn := actionBox.Objects[0].(*widget.Button)
+			clearBtn := actionBox.Objects[1].(*widget.Button)
+
 			status := contentVBox.Objects[1].(*widget.Label)
+			progressBox := contentVBox.Objects[2].(*fyne.Container)
 			details := progressBox.Objects[0].(*widget.Label)
 			progress := progressBox.Objects[1].(*widget.ProgressBar)
 			fileStatus := contentVBox.Objects[3].(*widget.Label)
@@ -208,22 +217,37 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			progress.Bind(task.Progress)
 			fileStatus.Bind(task.FileStatus)
 
+			clearBtn.OnTapped = func() {
+				dm.mu.Lock()
+				currentTasks, _ := dm.Tasks.Get()
+				keptTasks := make([]interface{}, 0)
+				for _, tRaw := range currentTasks {
+					if tRaw.(*DownloadTask).InstanceID != task.InstanceID {
+						keptTasks = append(keptTasks, tRaw)
+					}
+				}
+				_ = dm.Tasks.Set(keptTasks)
+				dm.mu.Unlock()
+				dm.PersistHistory()
+			}
+
 			switch task.State {
 			case StateCompleted:
 				actionBtn.SetIcon(theme.FolderOpenIcon())
 				actionBtn.SetText("Open Folder")
 				actionBtn.OnTapped = func() { openFolder(task.DownloadPath) }
 				actionBtn.Enable()
-			case StateCancelled:
-				actionBtn.SetIcon(theme.CancelIcon())
-				actionBtn.SetText("Cancelled")
-				actionBtn.OnTapped = nil
-				actionBtn.Disable()
-			case StateError:
+				clearBtn.Show()
+			case StateCancelled, StateError:
 				actionBtn.SetIcon(theme.ErrorIcon())
 				actionBtn.SetText("Error")
+				if task.State == StateCancelled {
+					actionBtn.SetIcon(theme.CancelIcon())
+					actionBtn.SetText("Cancelled")
+				}
 				actionBtn.OnTapped = nil
 				actionBtn.Disable()
+				clearBtn.Show()
 			default: // Preparing, Downloading
 				actionBtn.SetIcon(theme.CancelIcon())
 				actionBtn.SetText("Cancel")
@@ -233,16 +257,15 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 					}
 				}
 				actionBtn.Enable()
+				clearBtn.Hide()
 			}
 		},
 	)
 
-	clearBtn := widget.NewButton("Clear Finished", func() {
+	clearAllBtn := widget.NewButton("Clear All Finished", func() {
 		dm.mu.Lock()
-
 		currentTasks, _ := dm.Tasks.Get()
 		keptTasks := make([]interface{}, 0)
-
 		for _, taskRaw := range currentTasks {
 			task := taskRaw.(*DownloadTask)
 			if task.State != StateCompleted && task.State != StateCancelled && task.State != StateError {
@@ -250,9 +273,10 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			}
 		}
 		_ = dm.Tasks.Set(keptTasks)
-		dm.mu.Unlock() // Unlock before persisting
+		dm.mu.Unlock()
 		dm.PersistHistory()
 	})
+	bottomBar := container.NewHBox(layout.NewSpacer(), clearAllBtn)
 
-	return container.NewBorder(nil, clearBtn, nil, nil, list)
+	return container.NewBorder(nil, bottomBar, nil, nil, list)
 }
