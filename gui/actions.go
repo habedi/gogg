@@ -29,7 +29,7 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 	go func() {
 		progressCb := func(p float64) {
 			runOnMain(func() {
-				statusLabel.SetText(fmt.Sprintf("Processing games... (%.0f%%)", p*100))
+				statusLabel.SetText("Populating with new data...")
 				progress.SetValue(p)
 			})
 		}
@@ -111,7 +111,7 @@ func ExportCatalogueAction(win fyne.Window, format string) {
 		if exportErr != nil {
 			showErrorDialog(win, "Failed to write export file", exportErr)
 		} else {
-			dialog.ShowInformation("Success", "Catalogue exported successfully.", win)
+			dialog.ShowInformation("Success", "Data exported successfully.", win)
 		}
 	}, win)
 	fileDialog.SetFileName(defaultName)

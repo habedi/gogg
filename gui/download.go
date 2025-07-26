@@ -252,7 +252,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		}
 
 		task.State = StateCompleted
-		_ = task.Status.Set(fmt.Sprintf("Completed. Files in: %s", targetDir))
+		_ = task.Status.Set(fmt.Sprintf("Download completed. Files are stored in: %s", targetDir))
 		_ = task.Details.Set("")
 		_ = task.Progress.Set(1.0)
 		_ = task.FileStatus.Set("")

@@ -216,7 +216,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		_ = resultsData.Set(make([]interface{}, 0))
 	})
 
-	copyBtn := widget.NewButtonWithIcon("Copy All (CSV)", theme.ContentCopyIcon(), func() {
+	copyBtn := widget.NewButtonWithIcon("Copy All Results", theme.ContentCopyIcon(), func() {
 		items, _ := resultsData.Get()
 		if len(items) == 0 {
 			fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Nothing to copy."))
