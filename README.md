@@ -71,6 +71,24 @@ Additionally, it allows users to perform the following actions:
 - Verify the integrity of downloaded files by calculating their hashes
 - Calculate the total size of the files to be downloaded (for storage planning)
 
+### GUI Screenshots
+
+<div align="center">
+  <img alt="Game Library" src="docs/screenshots/v0.4.2/5.png" width="100%">
+</div>
+
+<details>
+<summary>Show more screenshots</summary>
+
+<div align="center">
+  <img alt="File Operations" src="docs/screenshots/v0.4.2/2.png" width="100%">
+  <img alt="Download Games" src="docs/screenshots/v0.4.2/8.png" width="100%">
+  <img alt="About" src="docs/screenshots/v0.4.2/14.png" width="100%">
+  <img alt="Download Progress" src="docs/screenshots/v0.4.2/9.png" width="100%">
+</div>
+
+</details>
+
 ---
 
 ### Getting Started
