@@ -8,7 +8,7 @@ You might want to add the binary to your system's PATH to use it from anywhere o
 
 ### Usage
 
-#### Login to GOG
+#### Log in to GOG
 
 Use the `login` command to log in to your GOG account the first time you use Gogg.
 
@@ -83,7 +83,7 @@ To search for games in the catalogue, you can use the `catalogue search` command
 The search can be done either by the game ID or by a search term.
 
 ```sh
-# Search by search a term (default)
+# Search by a term (default)
 # The search term is case-insensitive and can be a partial match of the game title
 gogg catalogue search <search_term>
 ```
@@ -105,10 +105,10 @@ gogg catalogue info <game_id>
 
 ##### Exporting the Catalogue
 
-You can export the catalogue to file using the `catalogue export` command.
+You can export the catalogue to a file using the `catalogue export` command.
 The command requires the format of the file (CSV or JSON) and the directory path to save the file.
 
-If the format is CSV, the file will include the game ID, title of every game in the catalogue.
+If the format is CSV, the file will include the game ID and the title of every game in the catalogue.
 
 ```sh
 # Export the catalogue as CSV to a file in the specified directory
@@ -213,53 +213,58 @@ $env:DEBUG_GOGG = "true"; gogg <command>
 
 ### Containerization
 
-Gogg provides a Docker image for easy deployment on servers or environments where you prefer containerization.
-The image is available on [GitHub Container Registry](https://github.com/habedi/gogg/pkgs/container/gogg).
+Starting with version `0.4.2`, Gogg is available as a Docker image.
+This makes it easier to run Gogg on servers or in setups where you prefer using containers.
+You can find the latest image on the [GitHub Container Registry](https://github.com/habedi/gogg/pkgs/container/gogg).
 
-#### Running the Container
+> [!IMPORTANT]
+> In the containerized version, the GUI is not supported and only Gogg CLI commands are available.
 
-Gogg's Docker container uses two volumes for persistent data: `/config` (for the database and application settings) and
-`/downloads` (for downloaded game files).
-To run the Gogg Docker container, use the following command:
+#### Running Gogg in a Container
+
+Gogg's Docker container uses two dedicated folders (or volumes) to save its data;
+`/config` is for the database and application settings, while `/downloads` is for the game files you download.
+
+You can run Gogg CLI commands from inside the Docker container.
+For example, to refresh the game catalogue, you can use the following command:
 
 ```bash
-docker run -d \
-  --name gogg \
-  --restart unless-stopped \
-  -v /your/host/path/for/config:/config \
-  -v /your/host/path/for/downloads:/downloads \
+docker run --rm \
+  -v </your/host/path/for/config>:/config \
+  -v </your/host/path/for/downloads>:/downloads \
   -e DEBUG_GOGG=false \
-  ghcr.io/habedi/gogg:latest version # Or any other command you want to run like `catalogue refresh`
-````
+  ghcr.io/habedi/gogg:<gogg-version> catalogue refresh
+```
 
-**Key Volume Parameters:**
+You need to replace the following placeholders with your actual paths and version:
 
-* `-v /your/host/path/for/config:/config`: **Replace `/your/host/path/for/config`** with your desired absolute host path
-  for Gogg's database and settings.
-* `-v /your/host/path/for/downloads:/downloads`: **Replace `/your/host/path/for/downloads`** with your desired absolute
-  host path for downloaded game files.
+* `</your/host/path/for/config>`: the path on your computer where you want Gogg to store its database (`games.db` file).
+* `</your/host/path/for/downloads>`: the path on your computer where you want your downloaded game files to be stored.
+* `<gogg-version>`: the specific version of the Gogg image you want to use (like `latest` or `v0.4.2`).
 
-#### CLI Usage in Docker
+You can also set `DEBUG_GOGG` to `true` or `1` if you want to enable debug mode for more verbose output.
 
-To execute Gogg's command-line interface within the Docker environment (e.g., for automated tasks):
+##### Example
 
-* Exec into a running container:** `docker exec -it gogg bash`
-* Run a one-off command:
-  ```bash
-  docker run --rm \
-    -v /your/host/path/for/config:/config \
-    -v /your/host/path/for/downloads:/downloads \
-    ghcr.io/habedi/gogg:latest catalogue refresh
-  ```
+```bash
+docker run --rm \
+  -v /media/data/home/gogg/:/config \
+  -v /media/data/home/gogg/games:/downloads \
+  -e DEBUG_GOGG=true \
+  ghcr.io/habedi/gogg:latest catalogue refresh
+```
 
-When using download commands, make sure to use `/downloads` as the path *inside* the container for saving files.
+> [!NOTE]
+> It's a good idea to use a specific Gogg image version (like `v0.4.2`) instead of `latest`.
+> The `latest` tag usually points to the most recent development version, which might not be stable and could
+> potentially break your setup.
 
-#### Permissions Troubleshooting
+#### Troubleshooting Permissions
 
-If `permission denied` errors occur when mounting volumes:
+If you encounter "permission denied" errors when setting up these storage folders:
 
-1. **Host Directory Permissions:** Ensure the user running Docker on your host has write access to your specified host
-   paths.
-2. **Container User Mapping (Recommended):** Align the container's `gogg` user (a non-root user within the container)
-   with your host user's UID and GID. Add `--user <YOUR_HOST_UID>:<YOUR_HOST_GID>` to your `docker run` command (e.g.,
-   `--user 1000:1000`).
+1. Check that the user running Docker on your computer has permission to write to the host paths you've specified.
+2. Make sure that the container's `gogg` user (which is not the root user) has the same user's ID and group
+   ID as your host user.
+   You can do this by adding `--user <YOUR_HOST_UID>:<YOUR_HOST_GID>` to your `docker run` command (for example,
+   `--user 1000:1000` for a typical Linux user).

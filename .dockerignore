@@ -31,7 +31,7 @@ coverage.out
 # OS junk
 Thumbs.db
 
-# Other unneeded data
+# Other unneeded files and directories
 *.csv
 *.json
 *.zip
@@ -40,3 +40,5 @@ requirements.txt
 Dockerfile
 .venv/
 games/
+tmp/
+temp/
