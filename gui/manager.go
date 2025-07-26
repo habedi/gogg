@@ -95,38 +95,30 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			progress.Bind(task.Progress)
 			fileStatus.Bind(task.FileStatus)
 
-			isFinalState := false
 			switch task.State {
 			case StateCompleted:
-				isFinalState = true
 				actionBtn.SetIcon(theme.FolderOpenIcon())
 				actionBtn.SetText("Open Folder")
-				title.Importance = widget.LowImportance
 				actionBtn.OnTapped = func() { openFolder(task.DownloadPath) }
+				actionBtn.Enable()
 			case StateCancelled:
-				isFinalState = true
 				actionBtn.SetIcon(theme.CancelIcon())
 				actionBtn.SetText("Cancelled")
 				actionBtn.OnTapped = nil
+				actionBtn.Disable()
 			case StateError:
-				isFinalState = true
 				actionBtn.SetIcon(theme.ErrorIcon())
 				actionBtn.SetText("Error")
 				actionBtn.OnTapped = nil
+				actionBtn.Disable()
 			default: // Preparing, Downloading
 				actionBtn.SetIcon(theme.CancelIcon())
 				actionBtn.SetText("Cancel")
-				title.Importance = widget.MediumImportance
 				actionBtn.OnTapped = func() {
 					if task.CancelFunc != nil {
 						task.CancelFunc()
 					}
 				}
-			}
-
-			if isFinalState {
-				actionBtn.Disable()
-			} else {
 				actionBtn.Enable()
 			}
 		},
