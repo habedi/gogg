@@ -14,32 +14,37 @@ Use the `login` command to log in to your GOG account the first time you use Gog
 
 ```sh
 gogg login
-```
+````
 
-> [!IMPORTANT]
+> [\!IMPORTANT]
 > The current Gogg release might need [Google Chrome](https://www.google.com/chrome/),
-[Chromium](https://www.chromium.org/), or [Microsoft Edge](https://www.microsoft.com/edge)
+> [Chromium](https://www.chromium.org/), or [Microsoft Edge](https://www.microsoft.com/edge) (since version `0.4.2`)
 > as a dependency for the first-time authentication (logging into the GOG website using username and password).
 > So, make sure you have one of them installed on your machine.
 
-> [!NOTE]
+> [\!NOTE]
 > On Windows, you might need to temporarily update your `PATH` in PowerShell so `gogg` can find the
 > Google Chrome or Chromium browser when `gogg login` is run.
 > This is needed if the browser isn't already in your system `PATH`.
 >
->**For Chrome:**
->```powershell
->$env:PATH += ";C:\Program Files\Google\Chrome\Application\"
->$env:DEBUG_GOGG = 1
->gogg.exe login
->```
+> **For Chrome:**
+>
+> ```powershell
+> $env:PATH += ";C:\Program Files\Google\Chrome\Application\"
+> $env:DEBUG_GOGG = 1
+> gogg.exe login
+> ```
+>
 > **For Chromium:**
->```powershell
->$env:PATH += ";c:\Program Files\Chromium\Application\"
->$env:DEBUG_GOGG = 1
->gogg.exe login
->```
+>
+> ```powershell
+> $env:PATH += ";c:\Program Files\Chromium\Application\"
+> $env:DEBUG_GOGG = 1
+> gogg.exe login
+> ```
+>
 > **For Microsoft Edge:**
+>
 > ```powershell
 > $env:PATH += ";C:\Program Files (x86)\Microsoft\Edge\Application\"
 > $env:DEBUG_GOGG = 1
@@ -147,14 +152,45 @@ gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --ex
 --resume=true --threads=5 --flatten=true
 ```
 
----
+-----
+
+### Configuration
+
+You can customize where Gogg stores its data (like the game database and download history) using environment variables.
+The location is determined with the following priority:
+
+1. `GOGG_HOME`: If this is set, its value will be used as the base directory.
+   This is a direct override for full control.
+2. `XDG_DATA_HOME`: If `GOGG_HOME` is not set, Gogg will respect this standard variable (common on Linux) and store
+   data in `$XDG_DATA_HOME/gogg`.
+3. Default: If neither is set, Gogg falls back to creating a `.gogg` folder in your user home directory (`~/.gogg`
+   on Linux/macOS and `%USERPROFILE%\.gogg` on Windows).
+
+#### Examples
+
+##### Linux and macOS
+
+```sh
+# Use a custom directory for Gogg data
+export GOGG_HOME="/path/to/my/gogg_data"
+gogg catalogue list
+```
+
+##### Windows (PowerShell)
+
+```powershell
+# Use a custom directory for Gogg data
+$env:GOGG_HOME = "D:\GoggData"; gogg catalogue list
+```
+
+-----
 
 ### GUI
 
 Since version `0.4.1`, Gogg has a GUI that provides most of the features of Gogg's CLI.
 The GUI can be started by running `gogg gui` from the command line.
 
----
+-----
 
 ### Debug Mode
 
