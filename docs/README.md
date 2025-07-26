@@ -17,9 +17,9 @@ gogg login
 ```
 
 > [!IMPORTANT]
-> The current Gogg release needs [Google Chrome](https://www.google.com/chrome/) or
-[Chromium](https://www.chromium.org/) as a dependency for the first-time authentication (logging into the GOG website
-> using username and password).
+> The current Gogg release needs [Google Chrome](https://www.google.com/chrome/),
+[Chromium](https://www.chromium.org/), or [Microsoft Edge](https://www.microsoft.com/edge)
+> as a dependency for the first-time authentication (logging into the GOG website using username and password).
 > So, make sure you have one of them installed on your machine.
 
 > [!NOTE]
@@ -39,7 +39,14 @@ gogg login
 >$env:DEBUG_GOGG = 1
 >gogg.exe login
 >```
->If Chrome or Chromium is installed elsewhere, update the path accordingly.
+> **For Microsoft Edge:**
+> ```powershell
+> $env:PATH += ";C:\Program Files (x86)\Microsoft\Edge\Application\"
+> $env:DEBUG_GOGG = 1
+> gogg.exe login
+> ```
+>
+> If Chrome, Chromium, or Microsoft Edge is installed in a different location, update the path accordingly.
 
 #### Game Catalogue
 

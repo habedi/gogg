@@ -102,8 +102,8 @@ gogg login
 ```
 
 > [!IMPORTANT]
-> You need to have [Google Chrome](https://www.google.com/chrome/) or [Chromium](https://www.chromium.org/) installed on
-> your machine for the first-time authentication.
+> You need to have [Google Chrome](https://www.google.com/chrome/), [Chromium](https://www.chromium.org/), or
+> [Microsoft Edge](https://www.microsoft.com/edge) browsers installed on your machine for the first-time authentication.
 > So, make sure you have one of them installed and available in your system's PATH.
 
 ##### Syncing the Game Catalogue
