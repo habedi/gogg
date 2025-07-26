@@ -37,10 +37,8 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 		err := client.RefreshCatalogue(ctx, authService, 10, progressCb)
 
 		runOnMain(func() {
-			// 1. First, always hide the progress dialog.
 			dlg.Hide()
 
-			// 2. Then, show the appropriate result dialog.
 			if errors.Is(err, context.Canceled) {
 				games, dbErr := db.GetCatalogue()
 				var msg string
@@ -50,9 +48,10 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 					msg = fmt.Sprintf("Refresh was cancelled.\n%d games were loaded before stopping.", len(games))
 				}
 				dialog.ShowInformation("Refresh Cancelled", msg, win)
+				SignalCatalogueUpdated() // Signal that a partial update occurred
 			} else if err != nil {
 				showErrorDialog(win, "Failed to refresh catalogue", err)
-			} else { // Success
+			} else {
 				games, dbErr := db.GetCatalogue()
 				if dbErr != nil {
 					dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
@@ -60,9 +59,9 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 					successMsg := fmt.Sprintf("Successfully refreshed catalogue.\nYour library now contains %d games.", len(games))
 					dialog.ShowInformation("Success", successMsg, win)
 				}
+				SignalCatalogueUpdated() // Signal that the update is complete
 			}
 
-			// 3. Finally, run the onFinish callback to update the UI (re-enable button, etc).
 			onFinish()
 		})
 	}()

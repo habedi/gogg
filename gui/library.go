@@ -20,14 +20,21 @@ import (
 	"github.com/habedi/gogg/db"
 )
 
-func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) fyne.CanvasObject {
+// libraryTab holds all the components of the library tab UI.
+type libraryTab struct {
+	content     fyne.CanvasObject
+	searchEntry *widget.Entry
+}
+
+func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) *libraryTab {
 	token, _ := db.GetTokenRecord()
 	if token == nil {
-		return container.NewCenter(container.NewVBox(
+		content := container.NewCenter(container.NewVBox(
 			widget.NewIcon(theme.WarningIcon()),
 			widget.NewLabelWithStyle("Not logged in.", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 			widget.NewLabel("Please run 'gogg login' from your terminal to authenticate."),
 		))
+		return &libraryTab{content: content, searchEntry: widget.NewEntry()} // Return dummy entry
 	}
 
 	allGames, _ := db.GetCatalogue()
@@ -35,7 +42,6 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	selectedGameBinding := binding.NewUntyped()
 	isSortAscending := true
 
-	// --- LEFT PANE WIDGETS ---
 	gameCountLabel := widget.NewLabel("")
 
 	searchEntry := widget.NewEntry()
@@ -46,22 +52,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	searchEntry.ActionItem = clearSearchBtn
 	clearSearchBtn.Hide()
 
-	// --- List Widget (defined early to be accessible in closures) ---
-	gameListWidget := widget.NewListWithData(gamesListBinding,
-		func() fyne.CanvasObject {
-			return widget.NewLabel("Game Title")
-		},
-		func(item binding.DataItem, obj fyne.CanvasObject) {
-			gameRaw, _ := item.(binding.Untyped).Get()
-			game := gameRaw.(db.Game)
-			obj.(*widget.Label).SetText(game.Title)
-		},
-	)
-
-	// --- Central function to update the game list ---
+	var gameListWidget *widget.List
 	updateDisplayedGames := func() {
 		searchTerm := strings.ToLower(searchEntry.Text)
-
 		displayGames := make([]db.Game, len(allGames))
 		copy(displayGames, allGames)
 
@@ -95,10 +88,18 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	}
 
 	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
-	updateDisplayedGames()
 
-	// --- List and Placeholders ---
 	listContent := container.NewStack()
+	gameListWidget = widget.NewListWithData(gamesListBinding,
+		func() fyne.CanvasObject {
+			return widget.NewLabel("Game Title")
+		},
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			gameRaw, _ := item.(binding.Untyped).Get()
+			game := gameRaw.(db.Game)
+			obj.(*widget.Label).SetText(game.Title)
+		},
+	)
 	gameListWidget.OnSelected = func(id widget.ListItemID) {
 		gameRaw, _ := gamesListBinding.GetValue(id)
 		_ = selectedGameBinding.Set(gameRaw)
@@ -129,8 +130,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	} else {
 		listContent.Add(gameListWidget)
 	}
+	updateDisplayedGames()
 
-	// --- Toolbar / Footer ---
 	refreshBtn = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
 		searchEntry.SetText("")
 		refreshBtn.Disable()
@@ -155,23 +156,17 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			sortBtn.SetText("Sort Z-A")
 		}
 		updateDisplayedGames()
-		gameListWidget.Refresh() // Explicitly refresh the list widget
+		gameListWidget.Refresh()
 	})
 
-	toolbar := container.NewHBox(
-		refreshBtn,
-		exportBtn,
-		sortBtn,
-		layout.NewSpacer(),
-		gameCountLabel,
-	)
-
-	// --- LEFT PANE LAYOUT ---
+	toolbar := container.NewHBox(refreshBtn, exportBtn, sortBtn, layout.NewSpacer(), gameCountLabel)
 	leftTopContainer := container.NewVBox(searchEntry, widget.NewSeparator())
 	leftPane := container.NewBorder(leftTopContainer, toolbar, nil, nil, listContent)
 
-	// --- RIGHT PANE (DETAIL) ---
-	detailTitle := widget.NewLabelWithStyle("Select a game from the list", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	detailTitle := NewCopyableLabel("Select a game from the list")
+	detailTitle.Alignment = fyne.TextAlignCenter
+	detailTitle.TextStyle = fyne.TextStyle{Bold: true}
+
 	accordion := createDetailsAccordion(win, authService, dm, selectedGameBinding)
 	rightPane := container.NewBorder(
 		container.NewVBox(detailTitle, widget.NewSeparator()),
@@ -192,7 +187,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		accordion.Show()
 	}))
 
-	return container.NewHSplit(leftPane, rightPane)
+	return &libraryTab{
+		content:     container.NewHSplit(leftPane, rightPane),
+		searchEntry: searchEntry,
+	}
 }
 
 func untypedSlice(games []db.Game) []interface{} {
@@ -204,11 +202,9 @@ func untypedSlice(games []db.Game) []interface{} {
 }
 
 func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *DownloadManager, selectedGame binding.Untyped) *widget.Accordion {
-	// Details View
 	detailsLabel := widget.NewLabel("Game details will appear here.")
 	detailsLabel.Wrapping = fyne.TextWrapWord
 
-	// Download Form
 	downloadForm := createDownloadForm(win, authService, dm, selectedGame)
 
 	accordion := widget.NewAccordion(
@@ -246,7 +242,12 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	prefs := fyne.CurrentApp().Preferences()
 
 	downloadPathEntry := widget.NewEntry()
-	downloadPathEntry.SetText(prefs.StringWithFallback("downloadForm.path", ""))
+	lastUsedPath := prefs.String("lastUsedDownloadPath")
+	if lastUsedPath == "" {
+		lastUsedPath = prefs.StringWithFallback("downloadForm.path", "")
+	}
+	downloadPathEntry.SetText(lastUsedPath)
+
 	downloadPathEntry.OnChanged = func(s string) {
 		prefs.SetString("downloadForm.path", s)
 	}
@@ -259,7 +260,6 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			}
 			downloadPathEntry.SetText(uri.Path())
 		}, win)
-
 		folderDialog.Resize(fyne.NewSize(800, 600))
 		folderDialog.Show()
 	})

@@ -188,7 +188,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 			activeDownloadsMutex.Lock()
 			delete(activeDownloads, game.ID)
 			activeDownloadsMutex.Unlock()
-			dm.PersistHistory() // Persist history on any exit path
+			dm.PersistHistory()
 		}()
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -217,7 +217,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		_ = task.Details.Set("Speed: N/A | ETA: N/A")
 		_ = dm.AddTask(task)
 
-		fyne.CurrentApp().Preferences().SetString("lastDownloadPath", downloadPath)
+		fyne.CurrentApp().Preferences().SetString("lastUsedDownloadPath", downloadPath)
 
 		token, err := authService.RefreshToken()
 		if err != nil {

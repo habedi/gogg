@@ -112,6 +112,9 @@ func (c *columnLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 func HashUI(win fyne.Window) fyne.CanvasObject {
 	prefs := fyne.CurrentApp().Preferences()
 
+	header := newHashRow()
+	header.SetHeaderStyle()
+
 	dirEntry := widget.NewEntry()
 	dirEntry.SetText(prefs.StringWithFallback("hashUI.path", ""))
 	dirEntry.OnChanged = func(s string) {
@@ -140,8 +143,11 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 
 	algoSelect := widget.NewSelect(guiHashAlgos, func(s string) {
 		prefs.SetString("hashUI.algo", s)
+		header.SetTexts("File Path", fmt.Sprintf("Hash (%s)", s))
 	})
-	algoSelect.SetSelected(prefs.StringWithFallback("hashUI.algo", "md5"))
+	initialAlgo := prefs.StringWithFallback("hashUI.algo", "md5")
+	algoSelect.SetSelected(initialAlgo)
+	header.SetTexts("File Path", fmt.Sprintf("Hash (%s)", initialAlgo))
 
 	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) {
 		prefs.SetString("hashUI.threads", s)
@@ -166,10 +172,6 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	topContent := container.NewVBox(form, recursiveCheck, generateBtn, progressBar)
 
 	resultsData := binding.NewUntypedList()
-
-	header := newHashRow()
-	header.SetTexts("File Path", "Hash")
-	header.SetHeaderStyle()
 
 	resultsList := widget.NewListWithData(
 		resultsData,
@@ -284,28 +286,55 @@ func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, resul
 func SizeUI(win fyne.Window) fyne.CanvasObject {
 	prefs := fyne.CurrentApp().Preferences()
 
-	games, err := db.GetCatalogue()
-	if err != nil {
-		return widget.NewLabel("Error loading game catalogue: " + err.Error())
+	var gameMap map[string]int
+	var allGameTitles []string
+
+	gameSelect := widget.NewSelect(nil, nil)
+	gameSelect.PlaceHolder = "Loading games..."
+
+	refreshGameList := func() {
+		games, err := db.GetCatalogue()
+		if err != nil {
+			gameSelect.PlaceHolder = "Error loading games"
+			log.Error().Err(err).Msg("Failed to reload catalogue for SizeUI")
+			return
+		}
+
+		gameMap = make(map[string]int)
+		allGameTitles = make([]string, len(games))
+		for i, game := range games {
+			gameMap[game.Title] = game.ID
+			allGameTitles[i] = game.Title
+		}
+		sort.Strings(allGameTitles)
+
+		gameSelect.Options = allGameTitles
+		gameSelect.PlaceHolder = fmt.Sprintf("%d games available...", len(allGameTitles))
+		gameSelect.Refresh()
 	}
 
-	gameMap := make(map[string]int)
-	allGameTitles := make([]string, len(games))
-	for i, game := range games {
-		gameMap[game.Title] = game.ID
-		allGameTitles[i] = game.Title
-	}
-	sort.Strings(allGameTitles)
+	listener := binding.NewDataListener(func() {
+		runOnMain(refreshGameList)
+	})
+	catalogueUpdated.AddListener(listener)
 
-	gameSelect := widget.NewSelect(allGameTitles, nil)
-	gameSelect.PlaceHolder = "Select a game..."
+	refreshGameList()
 
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Type game title to filter...")
+	clearFilterBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
+		filterEntry.SetText("")
+	})
+	filterEntry.ActionItem = clearFilterBtn
+	clearFilterBtn.Hide()
+
 	filterEntry.OnChanged = func(s string) {
 		s = strings.ToLower(s)
+		var newOptions []string
+
 		if s == "" {
-			gameSelect.Options = allGameTitles
+			newOptions = allGameTitles
+			clearFilterBtn.Hide()
 		} else {
 			filtered := make([]string, 0)
 			for _, title := range allGameTitles {
@@ -313,8 +342,11 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 					filtered = append(filtered, title)
 				}
 			}
-			gameSelect.Options = filtered
+			newOptions = filtered
+			clearFilterBtn.Show()
 		}
+		gameSelect.Options = newOptions
+		gameSelect.PlaceHolder = fmt.Sprintf("%d games available...", len(newOptions))
 		gameSelect.ClearSelected()
 		gameSelect.Refresh()
 	}
