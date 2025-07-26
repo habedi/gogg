@@ -3,7 +3,6 @@ package gui
 import (
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +22,8 @@ import (
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/habedi/gogg/pkg/hasher"
-	"github.com/habedi/gogg/pkg/pool"
+	"github.com/habedi/gogg/pkg/operations"
+	"github.com/rs/zerolog/log"
 )
 
 type hashResult struct {
@@ -110,7 +110,13 @@ func (c *columnLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 }
 
 func HashUI(win fyne.Window) fyne.CanvasObject {
+	prefs := fyne.CurrentApp().Preferences()
+
 	dirEntry := widget.NewEntry()
+	dirEntry.SetText(prefs.StringWithFallback("hashUI.path", ""))
+	dirEntry.OnChanged = func(s string) {
+		prefs.SetString("hashUI.path", s)
+	}
 	dirEntry.SetPlaceHolder("Path to scan")
 
 	browseBtn := widget.NewButton("Browse...", func() {
@@ -132,13 +138,20 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		}
 	}
 
-	algoSelect := widget.NewSelect(guiHashAlgos, nil)
-	algoSelect.SetSelected("md5")
-	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, nil)
-	threadsSelect.SetSelected("4")
-	recursiveCheck := widget.NewCheck("Recursive", nil)
-	recursiveCheck.SetChecked(true)
-	cleanCheck := widget.NewCheck("Remove Old Hash Files", nil)
+	algoSelect := widget.NewSelect(guiHashAlgos, func(s string) {
+		prefs.SetString("hashUI.algo", s)
+	})
+	algoSelect.SetSelected(prefs.StringWithFallback("hashUI.algo", "md5"))
+
+	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) {
+		prefs.SetString("hashUI.threads", s)
+	})
+	threadsSelect.SetSelected(prefs.StringWithFallback("hashUI.threads", "4"))
+
+	recursiveCheck := widget.NewCheck("Recursive", func(b bool) {
+		prefs.SetBool("hashUI.recursive", b)
+	})
+	recursiveCheck.SetChecked(prefs.BoolWithFallback("hashUI.recursive", true))
 
 	form := widget.NewForm(
 		widget.NewFormItem("Directory", pathContainer),
@@ -150,7 +163,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	progressBar := widget.NewProgressBar()
 	progressBar.Hide()
 
-	topContent := container.NewVBox(form, container.NewHBox(recursiveCheck, cleanCheck), generateBtn, progressBar)
+	topContent := container.NewVBox(form, recursiveCheck, generateBtn, progressBar)
 
 	resultsData := binding.NewUntypedList()
 
@@ -193,7 +206,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 				progressBar.Hide()
 			})
 			numThreads, _ := strconv.Atoi(threadsSelect.Selected)
-			generateHashFilesUI(dir, algoSelect.Selected, recursiveCheck.Checked, cleanCheck.Checked, numThreads, resultsData, progressBar)
+			generateHashFilesUI(dir, algoSelect.Selected, recursiveCheck.Checked, numThreads, resultsData, progressBar)
 		}()
 	}
 
@@ -224,78 +237,53 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 
 	bottomBar := container.NewHBox(layout.NewSpacer(), clearBtn, copyBtn)
 
-	// FIX: Use a Border layout to ensure the list expands to fill available space.
 	listHeader := container.NewVBox(header, widget.NewSeparator())
 	listContainer := container.NewBorder(listHeader, nil, nil, nil, resultsList)
 
 	return container.NewBorder(topContent, bottomBar, nil, nil, listContainer)
 }
 
-func generateHashFilesUI(dir, algo string, recursive, clean bool, numThreads int, results binding.UntypedList, progress *widget.ProgressBar) {
-	if clean {
-		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if info != nil && !info.IsDir() {
-				for _, a := range hasher.HashAlgorithms {
-					if strings.HasSuffix(info.Name(), "."+a) {
-						_ = os.Remove(path)
-						break
-					}
-				}
-			}
-			return nil
-		})
+func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, results binding.UntypedList, progress *widget.ProgressBar) {
+	filesToProcess, err := operations.FindFilesToHash(dir, recursive, operations.DefaultHashExclusions)
+	if err != nil {
+		log.Error().Err(err).Msg("GUI: Failed to find files to hash")
+		return
 	}
-
-	var filesToProcess []string
-	exclusionList := []string{".*", "*.json", "*.xml", "*.csv", "*.log", "*.txt", "*.md", "*.html", "*.htm"}
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if path != dir && !recursive {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		for _, pattern := range exclusionList {
-			if matched, _ := filepath.Match(pattern, info.Name()); matched {
-				return nil
-			}
-		}
-		filesToProcess = append(filesToProcess, path)
-		return nil
-	})
 
 	totalFiles := len(filesToProcess)
 	if totalFiles == 0 {
 		return
 	}
-	progress.Max = float64(totalFiles)
+	runOnMain(func() {
+		progress.Max = float64(totalFiles)
+	})
 
 	var processedCount atomic.Int64
-	workerFunc := func(ctx context.Context, path string) error {
-		hashVal, err := hasher.GenerateHash(path, algo)
-		if err == nil {
-			relativePath, relErr := filepath.Rel(dir, path)
+	resultsChan := operations.GenerateHashes(context.Background(), filesToProcess, algo, numThreads)
+
+	for res := range resultsChan {
+		if res.Err == nil {
+			relativePath, relErr := filepath.Rel(dir, res.File)
 			if relErr != nil {
-				relativePath = filepath.Base(path)
+				relativePath = filepath.Base(res.File)
 			}
 			runOnMain(func() {
-				_ = results.Append(hashResult{File: relativePath, Hash: hashVal})
+				_ = results.Append(hashResult{File: relativePath, Hash: res.Hash})
 			})
+		} else {
+			log.Error().Err(res.Err).Str("file", res.File).Msg("GUI: Error hashing file")
 		}
+
 		newCount := processedCount.Add(1)
 		runOnMain(func() {
 			progress.SetValue(float64(newCount))
 		})
-		return nil
 	}
-
-	pool.Run(context.Background(), filesToProcess, numThreads, workerFunc)
 }
 
 func SizeUI(win fyne.Window) fyne.CanvasObject {
+	prefs := fyne.CurrentApp().Preferences()
+
 	games, err := db.GetCatalogue()
 	if err != nil {
 		return widget.NewLabel("Error loading game catalogue: " + err.Error())
@@ -336,18 +324,30 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 		langCodes = append(langCodes, code)
 	}
 	sort.Strings(langCodes)
-	langSelect := widget.NewSelect(langCodes, nil)
-	langSelect.SetSelected("en")
+	langSelect := widget.NewSelect(langCodes, func(s string) {
+		prefs.SetString("sizeUI.language", s)
+	})
+	langSelect.SetSelected(prefs.StringWithFallback("sizeUI.language", "en"))
 
-	platformSelect := widget.NewSelect([]string{"all", "windows", "mac", "linux"}, nil)
-	platformSelect.SetSelected("windows")
-	unitSelect := widget.NewSelect([]string{"gb", "mb"}, nil)
-	unitSelect.SetSelected("gb")
+	platformSelect := widget.NewSelect([]string{"all", "windows", "mac", "linux"}, func(s string) {
+		prefs.SetString("sizeUI.platform", s)
+	})
+	platformSelect.SetSelected(prefs.StringWithFallback("sizeUI.platform", "windows"))
 
-	extrasCheck := widget.NewCheck("Include Extras", nil)
-	extrasCheck.SetChecked(true)
-	dlcsCheck := widget.NewCheck("Include DLCs", nil)
-	dlcsCheck.SetChecked(true)
+	unitSelect := widget.NewSelect([]string{"gb", "mb"}, func(s string) {
+		prefs.SetString("sizeUI.unit", s)
+	})
+	unitSelect.SetSelected(prefs.StringWithFallback("sizeUI.unit", "gb"))
+
+	extrasCheck := widget.NewCheck("Include Extras", func(b bool) {
+		prefs.SetBool("sizeUI.extras", b)
+	})
+	extrasCheck.SetChecked(prefs.BoolWithFallback("sizeUI.extras", true))
+
+	dlcsCheck := widget.NewCheck("Include DLCs", func(b bool) {
+		prefs.SetBool("sizeUI.dlcs", b)
+	})
+	dlcsCheck.SetChecked(prefs.BoolWithFallback("sizeUI.dlcs", true))
 
 	form := widget.NewForm(
 		widget.NewFormItem("Filter", filterEntry),
@@ -430,31 +430,25 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	return container.NewBorder(topContent, bottomBar, nil, nil, resultsTable)
 }
 
-func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag, dlcFlag bool, sizeUnit string, results binding.UntypedList) {
+func estimateStorageSizeUI(gameIDStr, languageCode, platformName string, extrasFlag, dlcFlag bool, sizeUnit string, results binding.UntypedList) {
 	_ = results.Set(make([]interface{}, 0))
 
-	langFullName, ok := client.GameLanguages[languageCode]
-	if !ok {
-		_ = results.Append(sizeResult{"Error", "Invalid language code."})
-		return
-	}
-
-	gameIDInt, _ := strconv.Atoi(gameID)
-	game, err := db.GetGameByID(gameIDInt)
-	if err != nil || game == nil {
-		_ = results.Append(sizeResult{"Error", "Failed to retrieve game from database."})
-		return
-	}
-
-	var nestedData client.Game
-	if err := json.Unmarshal([]byte(game.Data), &nestedData); err != nil {
-		_ = results.Append(sizeResult{"Error", "Failed to parse game data."})
-		return
-	}
-
-	totalSizeBytes, err := nestedData.EstimateStorageSize(langFullName, platformName, extrasFlag, dlcFlag)
+	gameID, err := strconv.Atoi(gameIDStr)
 	if err != nil {
-		_ = results.Append(sizeResult{"Error", "Failed to calculate size."})
+		_ = results.Append(sizeResult{"Error", "Invalid game ID."})
+		return
+	}
+
+	params := operations.EstimationParams{
+		LanguageCode:  languageCode,
+		PlatformName:  platformName,
+		IncludeExtras: extrasFlag,
+		IncludeDLCs:   dlcFlag,
+	}
+
+	totalSizeBytes, gameData, err := operations.EstimateGameSize(gameID, params)
+	if err != nil {
+		_ = results.Append(sizeResult{"Error", err.Error()})
 		return
 	}
 
@@ -474,8 +468,9 @@ func estimateStorageSizeUI(gameID, languageCode, platformName string, extrasFlag
 		return "No"
 	}
 
+	langFullName := client.GameLanguages[languageCode]
 	rows := []interface{}{
-		sizeResult{"Game", nestedData.Title},
+		sizeResult{"Game", gameData.Title},
 		sizeResult{"Platform", platformName},
 		sizeResult{"Language", langFullName},
 		sizeResult{"Extras Included", boolToStr(extrasFlag)},

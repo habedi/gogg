@@ -1,13 +1,11 @@
 package hasher_test
 
 import (
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/habedi/gogg/pkg/hasher"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestIsValidHashAlgo(t *testing.T) {
@@ -20,12 +18,8 @@ func TestIsValidHashAlgo(t *testing.T) {
 	assert.False(t, hasher.IsValidHashAlgo(""))
 }
 
-func TestGenerateHash(t *testing.T) {
-	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "testfile.txt")
-	content := []byte("hello world")
-	err := os.WriteFile(filePath, content, 0600)
-	require.NoError(t, err)
+func TestGenerateHashFromReader(t *testing.T) {
+	content := "hello world"
 
 	testCases := []struct {
 		algo     string
@@ -41,7 +35,8 @@ func TestGenerateHash(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.algo, func(t *testing.T) {
-			hash, err := hasher.GenerateHash(filePath, tc.algo)
+			reader := strings.NewReader(content)
+			hash, err := hasher.GenerateHashFromReader(reader, tc.algo)
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -50,8 +45,4 @@ func TestGenerateHash(t *testing.T) {
 			}
 		})
 	}
-
-	// Test non-existent file
-	_, err = hasher.GenerateHash("nonexistentfile", "md5")
-	assert.Error(t, err)
 }

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -26,14 +25,8 @@ func IsValidHashAlgo(algo string) bool {
 	return false
 }
 
-// GenerateHash calculates the hash of a file using the specified algorithm.
-func GenerateHash(filePath, algo string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
+// GenerateHashFromReader calculates the hash of content from an io.Reader.
+func GenerateHashFromReader(reader io.Reader, algo string) (string, error) {
 	var h hash.Hash
 	switch strings.ToLower(algo) {
 	case "md5":
@@ -48,7 +41,7 @@ func GenerateHash(filePath, algo string) (string, error) {
 		return "", fmt.Errorf("unsupported hash algorithm: %s", algo)
 	}
 
-	if _, err := io.Copy(h, file); err != nil {
+	if _, err := io.Copy(h, reader); err != nil {
 		return "", err
 	}
 

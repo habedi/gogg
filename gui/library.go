@@ -208,8 +208,12 @@ func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *Down
 
 func createDownloadForm(win fyne.Window, authService *auth.Service, dm *DownloadManager, selectedGame binding.Untyped) fyne.CanvasObject {
 	prefs := fyne.CurrentApp().Preferences()
+
 	downloadPathEntry := widget.NewEntry()
-	downloadPathEntry.SetText(prefs.StringWithFallback("lastDownloadPath", ""))
+	downloadPathEntry.SetText(prefs.StringWithFallback("downloadForm.path", ""))
+	downloadPathEntry.OnChanged = func(s string) {
+		prefs.SetString("downloadForm.path", s)
+	}
 	downloadPathEntry.SetPlaceHolder("Enter download path")
 
 	browseBtn := widget.NewButton("Browse...", func() {
@@ -230,25 +234,46 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		langCodes = append(langCodes, code)
 	}
 	sort.Strings(langCodes)
-	langSelect := widget.NewSelect(langCodes, nil)
-	langSelect.SetSelected("en")
+	langSelect := widget.NewSelect(langCodes, func(s string) {
+		prefs.SetString("downloadForm.language", s)
+	})
+	langSelect.SetSelected(prefs.StringWithFallback("downloadForm.language", "en"))
 
-	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, nil)
-	platformSelect.SetSelected("windows")
+	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, func(s string) {
+		prefs.SetString("downloadForm.platform", s)
+	})
+	platformSelect.SetSelected(prefs.StringWithFallback("downloadForm.platform", "windows"))
+
 	threadOptions := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
-	threadsSelect := widget.NewSelect(threadOptions, nil)
-	threadsSelect.SetSelected("5")
+	threadsSelect := widget.NewSelect(threadOptions, func(s string) {
+		prefs.SetString("downloadForm.threads", s)
+	})
+	threadsSelect.SetSelected(prefs.StringWithFallback("downloadForm.threads", "5"))
 
-	extrasCheck := widget.NewCheck("Include Extras", nil)
-	extrasCheck.SetChecked(true)
-	dlcsCheck := widget.NewCheck("Include DLCs", nil)
-	dlcsCheck.SetChecked(true)
-	resumeCheck := widget.NewCheck("Resume Downloads", nil)
-	resumeCheck.SetChecked(true)
-	flattenCheck := widget.NewCheck("Flatten Directory", nil)
-	flattenCheck.SetChecked(true)
-	skipPatchesCheck := widget.NewCheck("Skip Patches", nil)
-	skipPatchesCheck.SetChecked(true)
+	extrasCheck := widget.NewCheck("Include Extras", func(b bool) {
+		prefs.SetBool("downloadForm.extras", b)
+	})
+	extrasCheck.SetChecked(prefs.BoolWithFallback("downloadForm.extras", true))
+
+	dlcsCheck := widget.NewCheck("Include DLCs", func(b bool) {
+		prefs.SetBool("downloadForm.dlcs", b)
+	})
+	dlcsCheck.SetChecked(prefs.BoolWithFallback("downloadForm.dlcs", true))
+
+	resumeCheck := widget.NewCheck("Resume Downloads", func(b bool) {
+		prefs.SetBool("downloadForm.resume", b)
+	})
+	resumeCheck.SetChecked(prefs.BoolWithFallback("downloadForm.resume", true))
+
+	flattenCheck := widget.NewCheck("Flatten Directory", func(b bool) {
+		prefs.SetBool("downloadForm.flatten", b)
+	})
+	flattenCheck.SetChecked(prefs.BoolWithFallback("downloadForm.flatten", true))
+
+	skipPatchesCheck := widget.NewCheck("Skip Patches", func(b bool) {
+		prefs.SetBool("downloadForm.skipPatches", b)
+	})
+	skipPatchesCheck.SetChecked(prefs.BoolWithFallback("downloadForm.skipPatches", true))
 
 	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), nil)
 	downloadBtn.Importance = widget.HighImportance
