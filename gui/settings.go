@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"os"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
@@ -28,7 +30,6 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		}
 	})
 
-	// Set the initial selected value for the radio group
 	switch prefs.StringWithFallback("theme", "system") {
 	case "light":
 		themeRadio.SetSelected("Light")
@@ -46,10 +47,28 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	})
 	soundCheck.SetChecked(prefs.BoolWithFallback("soundEnabled", true))
 
-	soundPathLabel := widget.NewLabel(prefs.String("soundFilePath"))
-	if soundPathLabel.Text == "" {
-		soundPathLabel.SetText("Default")
+	soundPathLabel := widget.NewLabel("")
+	soundStatusLabel := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+
+	validateSoundPath := func(path string) {
+		if path == "" {
+			soundPathLabel.SetText("Default")
+			soundStatusLabel.SetText("")
+			soundStatusLabel.Hide()
+			return
+		}
+
+		soundPathLabel.SetText(path)
+		if _, err := os.Stat(path); err != nil {
+			soundStatusLabel.SetText("File not found. Using default sound.")
+			soundStatusLabel.Show()
+		} else {
+			soundStatusLabel.SetText("")
+			soundStatusLabel.Hide()
+		}
 	}
+
+	validateSoundPath(prefs.String("soundFilePath"))
 
 	selectSoundBtn := widget.NewButton("Select Custom Sound...", func() {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
@@ -62,7 +81,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 			}
 			path := reader.URI().Path()
 			prefs.SetString("soundFilePath", path)
-			soundPathLabel.SetText(path)
+			validateSoundPath(path)
 		}, win)
 		fd.SetFilter(storage.NewExtensionFileFilter([]string{".mp3", ".wav", ".ogg"}))
 		fd.Resize(fyne.NewSize(800, 600))
@@ -71,16 +90,18 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 
 	resetSoundBtn := widget.NewButton("Reset", func() {
 		prefs.RemoveValue("soundFilePath")
-		soundPathLabel.SetText("Default")
+		validateSoundPath("")
 	})
 
 	testSoundBtn := widget.NewButton("Test", func() {
+		validateSoundPath(prefs.String("soundFilePath"))
 		go PlayNotificationSound()
 	})
 
 	soundConfigBox := container.NewVBox(
 		widget.NewLabel("Current sound file:"),
 		soundPathLabel,
+		soundStatusLabel,
 		container.NewHBox(selectSoundBtn, resetSoundBtn, testSoundBtn),
 	)
 
