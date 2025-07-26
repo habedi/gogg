@@ -1,48 +1,62 @@
 digraph package_dependency_graph {
-    rankdir=LR;
-    splines=ortho;
-    node [shape=box, style="rounded,filled", fontname="Arial"];
+    // Global layout settings for a less packed appearance
+    rankdir = TD;
+splines = curved;
+ranksep = 1.8;    // Increased distance between columns
+    nodesep = 1.0;    // Increased distance between nodes
+    compound = true;  // Improves layout with clusters
 
-    subgraph cluster_app {
-    label="Gogg Application";
-    style=filled;
-    color="#eeeeee";
-    fontsize=12;
+graph [label="Gogg Application Architecture", labelloc=t, fontsize=16, fontname="Arial"];
+node [shape=box, style="rounded,filled", fontname="Arial", margin="0.2,0.1"];
 
-    // UI/Driver Layer
-        main [fillcolor="#a7c7e7"]; // light blue
-        cmd [fillcolor="#a7c7e7"];
-    gui [fillcolor="#a7c7e7"];
+subgraph cluster_drivers {
+label = "Drivers (UI Layer)";
+style = "rounded,filled";
+color = "#e6f2fa";
+main [label = "main", fillcolor="#a7c7e7"];
+cmd [label = "cmd", fillcolor="#a7c7e7"];
+gui [label = "gui", fillcolor="#a7c7e7"];
+}
 
-    // Service Layer
-        auth [fillcolor="#d4edda"]; // light green
+subgraph cluster_core {
+label = "Application Core (Service Layer)";
+style = "rounded,filled";
+color = "#eaf7ec";
+auth [label = "auth", fillcolor="#d4edda"];
+client [label = "client", fillcolor="#d4edda"];
+pkg_operations [label = "pkg/operations", fillcolor="#d4edda"];
+}
 
-    // Adapter Layer
-        client [fillcolor="#f8d7da"]; // light pink
-        db [fillcolor="#fff3cd"]; // light yellow
-    }
+subgraph cluster_infra {
+label = "Infrastructure (Adapter/Utility Layer)";
+style = "rounded,filled";
+color = "#fef8e4";
+db [label = "db", fillcolor="#fff3cd"];
+pkg_hasher [label = "pkg/hasher", fillcolor="#fff3cd"];
+pkg_pool [label = "pkg/pool", fillcolor="#fff3cd"];
+}
 
-    subgraph cluster_external {
-    label="External Systems";
-    style=filled;
-    color="#eeeeee";
-    fontsize=12;
-    gog_api [label="GOG API", shape=cylinder, fillcolor=whitesmoke];
-    db_file [label="Database File", shape=cylinder, fillcolor=whitesmoke];
-    }
+subgraph cluster_external {
+label = "External Systems";
+style = "rounded,filled";
+color = "#eeeeee";
+gog_api [label = "GOG API", shape = cylinder, fillcolor = whitesmoke];
+db_file [label = "Database File", shape = cylinder, fillcolor = whitesmoke];
+user_fs [label = "User Filesystem", shape = cylinder, fillcolor = whitesmoke];
+}
 
-    // -- Dependencies --
+// -- Dependencies --
 
-    // UI Layer
+// Drivers initiate actions
     main -> cmd;
-    cmd -> {gui; auth; client; db;}
-    gui -> {auth; client; db;}
+cmd -> {gui; pkg_operations; client; auth};
+gui -> {pkg_operations; client; auth};
 
-    // Service Layer
-    auth -> client;
-    auth -> db;
+// Core orchestrates logic
+    pkg_operations -> {client; db; pkg_hasher; user_fs};
+client -> {db; pkg_pool; gog_api; user_fs};
+auth -> {client; db};
 
-    // Adapters to External
-    client -> gog_api;
+// Infrastructure provides low-level services
     db -> db_file;
 }
