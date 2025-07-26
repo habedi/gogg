@@ -19,18 +19,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-
-      - name: Setup MSYS2 and C Dependencies (for Fyne)
+      - name: Setup MSYS2 Environment
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: false
           install: >-
             make
+            mingw-w64-x86_64-go
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-freeglut

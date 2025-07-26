@@ -48,7 +48,7 @@ func Run(version string, authService *auth.Service) {
 	mainTabs.SetTabLocation(container.TabLocationTop)
 
 	myWindow.SetContent(mainTabs)
-	myWindow.Canvas().Focus(library.searchEntry) // Set initial focus directly
+	mainTabs.SelectIndex(0) // Programmatically select the first tab to trigger OnSelected.
 
 	myWindow.ShowAndRun()
 }

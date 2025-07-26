@@ -12,9 +12,36 @@ import (
 
 // Database variables
 var (
-	Db   *gorm.DB                                             // GORM database instance
-	Path = filepath.Join(os.Getenv("HOME"), ".gogg/games.db") // Default database path
+	Db   *gorm.DB
+	Path string
 )
+
+func init() {
+	ConfigurePath()
+}
+
+// ConfigurePath determines and sets the database path based on environment variables.
+// It is public to allow for re-evaluation during testing.
+func ConfigurePath() {
+	var baseDir string
+
+	// 1. Check for explicit GOGG_HOME override
+	if goggHome := os.Getenv("GOGG_HOME"); goggHome != "" {
+		baseDir = goggHome
+	} else if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
+		// 2. Check for XDG_DATA_HOME convention (e.g., ~/.local/share)
+		baseDir = filepath.Join(xdgDataHome, "gogg")
+	} else {
+		// 3. Fallback to the default in the user's home directory
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatal().Err(err).Msg("Could not determine user home directory")
+		}
+		baseDir = filepath.Join(homeDir, ".gogg")
+	}
+
+	Path = filepath.Join(baseDir, "games.db")
+}
 
 // InitDB initializes the database and creates the tables if they don't exist.
 // It returns an error if any step in the initialization process fails.
@@ -31,19 +58,18 @@ func InitDB() error {
 		return err
 	}
 
-	// Configure the GORM logger
 	configureLogger()
-
-	log.Info().Msg("Database initialized successfully")
+	log.Info().Str("path", Path).Msg("Database initialized successfully")
 	return nil
 }
 
 // createDBDirectory checks if the database path exists and creates it if it doesn't.
 // It returns an error if the directory creation fails.
 func createDBDirectory() error {
-	if _, err := os.Stat(filepath.Dir(Path)); os.IsNotExist(err) {
-		if err := os.MkdirAll(filepath.Dir(Path), 0o750); err != nil {
-			log.Error().Err(err).Msg("Failed to create database directory")
+	dbDir := filepath.Dir(Path)
+	if _, err := os.Stat(dbDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(dbDir, 0o750); err != nil {
+			log.Error().Err(err).Msgf("Failed to create database directory: %s", dbDir)
 			return err
 		}
 	}
@@ -78,7 +104,6 @@ func migrateTables() error {
 }
 
 // configureLogger configures the GORM logger based on the environment variable.
-// It sets the logger to silent mode if the DEBUG_GOGG environment variable is not set, otherwise it sets it to debug mode.
 func configureLogger() {
 	if zerolog.GlobalLevel() == zerolog.Disabled {
 		Db.Logger = Db.Logger.LogMode(0) // Silent mode
@@ -90,6 +115,9 @@ func configureLogger() {
 // CloseDB closes the database connection.
 // It returns an error if the database connection fails to close.
 func CloseDB() error {
+	if Db == nil {
+		return nil // Nothing to close
+	}
 	sqlDB, err := Db.DB()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get raw database connection")
