@@ -143,8 +143,6 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
  --extras=false --unit=GB
 ```
 
----
-
 ### CLI Demo
 
 [![asciicast](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI.svg)](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI)
@@ -152,17 +150,17 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
 ### GUI Screenshots
 
 <div align="center">
-  <img alt="Game Library" src="docs/screenshots/v0.4.2/5.png" width="70%">
+  <img alt="Game Library" src="docs/screenshots/v0.4.2/5.png" width="80%">
 </div>
 
 <details>
 <summary>Show more screenshots</summary>
 
 <div align="center">
-  <img alt="File Operations" src="docs/screenshots/v0.4.2/2.png" width="70%">
-  <img alt="Download Games" src="docs/screenshots/v0.4.2/8.png" width="70%">
-  <img alt="About" src="docs/screenshots/v0.4.2/14.png" width="70%">
-  <img alt="Download Progress" src="docs/screenshots/v0.4.2/9.png" width="70%">
+  <img alt="File Operations" src="docs/screenshots/v0.4.2/2.png" width="80%">
+  <img alt="Download Games" src="docs/screenshots/v0.4.2/8.png" width="80%">
+  <img alt="About" src="docs/screenshots/v0.4.2/14.png" width="80%">
+  <img alt="Download Progress" src="docs/screenshots/v0.4.2/9.png" width="80%">
 </div>
 
 </details>
