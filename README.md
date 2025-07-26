@@ -71,6 +71,8 @@ Additionally, it allows users to perform the following actions:
 - Verify the integrity of downloaded files by calculating their hashes
 - Calculate the total size of the files to be downloaded (for storage planning)
 
+---
+
 ### Screenshots
 
 <div align="center">
