@@ -74,7 +74,7 @@ Additionally, it allows users to perform the following actions:
 ### Screenshots
 
 <div align="center">
-  <img alt="Game Library" src="docs/screenshots/v0.4.2/1.png" width="70%">
+  <img alt="Game Library" src="docs/screenshots/v0.4.2/5.png" width="70%">
 </div>
 
 <details>
