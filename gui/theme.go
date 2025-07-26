@@ -7,6 +7,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
+var colorGoggBlue = &color.NRGBA{R: 0x0, G: 0x78, B: 0xD4, A: 0xff}
+
 // GoggTheme defines a custom theme that supports color variants, custom fonts, and sizes.
 type GoggTheme struct {
 	fyne.Theme
@@ -16,12 +18,45 @@ type GoggTheme struct {
 	textSize                                     float32
 }
 
-// Color overrides the default to use our forced variant, or passes through if we want the system default.
+// Color overrides the default to use our forced variant and custom colors.
 func (t *GoggTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	// Determine the final variant to use (forced or system)
+	finalVariant := v
 	if t.variant != nil {
-		return t.Theme.Color(name, *t.variant)
+		finalVariant = *t.variant
 	}
-	return t.Theme.Color(name, v)
+
+	// Custom color overrides
+	switch name {
+	case theme.ColorNamePrimary:
+		return colorGoggBlue
+	case theme.ColorNameFocus:
+		return colorGoggBlue
+	case theme.ColorNameSeparator:
+		if finalVariant == theme.VariantDark {
+			return &color.NRGBA{R: 0x4A, B: 0x4A, G: 0x4A, A: 0xff} // Darker gray for dark mode
+		}
+		return &color.NRGBA{R: 0xD0, B: 0xD0, G: 0xD0, A: 0xff} // Lighter gray for light mode
+	}
+
+	// Fallback to the default theme for all other colors, using the correct variant.
+	return t.Theme.Color(name, finalVariant)
+}
+
+// Icon demonstrates how to override a default Fyne icon.
+func (t *GoggTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
+	// Example: Override the settings icon.
+	// To make this work, you would need to:
+	// 1. Add a "custom_settings.svg" file to your assets.
+	// 2. Embed it in `gui/assets.go` like the other assets.
+	// 3. Uncomment the following lines.
+	//
+	// if name == theme.IconNameSettings {
+	// 	 return YourCustomSettingsIconResource
+	// }
+
+	// Fallback to the default theme for all other icons
+	return t.Theme.Icon(name)
 }
 
 func (t *GoggTheme) Font(style fyne.TextStyle) fyne.Resource {
@@ -71,7 +106,6 @@ func CreateThemeFromPreferences() fyne.Theme {
 		darkVariant := theme.VariantDark
 		customTheme.variant = &darkVariant
 	}
-	// If "System Default", customTheme.variant remains nil, which is the correct behavior.
 
 	// Set font family and weight
 	switch fontName {
