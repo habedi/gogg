@@ -1,9 +1,6 @@
 # ---- Builder Stage ----
 FROM golang:1.24-bookworm as builder
 
-# Make sure /tmp exists and is writable
-RUN mkdir -p /tmp && chmod 1777 /tmp
-
 # Install build dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -18,7 +15,6 @@ RUN apt-get update && \
         libxxf86vm-dev \
         libasound2-dev \
         ca-certificates \
-        htop nano duf ncdu \
         && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -30,13 +26,12 @@ RUN go mod download
 # Copy source
 COPY . .
 
-# Build GUI (default)
+# Build Gogg
 RUN go build -o bin/gogg .
 
 # ---- Final Stage ----
 FROM debian:bookworm-slim
 
-# GUI and network deps
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libgl1 \
@@ -46,19 +41,27 @@ RUN apt-get update && \
         libxinerama1 \
         libxi6 \
         libasound2 \
+        libxxf86vm1 \
+        xvfb \
         ca-certificates \
-        && rm -rf /var/lib/apt/lists/*
+        htop nano duf ncdu \
+        && rm -rf /var/lib/apt/lists/* \
+        && apt-get autoremove -y \
+        && apt-get clean
 
-# Copy binary
+# Set up directories
 COPY --from=builder /app/bin/gogg /usr/local/bin/gogg
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Optional: non-root user
+# Create a non-root user and group
 RUN addgroup --system gogg && adduser --system --ingroup gogg gogg
-USER gogg
+RUN mkdir -p /config /downloads && chown -R gogg:gogg /config /downloads
 
-# Volumes for config & downloads
+# Set user and volume
+USER gogg
 VOLUME /config
 VOLUME /downloads
 ENV GOGG_HOME=/config
 
-ENTRYPOINT ["gogg"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
