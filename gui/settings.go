@@ -7,7 +7,6 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -17,29 +16,35 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 
 	// --- Theme Settings ---
 	themeRadio := widget.NewRadioGroup([]string{"System Default", "Light", "Dark"}, func(selected string) {
-		switch selected {
-		case "Light":
-			prefs.SetString("theme", "light")
-			a.Settings().SetTheme(NewForcedTheme(theme.VariantLight))
-		case "Dark":
-			prefs.SetString("theme", "dark")
-			a.Settings().SetTheme(NewForcedTheme(theme.VariantDark))
-		default: // "System Default"
-			prefs.SetString("theme", "system")
-			a.Settings().SetTheme(theme.DefaultTheme())
-		}
+		prefs.SetString("theme", selected)
+		a.Settings().SetTheme(CreateThemeFromPreferences())
 	})
+	themeRadio.SetSelected(prefs.StringWithFallback("theme", "System Default"))
 
-	switch prefs.StringWithFallback("theme", "system") {
-	case "light":
-		themeRadio.SetSelected("Light")
-	case "dark":
-		themeRadio.SetSelected("Dark")
-	default:
-		themeRadio.SetSelected("System Default")
+	themeBox := container.NewVBox(widget.NewLabel("UI Theme"), themeRadio)
+
+	// --- Font Settings ---
+	fontOptions := []string{
+		"System Default",
+		"JetBrains Mono",
+		"JetBrains Mono Bold",
 	}
+	fontSelect := widget.NewSelect(fontOptions, func(selected string) {
+		prefs.SetString("fontName", selected)
+		a.Settings().SetTheme(CreateThemeFromPreferences())
+	})
+	fontSelect.SetSelected(prefs.StringWithFallback("fontName", "System Default"))
 
-	themeBox := container.NewHBox(widget.NewLabel("UI Theme"), themeRadio)
+	fontSizeSelect := widget.NewSelect([]string{"Small", "Normal", "Large", "Extra Large"}, func(s string) {
+		prefs.SetString("fontSize", s)
+		a.Settings().SetTheme(CreateThemeFromPreferences())
+	})
+	fontSizeSelect.SetSelected(prefs.StringWithFallback("fontSize", "Normal"))
+
+	fontBox := container.NewVBox(
+		widget.NewLabel("Font Family"), fontSelect,
+		widget.NewLabel("Font Size"), fontSizeSelect,
+	)
 
 	// --- Sound Settings ---
 	soundCheck := widget.NewCheck("Play sound on download completion", func(checked bool) {
@@ -67,7 +72,6 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 			soundStatusLabel.Hide()
 		}
 	}
-
 	validateSoundPath(prefs.String("soundFilePath"))
 
 	selectSoundBtn := widget.NewButton("Select Custom Sound...", func() {
@@ -108,6 +112,8 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	// --- Layout ---
 	mainCard := widget.NewCard("Settings", "", container.NewVBox(
 		themeBox,
+		widget.NewSeparator(),
+		fontBox,
 		widget.NewSeparator(),
 		soundCheck,
 		soundConfigBox,
