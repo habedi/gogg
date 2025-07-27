@@ -27,15 +27,9 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 	dlg.Show()
 
 	go func() {
-		defer runOnMain(func() {
-			onFinish()
-			dlg.Hide()
-		})
-
-		statusLabel.SetText("Fetching game list...")
 		progressCb := func(p float64) {
 			runOnMain(func() {
-				statusLabel.SetText(fmt.Sprintf("Processing games... (%.0f%%)", p*100))
+				statusLabel.SetText("Populating with new data...")
 				progress.SetValue(p)
 			})
 		}
@@ -43,23 +37,32 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 		err := client.RefreshCatalogue(ctx, authService, 10, progressCb)
 
 		runOnMain(func() {
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					dialog.ShowInformation("Cancelled", "Catalogue refresh was cancelled.", win)
+			dlg.Hide()
+
+			if errors.Is(err, context.Canceled) {
+				games, dbErr := db.GetCatalogue()
+				var msg string
+				if dbErr != nil {
+					msg = "Refresh was cancelled. Could not retrieve partial game count."
 				} else {
-					showErrorDialog(win, "Failed to refresh catalogue", err)
+					msg = fmt.Sprintf("Refresh was cancelled.\n%d games were loaded before stopping.", len(games))
 				}
-				return
+				dialog.ShowInformation("Refresh Cancelled", msg, win)
+				SignalCatalogueUpdated() // Signal that a partial update occurred
+			} else if err != nil {
+				showErrorDialog(win, "Failed to refresh catalogue", err)
+			} else {
+				games, dbErr := db.GetCatalogue()
+				if dbErr != nil {
+					dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
+				} else {
+					successMsg := fmt.Sprintf("Successfully refreshed catalogue.\nYour library now contains %d games.", len(games))
+					dialog.ShowInformation("Success", successMsg, win)
+				}
+				SignalCatalogueUpdated() // Signal that the update is complete
 			}
 
-			games, dbErr := db.GetCatalogue()
-			if dbErr != nil {
-				// Fallback message if we can't get the count
-				dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
-			} else {
-				successMsg := fmt.Sprintf("Successfully refreshed catalogue.\nYour library now contains %d games.", len(games))
-				dialog.ShowInformation("Success", successMsg, win)
-			}
+			onFinish()
 		})
 	}()
 }
@@ -108,7 +111,7 @@ func ExportCatalogueAction(win fyne.Window, format string) {
 		if exportErr != nil {
 			showErrorDialog(win, "Failed to write export file", exportErr)
 		} else {
-			dialog.ShowInformation("Success", "Catalogue exported successfully.", win)
+			dialog.ShowInformation("Success", "Data exported successfully.", win)
 		}
 	}, win)
 	fileDialog.SetFileName(defaultName)

@@ -9,9 +9,6 @@
     <a href="https://github.com/habedi/gogg/actions/workflows/tests.yml">
         <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/tests.yml?label=tests&style=flat&labelColor=555555&logo=github" alt="Tests">
     </a>
-    <a href="https://github.com/habedi/gogg/actions/workflows/lints.yml">
-        <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/lints.yml?label=linters&style=flat&labelColor=555555&logo=github" alt="Linters">
-    </a>
     <a href="https://github.com/habedi/gogg/actions/workflows/release.yml">
         <img src="https://img.shields.io/github/actions/workflow/status/habedi/gogg/release.yml?label=linux%20build&style=flat&labelColor=555555&logo=linux" alt="Linux Build">
     </a>
@@ -26,13 +23,16 @@
         <img src="https://img.shields.io/badge/docs-latest-3776ab?style=flat&labelColor=555555&logo=readthedocs" alt="Docs">
     </a>
     <a href="https://github.com/habedi/gogg">
-        <img src="https://img.shields.io/badge/license-MIT-007ec6?style=flat&labelColor=555555&logo=open-source-initiative" alt="License">
+        <img src="https://img.shields.io/badge/license-MIT-3776ab?style=flat&labelColor=555555&logo=open-source-initiative" alt="License">
     </a>
     <a href="https://codecov.io/gh/habedi/gogg">
         <img src="https://img.shields.io/codecov/c/github/habedi/gogg?style=flat&labelColor=555555&logo=codecov" alt="Code Coverage">
     </a>
     <a href="https://www.codefactor.io/repository/github/habedi/gogg">
         <img src="https://img.shields.io/codefactor/grade/github/habedi/gogg?style=flat&labelColor=555555&logo=codefactor" alt="CodeFactor">
+    </a>
+    <a href="https://github.com/habedi/gogg/pkgs/container/gogg">
+        <img src="https://img.shields.io/github/v/release/habedi/gogg?label=image&logo=docker&logoColor=white&style=flat&color=007ec6" alt="Docker Image">
     </a>
     <a href="https://github.com/habedi/gogg/releases/latest">
         <img src="https://img.shields.io/github/release/habedi/gogg.svg?style=flat&labelColor=555555&logo=github" alt="Release">
@@ -80,10 +80,12 @@ See the [documentation](docs/README.md) for how to install and use Gogg.
 Run `gogg -h` to see the available commands and options.
 
 > [!NOTE]
-> Since version `0.4.1`, Gogg has a GUI besides its command line interface (CLI).
-> The GUI is still in the early stages of development and does not support all the features of the CLI and may have
-> bugs.
-> To start the GUI, run `gogg gui`.
+> * Since version `0.4.1`, Gogg has a GUI besides its command line interface (CLI).
+    > The GUI is still in the early stages of development and does not support all the features of the CLI and may have
+    > bugs.
+    > To start the GUI, run `gogg gui`.
+> * Since version `0.4.2`, there are Docker images available for Gogg.
+    > See the [documentation](docs/README.md#containerization) for more information.
 
 #### Examples
 
@@ -102,8 +104,8 @@ gogg login
 ```
 
 > [!IMPORTANT]
-> You need to have [Google Chrome](https://www.google.com/chrome/) or [Chromium](https://www.chromium.org/) installed on
-> your machine for the first-time authentication.
+> You might need to have [Google Chrome](https://www.google.com/chrome/), [Chromium](https://www.chromium.org/), or
+> [Microsoft Edge](https://www.microsoft.com/edge) browsers installed on your machine for the first-time authentication.
 > So, make sure you have one of them installed and available in your system's PATH.
 
 ##### Syncing the Game Catalogue
@@ -146,6 +148,24 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
 ### CLI Demo
 
 [![asciicast](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI.svg)](https://asciinema.org/a/kXMGRUUV149R37IEmZKtTH7nI)
+
+### GUI Screenshots
+
+<div align="center">
+  <img alt="Game Library" src="docs/screenshots/v0.4.2/5.png" width="100%">
+</div>
+
+<details>
+<summary>Show more screenshots</summary>
+
+<div align="center">
+  <img alt="File Operations" src="docs/screenshots/v0.4.2/2.png" width="100%">
+  <img alt="Download Games" src="docs/screenshots/v0.4.2/8.png" width="100%">
+  <img alt="About" src="docs/screenshots/v0.4.2/14.png" width="100%">
+  <img alt="Download Progress" src="docs/screenshots/v0.4.2/9.png" width="100%">
+</div>
+
+</details>
 
 ---
 

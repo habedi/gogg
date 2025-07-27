@@ -13,27 +13,43 @@ func Run(version string, authService *auth.Service) {
 	myApp := app.NewWithID("com.github.habedi.gogg")
 	myApp.SetIcon(AppLogo)
 
-	themePref := myApp.Preferences().StringWithFallback("theme", "light")
-	if themePref == "dark" {
-		myApp.Settings().SetTheme(NewCustomDarkTheme())
-	} else {
-		myApp.Settings().SetTheme(theme.DefaultTheme())
-	}
+	myApp.Settings().SetTheme(CreateThemeFromPreferences())
 
 	myWindow := myApp.NewWindow("GOGG GUI")
 	dm := NewDownloadManager()
+	prefs := myApp.Preferences()
+
+	width := prefs.FloatWithFallback("windowWidth", 960)
+	height := prefs.FloatWithFallback("windowHeight", 640)
+	myWindow.Resize(fyne.NewSize(float32(width), float32(height)))
+
+	myWindow.SetOnClosed(func() {
+		size := myWindow.Canvas().Size()
+		prefs.SetFloat("windowWidth", float64(size.Width))
+		prefs.SetFloat("windowHeight", float64(size.Height))
+	})
+
+	library := LibraryTabUI(myWindow, authService, dm)
 
 	mainTabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), LibraryTabUI(myWindow, authService, dm)),
+		container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), library.content),
 		container.NewTabItemWithIcon("Downloads", theme.DownloadIcon(), DownloadsTabUI(dm)),
 		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
 		container.NewTabItemWithIcon("Settings", theme.SettingsIcon(), SettingsTabUI(myWindow)),
 		container.NewTabItemWithIcon("About", theme.InfoIcon(), ShowAboutUI(version)),
 	)
+
+	mainTabs.OnSelected = func(tab *container.TabItem) {
+		if tab.Text == "Catalogue" {
+			myWindow.Canvas().Focus(library.searchEntry)
+		}
+	}
+
 	mainTabs.SetTabLocation(container.TabLocationTop)
 
 	myWindow.SetContent(mainTabs)
-	myWindow.Resize(fyne.NewSize(960, 640))
+	mainTabs.SelectIndex(0) // Programmatically select the first tab to trigger OnSelected.
+
 	myWindow.ShowAndRun()
 }
 

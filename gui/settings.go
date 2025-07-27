@@ -1,43 +1,78 @@
 package gui
 
 import (
+	"os"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
+	prefs := fyne.CurrentApp().Preferences()
+	a := fyne.CurrentApp()
+
 	// --- Theme Settings ---
-	themeRadio := widget.NewRadioGroup([]string{"Light", "Dark"}, func(selected string) {
-		a := fyne.CurrentApp()
-		if selected == "Light" {
-			a.Preferences().SetString("theme", "light")
-			a.Settings().SetTheme(theme.DefaultTheme())
-		} else {
-			a.Preferences().SetString("theme", "dark")
-			a.Settings().SetTheme(NewCustomDarkTheme())
-		}
+	themeRadio := widget.NewRadioGroup([]string{"System Default", "Light", "Dark"}, func(selected string) {
+		prefs.SetString("theme", selected)
+		a.Settings().SetTheme(CreateThemeFromPreferences())
 	})
-	if fyne.CurrentApp().Preferences().StringWithFallback("theme", "light") == "dark" {
-		themeRadio.SetSelected("Dark")
-	} else {
-		themeRadio.SetSelected("Light")
+	themeRadio.SetSelected(prefs.StringWithFallback("theme", "System Default"))
+
+	themeBox := container.NewVBox(widget.NewLabel("UI Theme"), themeRadio)
+
+	// --- Font Settings ---
+	fontOptions := []string{
+		"System Default",
+		"JetBrains Mono",
+		"JetBrains Mono Bold",
 	}
-	themeBox := container.NewHBox(widget.NewLabel("UI Theme"), themeRadio)
+	fontSelect := widget.NewSelect(fontOptions, func(selected string) {
+		prefs.SetString("fontName", selected)
+		a.Settings().SetTheme(CreateThemeFromPreferences())
+	})
+	fontSelect.SetSelected(prefs.StringWithFallback("fontName", "System Default"))
+
+	fontSizeSelect := widget.NewSelect([]string{"Small", "Normal", "Large", "Extra Large"}, func(s string) {
+		prefs.SetString("fontSize", s)
+		a.Settings().SetTheme(CreateThemeFromPreferences())
+	})
+	fontSizeSelect.SetSelected(prefs.StringWithFallback("fontSize", "Normal"))
+
+	fontBox := container.NewVBox(
+		widget.NewLabel("Font Family"), fontSelect,
+		widget.NewLabel("Font Size"), fontSizeSelect,
+	)
 
 	// --- Sound Settings ---
 	soundCheck := widget.NewCheck("Play sound on download completion", func(checked bool) {
-		fyne.CurrentApp().Preferences().SetBool("soundEnabled", checked)
+		prefs.SetBool("soundEnabled", checked)
 	})
-	soundCheck.SetChecked(fyne.CurrentApp().Preferences().BoolWithFallback("soundEnabled", true))
+	soundCheck.SetChecked(prefs.BoolWithFallback("soundEnabled", true))
 
-	soundPathLabel := widget.NewLabel(fyne.CurrentApp().Preferences().String("soundFilePath"))
-	if soundPathLabel.Text == "" {
-		soundPathLabel.SetText("Default")
+	soundPathLabel := widget.NewLabel("")
+	soundStatusLabel := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+
+	validateSoundPath := func(path string) {
+		if path == "" {
+			soundPathLabel.SetText("Default sound file")
+			soundStatusLabel.SetText("")
+			soundStatusLabel.Hide()
+			return
+		}
+
+		soundPathLabel.SetText(path)
+		if _, err := os.Stat(path); err != nil {
+			soundStatusLabel.SetText("File not found. Using default sound.")
+			soundStatusLabel.Show()
+		} else {
+			soundStatusLabel.SetText("")
+			soundStatusLabel.Hide()
+		}
 	}
+	validateSoundPath(prefs.String("soundFilePath"))
 
 	selectSoundBtn := widget.NewButton("Select Custom Sound...", func() {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
@@ -49,32 +84,36 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 				return
 			}
 			path := reader.URI().Path()
-			fyne.CurrentApp().Preferences().SetString("soundFilePath", path)
-			soundPathLabel.SetText(path)
+			prefs.SetString("soundFilePath", path)
+			validateSoundPath(path)
 		}, win)
-		fd.SetFilter(storage.NewExtensionFileFilter([]string{".mp3", ".ogg", ".aac"}))
+		fd.SetFilter(storage.NewExtensionFileFilter([]string{".mp3", ".wav", ".ogg"}))
 		fd.Resize(fyne.NewSize(800, 600))
 		fd.Show()
 	})
 
 	resetSoundBtn := widget.NewButton("Reset", func() {
-		fyne.CurrentApp().Preferences().RemoveValue("soundFilePath")
-		soundPathLabel.SetText("Default")
+		prefs.RemoveValue("soundFilePath")
+		validateSoundPath("")
 	})
 
 	testSoundBtn := widget.NewButton("Test", func() {
+		validateSoundPath(prefs.String("soundFilePath"))
 		go PlayNotificationSound()
 	})
 
 	soundConfigBox := container.NewVBox(
 		widget.NewLabel("Current sound file:"),
 		soundPathLabel,
+		soundStatusLabel,
 		container.NewHBox(selectSoundBtn, resetSoundBtn, testSoundBtn),
 	)
 
 	// --- Layout ---
 	mainCard := widget.NewCard("Settings", "", container.NewVBox(
 		themeBox,
+		widget.NewSeparator(),
+		fontBox,
 		widget.NewSeparator(),
 		soundCheck,
 		soundConfigBox,

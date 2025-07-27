@@ -1,0 +1,44 @@
+# Version control
+.git
+.gitignore
+
+# Binaries and build artifacts
+bin/
+*.exe
+*.out
+*.test
+
+# IDE/editor junk
+*.swp
+*.swo
+*.bak
+*.tmp
+*.DS_Store
+.vscode/
+.idea/
+
+# Dependency directories
+vendor/
+
+# Go test cache
+*.coverprofile
+*.cov
+coverage.out
+
+# Logs
+*.log
+
+# OS junk
+Thumbs.db
+
+# Other unneeded files and directories
+*.csv
+*.json
+*.zip
+pyproject.toml
+requirements.txt
+Dockerfile
+.venv/
+games/
+tmp/
+temp/

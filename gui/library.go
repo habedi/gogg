@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -21,70 +20,122 @@ import (
 	"github.com/habedi/gogg/db"
 )
 
-func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) fyne.CanvasObject {
+// libraryTab holds all the components of the library tab UI.
+type libraryTab struct {
+	content     fyne.CanvasObject
+	searchEntry *widget.Entry
+}
+
+func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) *libraryTab {
 	token, _ := db.GetTokenRecord()
 	if token == nil {
-		return container.NewCenter(container.NewVBox(
+		content := container.NewCenter(container.NewVBox(
 			widget.NewIcon(theme.WarningIcon()),
 			widget.NewLabelWithStyle("Not logged in.", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 			widget.NewLabel("Please run 'gogg login' from your terminal to authenticate."),
 		))
+		return &libraryTab{content: content, searchEntry: widget.NewEntry()} // Return dummy entry
 	}
 
 	allGames, _ := db.GetCatalogue()
 	gamesListBinding := binding.NewUntypedList()
-	if len(allGames) > 0 {
-		_ = gamesListBinding.Set(untypedSlice(allGames))
-	}
-
 	selectedGameBinding := binding.NewUntyped()
+	isSortAscending := true
 
-	var listPlaceholder fyne.CanvasObject
-	var gameListWidget *widget.List
+	gameCountLabel := widget.NewLabel("")
 
-	// --- LEFT PANE (MASTER) ---
-	var debounceTimer *time.Timer
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Type game title to search...")
-	searchEntry.OnChanged = func(s string) {
-		if debounceTimer != nil {
-			debounceTimer.Stop()
-		}
-		debounceTimer = time.AfterFunc(200*time.Millisecond, func() {
-			runOnMain(func() {
-				searchStr := strings.ToLower(s)
-				if searchStr == "" {
-					_ = gamesListBinding.Set(untypedSlice(allGames))
-					return
-				}
-				filtered := make([]interface{}, 0)
-				for _, game := range allGames {
-					if strings.Contains(strings.ToLower(game.Title), searchStr) {
-						filtered = append(filtered, game)
-					}
-				}
-				_ = gamesListBinding.Set(filtered)
-			})
-		})
-	}
-
-	refreshUI := func() {
-		allGames, _ = db.GetCatalogue()
-		_ = gamesListBinding.Set(untypedSlice(allGames))
-		if gameListWidget != nil {
-			gameListWidget.Refresh()
-		}
-		if gamesListBinding.Length() > 0 && listPlaceholder != nil {
-			listPlaceholder.Hide()
-			if gameListWidget != nil {
-				gameListWidget.Show()
-			}
-		}
-	}
-
-	refreshBtn := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
+	clearSearchBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
 		searchEntry.SetText("")
-		RefreshCatalogueAction(win, authService, refreshUI)
+	})
+	searchEntry.ActionItem = clearSearchBtn
+	clearSearchBtn.Hide()
+
+	var gameListWidget *widget.List
+	updateDisplayedGames := func() {
+		searchTerm := strings.ToLower(searchEntry.Text)
+		displayGames := make([]db.Game, len(allGames))
+		copy(displayGames, allGames)
+
+		if isSortAscending {
+			sort.Slice(displayGames, func(i, j int) bool {
+				return strings.ToLower(displayGames[i].Title) < strings.ToLower(displayGames[j].Title)
+			})
+		} else {
+			sort.Slice(displayGames, func(i, j int) bool {
+				return strings.ToLower(displayGames[i].Title) > strings.ToLower(displayGames[j].Title)
+			})
+		}
+
+		if searchTerm != "" {
+			filtered := make([]db.Game, 0)
+			for _, game := range displayGames {
+				if strings.Contains(strings.ToLower(game.Title), searchTerm) {
+					filtered = append(filtered, game)
+				}
+			}
+			displayGames = filtered
+		}
+
+		_ = gamesListBinding.Set(untypedSlice(displayGames))
+		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(displayGames)))
+		if searchTerm == "" {
+			clearSearchBtn.Hide()
+		} else {
+			clearSearchBtn.Show()
+		}
+	}
+
+	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
+
+	listContent := container.NewStack()
+	gameListWidget = widget.NewListWithData(gamesListBinding,
+		func() fyne.CanvasObject {
+			return widget.NewLabel("Game Title")
+		},
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			gameRaw, _ := item.(binding.Untyped).Get()
+			game := gameRaw.(db.Game)
+			obj.(*widget.Label).SetText(game.Title)
+		},
+	)
+	gameListWidget.OnSelected = func(id widget.ListItemID) {
+		gameRaw, _ := gamesListBinding.GetValue(id)
+		_ = selectedGameBinding.Set(gameRaw)
+	}
+	gameListWidget.OnUnselected = func(id widget.ListItemID) {
+		_ = selectedGameBinding.Set(nil)
+	}
+
+	var refreshBtn *widget.Button
+	onFinishRefresh := func() {
+		allGames, _ = db.GetCatalogue()
+		updateDisplayedGames()
+		refreshBtn.Enable()
+		listContent.Objects = []fyne.CanvasObject{gameListWidget}
+		listContent.Refresh()
+	}
+
+	if len(allGames) == 0 {
+		placeholder := container.NewCenter(container.NewVBox(
+			widget.NewIcon(theme.InfoIcon()),
+			widget.NewLabel("Your library is empty or hasn't been synced."),
+			widget.NewButton("Refresh Catalogue Now", func() {
+				refreshBtn.Disable()
+				RefreshCatalogueAction(win, authService, onFinishRefresh)
+			}),
+		))
+		listContent.Add(placeholder)
+	} else {
+		listContent.Add(gameListWidget)
+	}
+	updateDisplayedGames()
+
+	refreshBtn = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
+		searchEntry.SetText("")
+		refreshBtn.Disable()
+		RefreshCatalogueAction(win, authService, onFinishRefresh)
 	})
 
 	var exportBtn *widget.Button
@@ -95,47 +146,27 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		), win.Canvas())
 		popup.ShowAtPosition(win.Content().Position().Add(fyne.NewPos(exportBtn.Position().X, exportBtn.Position().Y+exportBtn.Size().Height)))
 	})
-	toolbar := container.NewHBox(refreshBtn, exportBtn)
 
-	listContent := container.NewStack()
-	if gamesListBinding.Length() == 0 {
-		listPlaceholder = container.NewCenter(container.NewVBox(
-			widget.NewIcon(theme.InfoIcon()),
-			widget.NewLabel("Your library is empty or hasn't been synced."),
-			widget.NewButton("Refresh Catalogue Now", func() {
-				RefreshCatalogueAction(win, authService, refreshUI)
-			}),
-		))
-		listContent.Add(listPlaceholder)
-	} else {
-		gameListWidget = widget.NewListWithData(gamesListBinding,
-			func() fyne.CanvasObject {
-				return widget.NewLabel("Game Title")
-			},
-			func(item binding.DataItem, obj fyne.CanvasObject) {
-				gameRaw, _ := item.(binding.Untyped).Get()
-				game := gameRaw.(db.Game)
-				obj.(*widget.Label).SetText(game.Title)
-			},
-		)
-		gameListWidget.OnSelected = func(id widget.ListItemID) {
-			gameRaw, _ := gamesListBinding.GetValue(id)
-			_ = selectedGameBinding.Set(gameRaw)
+	var sortBtn *widget.Button
+	sortBtn = widget.NewButton("Sort A-Z", func() {
+		isSortAscending = !isSortAscending
+		if isSortAscending {
+			sortBtn.SetText("Sort A-Z")
+		} else {
+			sortBtn.SetText("Sort Z-A")
 		}
-		gameListWidget.OnUnselected = func(id widget.ListItemID) {
-			_ = selectedGameBinding.Set(nil)
-		}
-		listContent.Add(gameListWidget)
-	}
+		updateDisplayedGames()
+		gameListWidget.Refresh()
+	})
 
-	leftPane := container.NewBorder(
-		container.NewVBox(searchEntry, widget.NewSeparator()),
-		toolbar, nil, nil,
-		listContent,
-	)
+	toolbar := container.NewHBox(refreshBtn, exportBtn, sortBtn, layout.NewSpacer(), gameCountLabel)
+	leftTopContainer := container.NewVBox(searchEntry, widget.NewSeparator())
+	leftPane := container.NewBorder(leftTopContainer, toolbar, nil, nil, listContent)
 
-	// --- RIGHT PANE (DETAIL) ---
-	detailTitle := widget.NewLabelWithStyle("Select a game from the list", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	detailTitle := NewCopyableLabel("Select a game from the list")
+	detailTitle.Alignment = fyne.TextAlignCenter
+	detailTitle.TextStyle = fyne.TextStyle{Bold: true}
+
 	accordion := createDetailsAccordion(win, authService, dm, selectedGameBinding)
 	rightPane := container.NewBorder(
 		container.NewVBox(detailTitle, widget.NewSeparator()),
@@ -156,7 +187,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		accordion.Show()
 	}))
 
-	return container.NewHSplit(leftPane, rightPane)
+	return &libraryTab{
+		content:     container.NewHSplit(leftPane, rightPane),
+		searchEntry: searchEntry,
+	}
 }
 
 func untypedSlice(games []db.Game) []interface{} {
@@ -168,17 +202,15 @@ func untypedSlice(games []db.Game) []interface{} {
 }
 
 func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *DownloadManager, selectedGame binding.Untyped) *widget.Accordion {
-	// Details View
 	detailsLabel := widget.NewLabel("Game details will appear here.")
 	detailsLabel.Wrapping = fyne.TextWrapWord
 
-	// Download Form
 	downloadForm := createDownloadForm(win, authService, dm, selectedGame)
 
 	accordion := widget.NewAccordion(
 		widget.NewAccordionItem("Download Options", downloadForm),
 	)
-	accordion.Open(0) // Open download options by default
+	accordion.Open(0)
 
 	selectedGame.AddListener(binding.NewDataListener(func() {
 		gameRaw, _ := selectedGame.Get()
@@ -208,8 +240,17 @@ func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *Down
 
 func createDownloadForm(win fyne.Window, authService *auth.Service, dm *DownloadManager, selectedGame binding.Untyped) fyne.CanvasObject {
 	prefs := fyne.CurrentApp().Preferences()
+
 	downloadPathEntry := widget.NewEntry()
-	downloadPathEntry.SetText(prefs.StringWithFallback("lastDownloadPath", ""))
+	lastUsedPath := prefs.String("lastUsedDownloadPath")
+	if lastUsedPath == "" {
+		lastUsedPath = prefs.StringWithFallback("downloadForm.path", "")
+	}
+	downloadPathEntry.SetText(lastUsedPath)
+
+	downloadPathEntry.OnChanged = func(s string) {
+		prefs.SetString("downloadForm.path", s)
+	}
 	downloadPathEntry.SetPlaceHolder("Enter download path")
 
 	browseBtn := widget.NewButton("Browse...", func() {
@@ -219,7 +260,6 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			}
 			downloadPathEntry.SetText(uri.Path())
 		}, win)
-
 		folderDialog.Resize(fyne.NewSize(800, 600))
 		folderDialog.Show()
 	})
@@ -230,25 +270,46 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		langCodes = append(langCodes, code)
 	}
 	sort.Strings(langCodes)
-	langSelect := widget.NewSelect(langCodes, nil)
-	langSelect.SetSelected("en")
+	langSelect := widget.NewSelect(langCodes, func(s string) {
+		prefs.SetString("downloadForm.language", s)
+	})
+	langSelect.SetSelected(prefs.StringWithFallback("downloadForm.language", "en"))
 
-	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, nil)
-	platformSelect.SetSelected("windows")
+	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, func(s string) {
+		prefs.SetString("downloadForm.platform", s)
+	})
+	platformSelect.SetSelected(prefs.StringWithFallback("downloadForm.platform", "windows"))
+
 	threadOptions := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
-	threadsSelect := widget.NewSelect(threadOptions, nil)
-	threadsSelect.SetSelected("5")
+	threadsSelect := widget.NewSelect(threadOptions, func(s string) {
+		prefs.SetString("downloadForm.threads", s)
+	})
+	threadsSelect.SetSelected(prefs.StringWithFallback("downloadForm.threads", "5"))
 
-	extrasCheck := widget.NewCheck("Include Extras", nil)
-	extrasCheck.SetChecked(true)
-	dlcsCheck := widget.NewCheck("Include DLCs", nil)
-	dlcsCheck.SetChecked(true)
-	resumeCheck := widget.NewCheck("Resume Downloads", nil)
-	resumeCheck.SetChecked(true)
-	flattenCheck := widget.NewCheck("Flatten Directory", nil)
-	flattenCheck.SetChecked(true)
-	skipPatchesCheck := widget.NewCheck("Skip Patches", nil)
-	skipPatchesCheck.SetChecked(true)
+	extrasCheck := widget.NewCheck("Include Extras", func(b bool) {
+		prefs.SetBool("downloadForm.extras", b)
+	})
+	extrasCheck.SetChecked(prefs.BoolWithFallback("downloadForm.extras", true))
+
+	dlcsCheck := widget.NewCheck("Include DLCs", func(b bool) {
+		prefs.SetBool("downloadForm.dlcs", b)
+	})
+	dlcsCheck.SetChecked(prefs.BoolWithFallback("downloadForm.dlcs", true))
+
+	resumeCheck := widget.NewCheck("Resume Downloads", func(b bool) {
+		prefs.SetBool("downloadForm.resume", b)
+	})
+	resumeCheck.SetChecked(prefs.BoolWithFallback("downloadForm.resume", true))
+
+	flattenCheck := widget.NewCheck("Flatten Directory", func(b bool) {
+		prefs.SetBool("downloadForm.flatten", b)
+	})
+	flattenCheck.SetChecked(prefs.BoolWithFallback("downloadForm.flatten", true))
+
+	skipPatchesCheck := widget.NewCheck("Skip Patches", func(b bool) {
+		prefs.SetBool("downloadForm.skipPatches", b)
+	})
+	skipPatchesCheck.SetChecked(prefs.BoolWithFallback("downloadForm.skipPatches", true))
 
 	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), nil)
 	downloadBtn.Importance = widget.HighImportance

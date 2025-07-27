@@ -22,11 +22,9 @@ import (
 )
 
 var (
-	// ErrDownloadInProgress is returned when a download for a game is already active.
 	ErrDownloadInProgress = errors.New("download already in progress")
-
-	activeDownloads      = make(map[int]struct{})
-	activeDownloadsMutex = &sync.Mutex{}
+	activeDownloads       = make(map[int]struct{})
+	activeDownloadsMutex  = &sync.Mutex{}
 )
 
 func formatBytes(b int64) string {
@@ -190,6 +188,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 			activeDownloadsMutex.Lock()
 			delete(activeDownloads, game.ID)
 			activeDownloadsMutex.Unlock()
+			dm.PersistHistory()
 		}()
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -197,13 +196,14 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		parsedGameData, err := client.ParseGameData(game.Data)
 		if err != nil {
 			fmt.Printf("Error parsing game data for %s: %v\n", game.Title, err)
-			cancel() // Call cancel before returning to prevent context leak
+			cancel()
 			return
 		}
 		targetDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
 
 		task := &DownloadTask{
 			ID:           game.ID,
+			InstanceID:   time.Now(),
 			Title:        game.Title,
 			State:        StatePreparing,
 			Status:       binding.NewString(),
@@ -217,7 +217,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		_ = task.Details.Set("Speed: N/A | ETA: N/A")
 		_ = dm.AddTask(task)
 
-		fyne.CurrentApp().Preferences().SetString("lastDownloadPath", downloadPath)
+		fyne.CurrentApp().Preferences().SetString("lastUsedDownloadPath", downloadPath)
 
 		token, err := authService.RefreshToken()
 		if err != nil {
@@ -252,7 +252,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		}
 
 		task.State = StateCompleted
-		_ = task.Status.Set(fmt.Sprintf("Completed. Files in: %s", targetDir))
+		_ = task.Status.Set(fmt.Sprintf("Download completed. Files are stored in: %s", targetDir))
 		_ = task.Details.Set("")
 		_ = task.Progress.Set(1.0)
 		_ = task.FileStatus.Set("")

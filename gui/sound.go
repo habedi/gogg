@@ -3,8 +3,11 @@ package gui
 import (
 	"bytes"
 	_ "embed"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +15,8 @@ import (
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
+	"github.com/faiface/beep/vorbis"
+	"github.com/faiface/beep/wav"
 	"github.com/rs/zerolog/log"
 )
 
@@ -46,26 +51,47 @@ func PlayNotificationSound() {
 
 	filePath := a.Preferences().String("soundFilePath")
 	var reader io.ReadCloser
-	var err error
+	isDefault := false
 
 	if filePath != "" {
-		reader, err = os.Open(filePath)
+		f, err := os.Open(filePath)
 		if err != nil {
 			log.Error().Err(err).Str("path", filePath).Msg("Failed to open custom sound file, falling back to default")
-			reader = io.NopCloser(bytes.NewReader(defaultDingSound))
+			isDefault = true
+		} else {
+			reader = f
 		}
 	} else {
+		isDefault = true
+	}
+
+	if isDefault {
 		if len(defaultDingSound) == 0 {
 			log.Warn().Msg("No custom sound set and default sound asset is missing.")
 			return
 		}
 		reader = io.NopCloser(bytes.NewReader(defaultDingSound))
+		filePath = ".mp3" // Pretend it's an mp3 for the decoder switch
 	}
 	defer reader.Close()
 
-	streamer, format, err := mp3.Decode(reader)
+	var streamer beep.StreamSeekCloser
+	var format beep.Format
+	var err error
+
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".mp3":
+		streamer, format, err = mp3.Decode(reader)
+	case ".wav":
+		streamer, format, err = wav.Decode(reader)
+	case ".ogg":
+		streamer, format, err = vorbis.Decode(reader)
+	default:
+		err = fmt.Errorf("unsupported sound format for file: %s", filePath)
+	}
+
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to decode mp3 stream")
+		log.Error().Err(err).Msg("Failed to decode audio stream")
 		return
 	}
 

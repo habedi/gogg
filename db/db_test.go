@@ -7,29 +7,76 @@ import (
 
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestInitDB tests the initialization of the database.
-// It sets up a temporary directory, initializes the database, and checks if the database file is created successfully.
+func TestDBPathSelection(t *testing.T) {
+	originalPath := db.Path
+	t.Cleanup(func() {
+		db.Path = originalPath
+	})
+
+	t.Run("uses GOGG_HOME when set", func(t *testing.T) {
+		tempDir := t.TempDir()
+		t.Setenv("GOGG_HOME", tempDir)
+		t.Setenv("XDG_DATA_HOME", "should_be_ignored")
+
+		db.ConfigurePath()
+
+		expected := filepath.Join(tempDir, "games.db")
+		assert.Equal(t, expected, db.Path)
+	})
+
+	t.Run("uses XDG_DATA_HOME when GOGG_HOME is not set", func(t *testing.T) {
+		tempDir := t.TempDir()
+		t.Setenv("GOGG_HOME", "")
+		t.Setenv("XDG_DATA_HOME", tempDir)
+
+		db.ConfigurePath()
+
+		expected := filepath.Join(tempDir, "gogg", "games.db")
+		assert.Equal(t, expected, db.Path)
+	})
+
+	t.Run("uses default home directory as a fallback", func(t *testing.T) {
+		t.Setenv("GOGG_HOME", "")
+		t.Setenv("XDG_DATA_HOME", "")
+
+		db.ConfigurePath()
+
+		homeDir, err := os.UserHomeDir()
+		require.NoError(t, err)
+		expected := filepath.Join(homeDir, ".gogg", "games.db")
+		assert.Equal(t, expected, db.Path)
+	})
+}
+
 func TestInitDB(t *testing.T) {
 	tempDir := t.TempDir()
-	os.Setenv("HOME", tempDir)
-	db.Path = filepath.Join(tempDir, ".gogg/games.db")
-	err := db.InitDB()
-	assert.NoError(t, err, "InitDB should not return an error")
+	db.Path = filepath.Join(tempDir, ".gogg", "games.db")
 
-	// Check if the database file was created
+	err := db.InitDB()
+	require.NoError(t, err, "InitDB should not return an error")
+
 	_, statErr := os.Stat(db.Path)
 	assert.NoError(t, statErr, "Database file should exist")
 
-	// Close the database to release the file handle
-	closeErr := db.CloseDB()
-	assert.NoError(t, closeErr, "CloseDB should not return an error")
+	err = db.CloseDB()
+	assert.NoError(t, err, "CloseDB should not return an error")
 }
 
-// TestCloseDB tests the closing of the database connection.
-// It ensures that the CloseDB function does not return an error.
 func TestCloseDB(t *testing.T) {
-	err := db.CloseDB()
-	assert.NoError(t, err, "CloseDB should not return an error")
+	t.Run("it does nothing if DB is not initialized", func(t *testing.T) {
+		db.Db = nil // Ensure DB is nil
+		err := db.CloseDB()
+		assert.NoError(t, err)
+	})
+
+	t.Run("it closes an open DB connection", func(t *testing.T) {
+		db.Path = filepath.Join(t.TempDir(), "test.db")
+		require.NoError(t, db.InitDB())
+
+		err := db.CloseDB()
+		assert.NoError(t, err, "CloseDB should not return an error")
+	})
 }

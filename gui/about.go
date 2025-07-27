@@ -27,7 +27,7 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 	platformLbl := widget.NewLabel(fmt.Sprintf("Platform: %s", platform))
 
 	repoURL, _ := url.Parse(goggRepo)
-	repoLink := widget.NewHyperlink("Project's GitHub Repository", repoURL)
+	repoLink := widget.NewHyperlink("Project's Home Page", repoURL)
 
 	info := container.NewVBox(
 		versionLbl,
@@ -39,7 +39,7 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 	author := widget.NewLabel("© 2025 Hassan Abedi")
 
 	titleLbl := widget.NewLabelWithStyle("Gogg", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	subtitleLbl := widget.NewLabelWithStyle("A game file downloader for GOG",
+	subtitleLbl := widget.NewLabelWithStyle("A Game File Downloader for GOG",
 		fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
 	card := widget.NewCard(
