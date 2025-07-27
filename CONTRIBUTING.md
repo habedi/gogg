@@ -34,7 +34,7 @@ sudo apt-get install -y golang-go make
 ```
 
 - Use the `make install-deps` command to install the development dependencies.
-- Use the `make setup-hooks` command to set up Git hooks for pre-commit checks.
+- Use the `make setup-hooks` command to install the project's Git hooks.
 
 ### Code Style
 
