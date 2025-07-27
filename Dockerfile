@@ -51,8 +51,8 @@ RUN apt-get update && \
 
 # Set up directories
 COPY --from=builder /app/bin/gogg /usr/local/bin/gogg
-COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY scripts/docker_entrypoint.sh /usr/local/bin/docker_entrypoint.sh
+RUN chmod +x /usr/local/bin/docker_entrypoint.sh
 
 # Create a non-root user and group
 RUN addgroup --system gogg && adduser --system --ingroup gogg gogg
@@ -64,4 +64,4 @@ VOLUME /config
 VOLUME /downloads
 ENV GOGG_HOME=/config
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/docker_entrypoint.sh"]
