@@ -12,6 +12,7 @@ permissions:
 jobs:
 
   build-windows:
+    name: Build Windows Binary
     runs-on: windows-latest
     steps:
       - name: Checkout Repository
@@ -48,6 +49,7 @@ jobs:
           path: bin/gogg.exe
 
   build-linux:
+    name: Build Linux Binary
     runs-on: ubuntu-latest
     env:
       LANG: en_US.UTF-8
@@ -83,6 +85,7 @@ jobs:
           path: bin/gogg
 
   build-macos:
+    name: Build macOS Binary
     runs-on: macos-latest
     steps:
       - name: Checkout Repository
@@ -187,7 +190,7 @@ jobs:
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
-        if: github.ref == 'refs/heads/main' && startsWith(github.ref_name, 'v')
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: ${{ github.ref_name }}
@@ -198,5 +201,5 @@ jobs:
             dist/gogg-windows-amd64.zip
             dist/gogg-linux-amd64.zip
             dist/gogg-macos-arm64.zip
-          draft: false
+          draft: true
           prerelease: false
