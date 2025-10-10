@@ -81,11 +81,11 @@ Run `gogg -h` to see the available commands and options.
 
 > [!NOTE]
 > * Since version `0.4.1`, Gogg has a GUI besides its command line interface (CLI).
-    > The GUI is still in the early stages of development and does not support all the features of the CLI and may have
-    > bugs.
-    > To start the GUI, run `gogg gui`.
+> The GUI is still in the early stages of development and does not support all the features of the CLI and may have
+> bugs.
+> To start the GUI, run `gogg gui`.
 > * Since version `0.4.2`, there are Docker images available for Gogg.
-    > See the [documentation](docs/README.md#containerization) for more information.
+> See the [documentation](docs/README.md#containerization) for more information.
 
 #### Examples
 
