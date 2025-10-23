@@ -1,12 +1,7 @@
 [project]
 name = "gogg"
 version = "0.1.0"
-description = "Python environment for Gogg"
-readme = "README.md"
-license = { text = "MIT" }
-authors = [
-    { name = "Hassan Abedi", email = "hassan.abedi.t@gmail.com" }
-]
+description = "The Python environment for the Gogg project"
 
 requires-python = ">=3.10,<4.0"
 dependencies = [
