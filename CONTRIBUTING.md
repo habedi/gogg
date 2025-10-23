@@ -54,4 +54,4 @@ sudo apt-get install -y golang-go make
 
 ## Code of Conduct
 
-We adhere to the [Go Community Code of Conduct](https://go.dev/conduct).
+We adhere to the project's [Code of Conduct](CODE_OF_CONDUCT.md).
