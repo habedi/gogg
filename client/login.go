@@ -125,7 +125,7 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
 	var execPath string
 	// Search for browsers in order of preference
-	browserExecutables := []string{"google-chrome", "chromium", "chrome", "msedge"}
+	browserExecutables := []string{"google-chrome", "Google Chrome", "chromium", "Chromium", "chrome", "msedge", "Microsoft Edge"}
 	for _, browser := range browserExecutables {
 		if p, err := exec.LookPath(browser); err == nil {
 			execPath = p
