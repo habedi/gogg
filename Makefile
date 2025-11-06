@@ -161,6 +161,7 @@ test-integration: ## Run integration tests (needs network-mocked local servers)
 	@$(GO) test -tags=integration ./...
 
 .PHONY: test-fuzz
-test-fuzz: ## Run fuzz tests with a small iteration budget
+test-fuzz: ## Run fuzz tests
 	$(ECHO) "Running fuzz tests (short)"
-	@$(GO) test ./client -run=^$ -fuzz=Fuzz -fuzztime=5s
+	@$(GO) test ./client -run=^$$ -fuzz=FuzzParseSizeString -fuzztime=10s
+	@$(GO) test ./client -run=^$$ -fuzz=FuzzParseGameData -fuzztime=10s
