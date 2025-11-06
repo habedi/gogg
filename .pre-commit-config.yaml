@@ -4,30 +4,43 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        args: [ --markdown-linebreak-ext=md ]
       - id: end-of-file-fixer
-      - id: check-yaml
+      - id: mixed-line-ending
       - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-docstring-first
+      - id: pretty-format-json
+        args: [ --autofix, --no-sort-keys ]
       - id: check-added-large-files
         args: [ '--maxkb=600' ]
 
   - repo: local
     hooks:
       - id: format
-        name: Format the code
+        name: Format the Code
         entry: make format
         language: system
         pass_filenames: false
-        types: [ 'go' ]
+        stages: [ pre-commit ]
 
       - id: lint
-        name: Check code style
+        name: Check Code Style
         entry: make lint
         language: system
         pass_filenames: false
-        types: [ 'go' ]
 
       - id: test
-        name: Run tests
+        name: Run Tests
         entry: make test
+        language: system
+        pass_filenames: false
+
+      - id: test-integration
+        name: Run Integration Tests
+        entry: make test-integration
         language: system
         pass_filenames: false

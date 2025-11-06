@@ -129,7 +129,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				return
 			}
 			downloadDir := args[1]
-			executeDownload(authService, gameID, downloadDir, strings.ToLower(language), platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
+			executeDownload(authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 		},
 	}
 
@@ -154,8 +154,16 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 		return
 	}
 
-	languageFullName, ok := client.GameLanguages[language]
-	if !ok {
+	var languageFullName string
+	found := false
+	for code, full := range client.GameLanguages {
+		if strings.EqualFold(code, language) {
+			languageFullName = full
+			found = true
+			break
+		}
+	}
+	if !found {
 		fmt.Println("Invalid language code. Supported languages are:")
 		for langCode, langName := range client.GameLanguages {
 			fmt.Printf("'%s' for %s\n", langCode, langName)

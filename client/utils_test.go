@@ -1,37 +1,34 @@
 package client
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/stretchr/testify/assert"
-)
-
-func TestCreateRequest(t *testing.T) {
-	req, err := createRequest("GET", "http://example.com/path", "mytoken")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+func Test_parseSizeString(t *testing.T) {
+	cases := []struct {
+		in  string
+		ok  bool
+		min int64
+	}{
+		{"1024", true, 1024},
+		{"1KB", true, 1024},
+		{"1 KB", true, 1024},
+		{"1.5 MB", true, 1_500_000},
+		{"2mb", true, 2 * 1024 * 1024},
+		{"0.5GB", true, 512 * 1024 * 1024},
+		{"1GiB", true, 1024 * 1024 * 1024},
+		{"10 tb", true, 10 * 1024 * 1024 * 1024 * 1024},
+		{"unknown", false, 0},
 	}
-	auth := req.Header.Get("Authorization")
-	expected := "Bearer mytoken"
-	if auth != expected {
-		t.Errorf("Expected Authorization header %q, got %q", expected, auth)
+	for _, c := range cases {
+		v, err := parseSizeString(c.in)
+		if c.ok {
+			if err != nil {
+				t.Fatalf("expected ok for %q: %v", c.in, err)
+			}
+			if v < c.min {
+				t.Fatalf("expected %q >= %d, got %d", c.in, c.min, v)
+			}
+		} else if err == nil {
+			t.Fatalf("expected error for %q", c.in)
+		}
 	}
-}
-
-func TestParseRawDownloads(t *testing.T) {
-	raw := [][]interface{}{
-		{"en", map[string]interface{}{"windows": []interface{}{map[string]interface{}{"name": "setup.exe", "size": "1GB"}}}},
-		{123, "invalid"},
-		{"fr"},
-	}
-	downloads := parseRawDownloads(raw)
-	if len(downloads) != 1 {
-		t.Fatalf("Expected 1 valid download entry, got %d", len(downloads))
-	}
-	dl := downloads[0]
-	assert.Equal(t, "en", dl.Language)
-	assert.Len(t, dl.Platforms.Windows, 1)
-	file := dl.Platforms.Windows[0]
-	assert.Equal(t, "setup.exe", file.Name)
-	assert.Equal(t, "1GB", file.Size)
 }

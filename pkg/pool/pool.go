@@ -32,12 +32,13 @@ func Run[T any](ctx context.Context, items []T, numWorkers int, workerFunc Worke
 		}()
 	}
 
+OUT:
 	for _, item := range items {
 		select {
 		case taskChan <- item:
 		case <-ctx.Done():
-			// Stop feeding tasks if the context is cancelled.
-			break
+			// Stop feeding tasks if the context is cancelled
+			break OUT
 		}
 	}
 	close(taskChan)

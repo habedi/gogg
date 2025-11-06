@@ -1,10 +1,14 @@
-name: Run Linters
+name: Run Linter Checks
 
 on:
   workflow_dispatch:
   pull_request:
     branches:
       - "main"
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
   push:
     tags:
       - 'v*'

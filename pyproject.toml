@@ -1,12 +1,7 @@
 [project]
 name = "gogg"
 version = "0.1.0"
-description = "Python environment for Gogg"
-readme = "README.md"
-license = { text = "MIT" }
-authors = [
-    { name = "Hassan Abedi", email = "hassan.abedi.t@gmail.com" }
-]
+description = "The Python environment for the Gogg project"
 
 requires-python = ">=3.10,<4.0"
 dependencies = [
@@ -16,11 +11,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.1",
-    "pytest-cov>=6.0.0",
-    "pytest-mock>=3.14.0",
+    "pytest (>=8.0.1,<9.0.0)",
+    "pytest-cov (>=6.0.0,<7.0.0)",
+    "pytest-mock (>=3.14.0,<4.0.0)",
     "pytest-asyncio (>=0.26.0,<0.27.0)",
-    "mypy>=1.11.1",
-    "ruff>=0.9.3",
+    "mypy (>=1.11.1,<2.0.0)",
+    "ruff (>=0.9.3,<1.0.0)",
     "icecream (>=2.1.4,<3.0.0)"
 ]

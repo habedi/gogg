@@ -24,6 +24,8 @@ run_test "clean" "Removing old build artifacts"
 run_test "format" "Formatting Go files"
 run_test "lint" "Running linter checks"
 run_test "test" "Running unit tests"
+run_test "test-integration" "Running integration tests"
+run_test "test-fuzz" "Running fuzz tests"
 
 # --- Final Success Message ---
 echo -e "\n${GREEN}===== Makefile Test Suite Completed Successfully! =====${NC}"

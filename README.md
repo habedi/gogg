@@ -20,7 +20,7 @@
     </a>
     <br>
     <a href="docs">
-        <img src="https://img.shields.io/badge/docs-latest-3776ab?style=flat&labelColor=555555&logo=readthedocs" alt="Docs">
+        <img src="https://img.shields.io/badge/docs-read-3776ab?style=flat&labelColor=555555&logo=readthedocs" alt="Docs">
     </a>
     <a href="https://github.com/habedi/gogg">
         <img src="https://img.shields.io/badge/license-MIT-3776ab?style=flat&labelColor=555555&logo=open-source-initiative" alt="License">

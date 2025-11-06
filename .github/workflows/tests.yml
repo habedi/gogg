@@ -5,6 +5,10 @@ on:
   pull_request:
     branches:
       - "main"
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
   push:
     tags:
       - 'v*'
@@ -18,7 +22,7 @@ jobs:
 
     strategy:
       matrix:
-        go-version: [ "1.21", "1.22", "1.23", "1.24" ]
+        go-version: [ "1.21", "1.22", "1.23", "1.24", "1.25" ]
 
     steps:
       - name: Checkout Repository
@@ -48,6 +52,8 @@ jobs:
       - name: Run Tests and Generate Coverage Report
         run: |
           make test
+          make test-integration
+          make test-fuzz
 
       - name: Upload Coverage Reports to Codecov
         uses: codecov/codecov-action@v5
