@@ -406,6 +406,18 @@ func DownloadGameFiles(
 	return nil
 }
 
+func isAbsoluteURL(u string) bool {
+	parsed, err := netURL.Parse(u)
+	return err == nil && parsed.Scheme != "" && parsed.Host != ""
+}
+
+func buildManualURL(u string) string {
+	if isAbsoluteURL(u) {
+		return u
+	}
+	return fmt.Sprintf("https://embed.gog.com%s", u)
+}
+
 func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform, subDirPrefix string, resume, flatten, skipPatches bool) error {
 	for _, download := range game.Downloads {
 		if !strings.EqualFold(download.Language, lang) {
@@ -426,7 +438,7 @@ func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game
 					continue
 				}
 				task := downloadTask{
-					url:      fmt.Sprintf("https://embed.gog.com%s", *file.ManualURL),
+					url:      buildManualURL(*file.ManualURL),
 					fileName: filepath.Base(*file.ManualURL),
 					subDir:   filepath.Join(subDirPrefix, name),
 					resume:   resume,
@@ -454,7 +466,7 @@ func enqueueExtras(ctx context.Context, enqueue func(downloadTask), extras []Ext
 			fileName += ext
 		}
 		task := downloadTask{
-			url:      fmt.Sprintf("https://embed.gog.com%s", extra.ManualURL),
+			url:      buildManualURL(extra.ManualURL),
 			fileName: fileName,
 			subDir:   subDir,
 			resume:   resume,
