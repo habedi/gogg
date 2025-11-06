@@ -11,6 +11,7 @@ import (
 	netURL "net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,18 @@ type ProgressUpdate struct {
 	CurrentBytes      int64  `json:"current,omitempty"`
 	TotalBytes        int64  `json:"total,omitempty"`
 	OverallTotalBytes int64  `json:"overall_total,omitempty"`
+}
+
+// syncWriter serializes writes to an underlying writer.
+type syncWriter struct {
+	w  io.Writer
+	mu *sync.Mutex
+}
+
+func (sw *syncWriter) Write(p []byte) (int, error) {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.w.Write(p)
 }
 
 // progressReader wraps an io.Reader to send progress updates through an io.Writer.
@@ -94,16 +107,30 @@ func ensureDirExists(path string) error {
 
 var pathSanitizer = strings.NewReplacer(
 	"®", "",
+	"™", "",
 	":", "",
+	"/", "-",
+	"\\", "-",
+	"*", "-",
+	"?", "-",
+	"<", "-",
+	">", "-",
+	"|", "-",
+	"\"", "",
+	"'", "",
 	" ", "-",
 	"(", "",
 	")", "",
-	"™", "",
 )
 
+var multiDash = regexp.MustCompile(`-+`)
+
 func SanitizePath(name string) string {
-	name = strings.ToLower(name)
-	return pathSanitizer.Replace(name)
+	name = strings.ToLower(strings.TrimSpace(name))
+	name = pathSanitizer.Replace(name)
+	name = multiDash.ReplaceAllString(name, "-")
+	name = strings.Trim(name, "-")
+	return name
 }
 
 type downloadTask struct {
@@ -144,13 +171,16 @@ func DownloadGameFiles(
 		return err
 	}
 
+	// Serialize all progress JSON output
+	sw := &syncWriter{w: updateWriter, mu: &sync.Mutex{}}
+
 	totalDownloadSize, err := game.EstimateStorageSize(gameLanguage, platformName, extrasFlag, dlcFlag)
 	if err != nil {
 		return fmt.Errorf("failed to estimate total download size: %w", err)
 	}
 	startUpdate := ProgressUpdate{Type: "start", OverallTotalBytes: totalDownloadSize}
 	jsonStart, _ := json.Marshal(startUpdate)
-	fmt.Fprintln(updateWriter, string(jsonStart))
+	_, _ = fmt.Fprintln(sw, string(jsonStart))
 
 	findFileLocation := func(ctx context.Context, url string) (string, error) {
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -165,7 +195,7 @@ func DownloadGameFiles(
 			}
 			return "", err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 			if location := resp.Header.Get("Location"); location != "" {
 				return location, nil
@@ -231,7 +261,7 @@ func DownloadGameFiles(
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		headReq, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
 		if err != nil {
@@ -243,14 +273,14 @@ func DownloadGameFiles(
 		if err != nil {
 			return err
 		}
-		headResp.Body.Close()
+		_ = headResp.Body.Close()
 
 		totalSize := headResp.ContentLength
-		if resumeFlag && totalSize > 0 && startOffset >= totalSize {
+		if task.resume && totalSize > 0 && startOffset >= totalSize {
 			// File is already complete, send a final progress update for it.
 			finalUpdate := ProgressUpdate{Type: "file_progress", FileName: fileName, CurrentBytes: startOffset, TotalBytes: totalSize}
 			jsonUpdate, _ := json.Marshal(finalUpdate)
-			fmt.Fprintln(updateWriter, string(jsonUpdate))
+			_, _ = fmt.Fprintln(sw, string(jsonUpdate))
 			return nil
 		}
 
@@ -259,26 +289,41 @@ func DownloadGameFiles(
 			return err
 		}
 		getReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+		requestedRange := int64(0)
 		if task.resume && startOffset > 0 {
 			getReq.Header.Set("Range", fmt.Sprintf("bytes=%d-", startOffset))
+			requestedRange = startOffset
 		}
 
 		getResp, err := client.Do(getReq)
 		if err != nil {
 			return err
 		}
-		defer getResp.Body.Close()
+		defer func() { _ = getResp.Body.Close() }()
 
 		if getResp.StatusCode != http.StatusOK && getResp.StatusCode != http.StatusPartialContent {
 			return fmt.Errorf("failed to download %s: HTTP %d", fileName, getResp.StatusCode)
 		}
 
+		// If server ignored Range and returned 200, make sure we start from the beginning
+		if requestedRange > 0 && getResp.StatusCode == http.StatusOK {
+			if err := file.Close(); err != nil {
+				return err
+			}
+			file, err = os.Create(filePath) // truncate
+			if err != nil {
+				return err
+			}
+			defer func() { _ = file.Close() }()
+			startOffset = 0
+		}
+
 		progressReader := &progressReader{
 			reader:    getResp.Body,
-			writer:    updateWriter,
+			writer:    sw,
 			fileName:  fileName,
 			totalSize: totalSize,
-			bytesRead: startOffset, // Start counting from the offset
+			bytesRead: startOffset,
 		}
 
 		buffer := make([]byte, 32*1024)
@@ -287,7 +332,10 @@ func DownloadGameFiles(
 			if ctx.Err() == context.Canceled {
 				return ctx.Err()
 			}
-			_ = os.Remove(filePath)
+			// On resume, keep the partial file
+			if !task.resume {
+				_ = os.Remove(filePath)
+			}
 			return fmt.Errorf("failed to save file %s: %w", filePath, err)
 		}
 		return nil

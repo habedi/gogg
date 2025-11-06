@@ -5,12 +5,73 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
+
+var sizeRegexp = regexp.MustCompile(`(?i)^\s*([0-9]+(?:\.[0-9]+)?)\s*([a-zA-Z]+)?\s*$`)
+
+func parseSizeString(sizeStr string) (int64, error) {
+	s := strings.TrimSpace(sizeStr)
+	if s == "" {
+		return 0, fmt.Errorf("empty size string")
+	}
+	m := sizeRegexp.FindStringSubmatch(s)
+	if len(m) == 0 {
+		// Try pure integer bytes
+		if v, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+			return v, nil
+		}
+		return 0, fmt.Errorf("unable to parse size '%s'", sizeStr)
+	}
+	valStr := m[1]
+	unit := strings.ToLower(m[2])
+	if unit == "" {
+		// Bytes without unit
+		v, err := strconv.ParseFloat(valStr, 64)
+		if err != nil {
+			return 0, err
+		}
+		return int64(v), nil
+	}
+	// Normalize common units
+	switch unit {
+	case "b", "bytes":
+		unit = "b"
+	case "k", "kb", "kib":
+		unit = "kb"
+	case "m", "mb", "mib":
+		unit = "mb"
+	case "g", "gb", "gib":
+		unit = "gb"
+	case "t", "tb", "tib":
+		unit = "tb"
+	}
+	mult := float64(1)
+	switch unit {
+	case "b":
+		mult = 1
+	case "kb":
+		mult = 1024
+	case "mb":
+		mult = 1024 * 1024
+	case "gb":
+		mult = 1024 * 1024 * 1024
+	case "tb":
+		mult = 1024 * 1024 * 1024 * 1024
+	default:
+		return 0, fmt.Errorf("unknown size unit '%s' in '%s'", unit, sizeStr)
+	}
+	v, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		return 0, err
+	}
+	return int64(v * mult), nil
+}
 
 func FetchGameData(accessToken string, url string) (Game, string, error) {
 	req, err := createRequest("GET", url, accessToken)
@@ -22,7 +83,7 @@ func FetchGameData(accessToken string, url string) (Game, string, error) {
 	if err != nil {
 		return Game{}, "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := readResponseBody(resp)
 	if err != nil {
@@ -47,7 +108,7 @@ func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := readResponseBody(resp)
 	if err != nil {
@@ -86,6 +147,9 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 
 		if resp.StatusCode >= 500 {
 			log.Warn().Int("status", resp.StatusCode).Int("attempt", i+1).Int("max_attempts", maxRetries).Msg("Server error, retrying...")
+			// Ensure body is closed before retry to avoid leaks
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
 			time.Sleep(backoff)
 			backoff *= 2
 			continue
@@ -101,6 +165,9 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Error().Int("status", resp.StatusCode).Msg("HTTP request failed with non-successful status")
+		// Drain and close to free the connection
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
 	}
 	return resp, nil
@@ -137,41 +204,9 @@ func parseOwnedGames(body []byte) ([]int, error) {
 func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dlcFlag bool) (int64, error) {
 	var totalSizeBytes int64
 
-	parseSize := func(sizeStr string) (int64, error) {
-		s := strings.TrimSpace(strings.ToLower(sizeStr))
-		var val float64
-		var err error
-		switch {
-		case strings.HasSuffix(s, " gb"):
-			_, err = fmt.Sscanf(s, "%f gb", &val)
-			if err != nil {
-				return 0, err
-			}
-			return int64(val * 1024 * 1024 * 1024), nil
-		case strings.HasSuffix(s, " mb"):
-			_, err = fmt.Sscanf(s, "%f mb", &val)
-			if err != nil {
-				return 0, err
-			}
-			return int64(val * 1024 * 1024), nil
-		case strings.HasSuffix(s, " kb"):
-			_, err = fmt.Sscanf(s, "%f kb", &val)
-			if err != nil {
-				return 0, err
-			}
-			return int64(val * 1024), nil
-		default:
-			bytesVal, err := strconv.ParseInt(s, 10, 64)
-			if err == nil {
-				return bytesVal, nil
-			}
-			return 0, fmt.Errorf("unknown or missing size unit in '%s'", sizeStr)
-		}
-	}
-
 	processFiles := func(files []PlatformFile) {
 		for _, file := range files {
-			if size, err := parseSize(file.Size); err == nil {
+			if size, err := parseSizeString(file.Size); err == nil {
 				totalSizeBytes += size
 			}
 		}
@@ -195,7 +230,7 @@ func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dl
 
 	if extrasFlag {
 		for _, extra := range g.Extras {
-			if size, err := parseSize(extra.Size); err == nil {
+			if size, err := parseSizeString(extra.Size); err == nil {
 				totalSizeBytes += size
 			}
 		}
@@ -220,7 +255,7 @@ func (g *Game) EstimateStorageSize(language, platformName string, extrasFlag, dl
 			}
 			if extrasFlag {
 				for _, extra := range dlc.Extras {
-					if size, err := parseSize(extra.Size); err == nil {
+					if size, err := parseSizeString(extra.Size); err == nil {
 						totalSizeBytes += size
 					}
 				}

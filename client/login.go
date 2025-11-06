@@ -37,7 +37,7 @@ func (c *GogClient) PerformTokenRefresh(refreshToken string) (accessToken string
 	if err != nil {
 		return "", "", 0, fmt.Errorf("failed to post form for token refresh: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -115,9 +115,7 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 		return fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
 
-	log.Info().Msgf("Access token: %s", token[:10])
-	log.Info().Msgf("Refresh token: %s", refreshToken[:10])
-	log.Info().Msgf("Expires at: %s", expiresAt)
+	log.Info().Msg("Login succeeded and tokens were received.")
 
 	return db.UpsertTokenRecord(&db.Token{AccessToken: token, RefreshToken: refreshToken, ExpiresAt: expiresAt})
 }
@@ -125,7 +123,11 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
 	var execPath string
 	// Search for browsers in order of preference
-	browserExecutables := []string{"google-chrome", "Google Chrome", "chromium", "Chromium", "chrome", "msedge", "Microsoft Edge"}
+	browserExecutables := []string{
+		"google-chrome", "Google Chrome", "chromium", "Chromium", "chrome", "msedge", "Microsoft Edge",
+		"/app/bin/chromium",  // flatpak chromium
+		"/snap/bin/chromium", // snap chromium
+	}
 	for _, browser := range browserExecutables {
 		if p, err := exec.LookPath(browser); err == nil {
 			execPath = p
@@ -219,7 +221,7 @@ func (c *GogClient) exchangeCodeForToken(code string) (string, string, string, e
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to exchange code for token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
