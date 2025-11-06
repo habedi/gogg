@@ -44,8 +44,6 @@ repos:
         entry: make test-integration
         language: system
         pass_filenames: false
-        stages: [ pre-push ]
-        verbose: true
 
       - id: test-fuzz
         name: Run (Short) Fuzz Tests
