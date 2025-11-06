@@ -53,7 +53,7 @@ func parseSizeString(sizeStr string) (int64, error) {
 	case "t", "tb", "tib":
 		unit = "tb"
 	}
-	mult := float64(1)
+	var mult float64
 	switch unit {
 	case "b":
 		mult = 1
