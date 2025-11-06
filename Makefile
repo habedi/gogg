@@ -99,6 +99,7 @@ install-snap: ## Install Snap (for Debian-based systems)
 .PHONY: install-deps
 install-deps: ## Install development dependencies (for Debian-based systems)
 	$(ECHO) "Installing dependencies..."
+	@sudo apt-get update
 	@sudo apt-get install -y make libgl1-mesa-dev libx11-dev xorg-dev \
 	libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev pkg-config libasound2-dev
 	@$(MAKE) install-snap
@@ -152,7 +153,7 @@ setup-hooks: ## Install Git hooks (pre-commit and pre-push)
 .PHONY: test-hooks
 test-hooks: ## Test Git hooks on all files
 	@echo "Testing Git hooks..."
-	@pre-commit run --all-files --show-diff-on-failure
+	@pre-commit run --all-files --show-diff-on-failure --color=always
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (needs network-mocked local servers)

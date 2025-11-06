@@ -215,12 +215,32 @@ func resolveNext(baseURL, next string) string {
 	return base.ResolveReference(n).String()
 }
 
+func canonicalizeURL(u string) string {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return u
+	}
+	// normalize trailing slash in path
+	if parsed.Path == "/" {
+		parsed.Path = ""
+	} else {
+		parsed.Path = strings.TrimSuffix(parsed.Path, "/")
+	}
+	parsed.RawQuery = strings.TrimSuffix(parsed.RawQuery, "&")
+	return parsed.String()
+}
+
 func FetchAllOwnedGameIDs(ctx context.Context, accessToken, startURL string) ([]int, error) {
 	all := make([]int, 0, 128)
-	nextURL := startURL
+	nextURL := canonicalizeURL(startURL)
 	seen := map[string]bool{}
-	for nextURL != "" && !seen[nextURL] {
-		seen[nextURL] = true
+	for nextURL != "" {
+		key := canonicalizeURL(nextURL)
+		if seen[key] {
+			break
+		}
+		seen[key] = true
+
 		req, err := http.NewRequestWithContext(ctx, "GET", nextURL, nil)
 		if err != nil {
 			return nil, err
@@ -243,7 +263,8 @@ func FetchAllOwnedGameIDs(ctx context.Context, accessToken, startURL string) ([]
 				return
 			}
 			all = append(all, or.Owned...)
-			nextURL = resolveNext(nextURL, or.Next)
+			resolved := resolveNext(nextURL, or.Next)
+			nextURL = canonicalizeURL(resolved)
 		}()
 	}
 	return all, nil

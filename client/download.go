@@ -124,10 +124,12 @@ var pathSanitizer = strings.NewReplacer(
 )
 
 var multiDash = regexp.MustCompile(`-+`)
+var allowedChars = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 func SanitizePath(name string) string {
 	name = strings.ToLower(strings.TrimSpace(name))
 	name = pathSanitizer.Replace(name)
+	name = allowedChars.ReplaceAllString(name, "")
 	name = multiDash.ReplaceAllString(name, "-")
 	name = strings.Trim(name, "-")
 	return name
