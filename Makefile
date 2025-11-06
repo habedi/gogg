@@ -153,3 +153,13 @@ setup-hooks: ## Install Git hooks (pre-commit and pre-push)
 test-hooks: ## Test Git hooks on all files
 	@echo "Testing Git hooks..."
 	@pre-commit run --all-files --show-diff-on-failure
+
+.PHONY: test-integration
+test-integration: ## Run integration tests (needs network-mocked local servers)
+	$(ECHO) "Running integration tests"
+	@$(GO) test -tags=integration ./...
+
+.PHONY: fuzz-seed
+fuzz-seed: ## Run fuzz tests with a small iteration budget
+	$(ECHO) "Running fuzz tests (short)"
+	@$(GO) test ./client -run=^$ -fuzz=Fuzz -fuzztime=5s

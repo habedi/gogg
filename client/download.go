@@ -223,13 +223,19 @@ func DownloadGameFiles(
 			url = location
 			if parsedLoc, parseErr := netURL.Parse(location); parseErr == nil && parsedLoc.Path != "" {
 				if base := filepath.Base(parsedLoc.Path); base != "." && base != "/" {
-					fileName = base
+					if fileName == "" {
+						fileName = base
+					}
 				}
 			}
 		}
 
 		if decodedFileName, err := netURL.QueryUnescape(fileName); err == nil {
 			fileName = decodedFileName
+		}
+		// Strip any query remnants from filename (safety)
+		if q := strings.IndexByte(fileName, '?'); q >= 0 {
+			fileName = fileName[:q]
 		}
 
 		subDir := task.subDir
@@ -327,7 +333,15 @@ func DownloadGameFiles(
 		}
 
 		buffer := make([]byte, 32*1024)
-		_, err = io.CopyBuffer(file, progressReader, buffer)
+		nWritten, err := io.CopyBuffer(file, progressReader, buffer)
+		if err != nil {
+			// Tolerate ErrUnexpectedEOF if we actually received the exact expected remaining bytes
+			if errors.Is(err, io.ErrUnexpectedEOF) && totalSize > 0 {
+				if startOffset+int64(nWritten) == totalSize {
+					err = nil
+				}
+			}
+		}
 		if err != nil {
 			if ctx.Err() == context.Canceled {
 				return ctx.Err()
@@ -439,7 +453,7 @@ func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game
 				}
 				task := downloadTask{
 					url:      buildManualURL(*file.ManualURL),
-					fileName: filepath.Base(*file.ManualURL),
+					fileName: file.Name,
 					subDir:   filepath.Join(subDirPrefix, name),
 					resume:   resume,
 					flatten:  flatten,

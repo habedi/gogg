@@ -1,10 +1,12 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -190,10 +192,65 @@ func parseGameData(body []byte, game *Game) error {
 	return nil
 }
 
-func parseOwnedGames(body []byte) ([]int, error) {
-	var response struct {
-		Owned []int `json:"owned"`
+type ownedResponse struct {
+	Owned []int  `json:"owned"`
+	Next  string `json:"next,omitempty"`
+}
+
+func resolveNext(baseURL, next string) string {
+	if next == "" {
+		return ""
 	}
+	if u, err := url.Parse(next); err == nil && u.Scheme != "" && u.Host != "" {
+		return next
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return next
+	}
+	n, err := url.Parse(next)
+	if err != nil {
+		return next
+	}
+	return base.ResolveReference(n).String()
+}
+
+func FetchAllOwnedGameIDs(ctx context.Context, accessToken, startURL string) ([]int, error) {
+	all := make([]int, 0, 128)
+	nextURL := startURL
+	seen := map[string]bool{}
+	for nextURL != "" && !seen[nextURL] {
+		seen[nextURL] = true
+		req, err := http.NewRequestWithContext(ctx, "GET", nextURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+		resp, err := sendRequest(req)
+		if err != nil {
+			return nil, err
+		}
+		func() {
+			defer func() { _ = resp.Body.Close() }()
+			body, err := readResponseBody(resp)
+			if err != nil {
+				nextURL = ""
+				return
+			}
+			var or ownedResponse
+			if err := json.Unmarshal(body, &or); err != nil {
+				nextURL = ""
+				return
+			}
+			all = append(all, or.Owned...)
+			nextURL = resolveNext(nextURL, or.Next)
+		}()
+	}
+	return all, nil
+}
+
+func parseOwnedGames(body []byte) ([]int, error) {
+	var response ownedResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		log.Error().Err(err).Msg("Failed to parse response")
 		return nil, err

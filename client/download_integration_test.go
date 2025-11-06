@@ -86,14 +86,15 @@ func TestDownloadGameFiles_SimpleAndResume(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rel := "/redir_to?u=" + url.QueryEscape(server.URL+"/file")
-	game := makeTestGame(rel)
+	fileURL := server.URL + "/file"
+	redir := server.URL + "/redir_to?u=" + url.QueryEscape(fileURL)
+	game := makeTestGame(redir)
 	dir := t.TempDir()
 	pc := &progressCollector{}
 
 	// Simple download without resume
 	supportRange = true
-	err := DownloadGameFiles(context.Background(), "token", game, dir, "English", "windows", false, false, false, true, false, 2, pc)
+	err := DownloadGameFiles(context.Background(), "token", game, dir, "English", "windows", false, false, false, false, false, 2, pc)
 	if err != nil {
 		t.Fatalf("download failed: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestDownloadGameFiles_SimpleAndResume(t *testing.T) {
 	if err := os.WriteFile(filePath, content[:5], 0644); err != nil {
 		t.Fatalf("prepare partial: %v", err)
 	}
-	err = DownloadGameFiles(context.Background(), "token", game, dir, "English", "windows", false, false, true, true, false, 2, pc2)
+	err = DownloadGameFiles(context.Background(), "token", game, dir, "English", "windows", false, false, true, false, false, 2, pc2)
 	if err != nil {
 		t.Fatalf("resume download failed: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestDownloadGameFiles_SimpleAndResume(t *testing.T) {
 		t.Fatalf("prepare partial for ignore-range: %v", err)
 	}
 	pc3 := &progressCollector{}
-	err = DownloadGameFiles(context.Background(), "token", game, dir, "English", "windows", false, false, true, true, false, 1, pc3)
+	err = DownloadGameFiles(context.Background(), "token", game, dir, "English", "windows", false, false, true, false, false, 1, pc3)
 	if err != nil {
 		t.Fatalf("ignore-range resume download failed: %v", err)
 	}

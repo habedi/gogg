@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"sync/atomic"
 
 	"github.com/habedi/gogg/auth"
@@ -10,6 +12,13 @@ import (
 	"github.com/habedi/gogg/pkg/pool"
 	"github.com/rs/zerolog/log"
 )
+
+func embedBase() string {
+	if v := strings.TrimSpace(os.Getenv("GOGG_EMBED_BASE")); v != "" {
+		return v
+	}
+	return "https://embed.gog.com"
+}
 
 // RefreshCatalogue fetches all owned game details from GOG and updates the local database.
 // It reports progress via the progressCb callback, which receives a value from 0.0 to 1.0.
@@ -24,7 +33,8 @@ func RefreshCatalogue(
 		return fmt.Errorf("failed to refresh token: %w", err)
 	}
 
-	gameIDs, err := FetchIdOfOwnedGames(token.AccessToken, "https://embed.gog.com/user/data/games")
+	ownedURL := fmt.Sprintf("%s/user/data/games", embedBase())
+	gameIDs, err := FetchAllOwnedGameIDs(ctx, token.AccessToken, ownedURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch owned game IDs: %w", err)
 	}
@@ -53,7 +63,7 @@ func RefreshCatalogue(
 			}
 		}()
 
-		url := fmt.Sprintf("https://embed.gog.com/account/gameDetails/%d.json", id)
+		url := fmt.Sprintf("%s/account/gameDetails/%d.json", embedBase(), id)
 		details, raw, fetchErr := FetchGameData(token.AccessToken, url)
 		if fetchErr != nil {
 			log.Warn().Err(fetchErr).Int("gameID", id).Msg("Failed to fetch game details")

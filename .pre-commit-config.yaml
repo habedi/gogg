@@ -30,3 +30,18 @@ repos:
         entry: make test
         language: system
         pass_filenames: false
+
+      - id: test-integration
+        name: Run integration tests (tagged)
+        entry: make test-integration
+        language: system
+        pass_filenames: false
+        stages: [ pre-push ]
+        verbose: true
+
+      - id: fuzz-seed
+        name: Run short fuzz tests
+        entry: make fuzz-seed
+        language: system
+        pass_filenames: false
+        stages: [ manual ]

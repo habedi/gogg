@@ -52,6 +52,8 @@ jobs:
       - name: Run Tests and Generate Coverage Report
         run: |
           make test
+          make test-integration
+          make test-fuzz
 
       - name: Upload Coverage Reports to Codecov
         uses: codecov/codecov-action@v5
