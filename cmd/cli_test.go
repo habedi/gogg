@@ -27,7 +27,8 @@ func (m *mockAuthRefresher) PerformTokenRefresh(refreshToken string) (string, st
 func TestCreateRootCmd(t *testing.T) {
 	authService := auth.NewService(&mockAuthStorer{}, &mockAuthRefresher{})
 	gogClient := &client.GogClient{}
-	rootCmd := createRootCmd(authService, gogClient)
+	gameRepo := db.NewGameRepository(db.GetDB())
+	rootCmd := createRootCmd(authService, gogClient, gameRepo)
 
 	if rootCmd.Use != "gogg" {
 		t.Errorf("expected root command use to be 'gogg', got: %s", rootCmd.Use)
@@ -56,7 +57,8 @@ func TestExecuteFailure(t *testing.T) {
 	if os.Getenv("TEST_EXECUTE_FAILURE") == "1" {
 		authService := auth.NewService(&mockAuthStorer{}, &mockAuthRefresher{})
 		gogClient := &client.GogClient{}
-		rootCmd := createRootCmd(authService, gogClient)
+		gameRepo := db.NewGameRepository(db.GetDB())
+		rootCmd := createRootCmd(authService, gogClient, gameRepo)
 		rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
 			return errors.New("dummy failure")
 		}

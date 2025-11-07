@@ -20,34 +20,34 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func catalogueCmd(authService *auth.Service) *cobra.Command {
+func catalogueCmd(authService *auth.Service, gameRepo db.GameRepository) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "catalogue",
 		Short: "Manage the game catalogue",
 		Long:  "Manage the game catalogue by listing and searching for games, etc.",
 	}
 	cmd.AddCommand(
-		listCmd(),
-		searchCmd(),
-		infoCmd(),
+		listCmd(gameRepo),
+		searchCmd(gameRepo),
+		infoCmd(gameRepo),
 		refreshCmd(authService),
-		exportCmd(),
+		exportCmd(gameRepo),
 	)
 	return cmd
 }
 
-func listCmd() *cobra.Command {
+func listCmd(repo db.GameRepository) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "Show the list of games in the catalogue",
 		Long:  "Show the list of all games in the catalogue in a tabular format",
-		Run:   listGames,
+		Run:   func(cmd *cobra.Command, args []string) { listGames(cmd, repo) },
 	}
 }
 
-func listGames(cmd *cobra.Command, args []string) {
+func listGames(cmd *cobra.Command, repo db.GameRepository) {
 	log.Info().Msg("Listing all games in the catalogue...")
-	games, err := db.GetCatalogue()
+	games, err := repo.List(context.Background())
 	if err != nil {
 		cmd.PrintErrln("Error: Unable to list games. Please check the logs for details.")
 		log.Error().Err(err).Msg("Failed to fetch games from the game catalogue.")
@@ -76,7 +76,7 @@ func listGames(cmd *cobra.Command, args []string) {
 	log.Info().Msgf("Successfully listed %d games in the catalogue.", len(games))
 }
 
-func infoCmd() *cobra.Command {
+func infoCmd(repo db.GameRepository) *cobra.Command {
 	var updatesOnly bool
 	cmd := &cobra.Command{
 		Use:   "info [gameID]",
@@ -93,20 +93,21 @@ func infoCmd() *cobra.Command {
 				cmd.PrintErrln("Error:", err)
 				return
 			}
-			showGameInfo(cmd, gameID, updatesOnly)
+			showGameInfo(cmd, repo, gameID, updatesOnly)
 		},
 	}
 	cmd.Flags().BoolVar(&updatesOnly, "updates", false, "Show a concise list of downloadable files and their versions")
 	return cmd
 }
 
-func showGameInfo(cmd *cobra.Command, gameID int, updatesOnly bool) {
+func showGameInfo(cmd *cobra.Command, repo db.GameRepository, gameID int, updatesOnly bool) {
 	if gameID == 0 {
 		cmd.PrintErrln("Error: ID of the game is required to fetch information.")
 		return
 	}
 	log.Info().Msgf("Fetching info for game with ID=%d", gameID)
-	game, err := db.GetGameByID(gameID)
+	ctx := context.Background()
+	game, err := repo.GetByID(ctx, gameID)
 	if err != nil {
 		log.Error().Err(err).Msgf("Failed to fetch info for game with ID=%d", gameID)
 		cmd.PrintErrln("Error:", err)
@@ -227,26 +228,24 @@ func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads 
 	cmd.Println("Refreshed the game catalogue successfully.")
 }
 
-func searchCmd() *cobra.Command {
+func searchCmd(repo db.GameRepository) *cobra.Command {
 	var searchByIDFlag bool
 	cmd := &cobra.Command{
 		Use:   "search [query]",
 		Short: "Search for games in the catalogue",
 		Long:  "Search for games in the catalogue given a query string, which can be a term in the title or a game ID",
 		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			query := args[0]
-			searchGames(cmd, query, searchByIDFlag)
-		},
+		Run:   func(cmd *cobra.Command, args []string) { searchGames(cmd, repo, args[0], searchByIDFlag) },
 	}
 	cmd.Flags().BoolVarP(&searchByIDFlag, "id", "i", false,
 		"Search by game ID instead of title?")
 	return cmd
 }
 
-func searchGames(cmd *cobra.Command, query string, searchByID bool) {
+func searchGames(cmd *cobra.Command, repo db.GameRepository, query string, searchByID bool) {
 	var games []db.Game
 	var err error
+	ctx := context.Background()
 	if searchByID {
 		gameID, err := strconv.Atoi(query)
 		if err != nil {
@@ -254,7 +253,7 @@ func searchGames(cmd *cobra.Command, query string, searchByID bool) {
 			return
 		}
 		log.Info().Msgf("Searching for game with ID=%d", gameID)
-		game, err := db.GetGameByID(gameID)
+		game, err := repo.GetByID(ctx, gameID)
 		if err != nil {
 			log.Error().Err(err).Msgf("Failed to fetch game with ID=%d", gameID)
 			cmd.PrintErrln("Error:", err)
@@ -265,7 +264,7 @@ func searchGames(cmd *cobra.Command, query string, searchByID bool) {
 		}
 	} else {
 		log.Info().Msgf("Searching for games with term=%s in their title", query)
-		games, err = db.SearchGamesByName(query)
+		games, err = repo.SearchByTitle(ctx, query)
 		if err != nil {
 			log.Error().Err(err).Msgf("Failed to search games with term=%s in their title",
 				query)
@@ -294,25 +293,32 @@ func searchGames(cmd *cobra.Command, query string, searchByID bool) {
 	table.Render()
 }
 
-func exportCmd() *cobra.Command {
+func exportCmd(repo db.GameRepository) *cobra.Command {
 	var exportFormat string
 	cmd := &cobra.Command{
 		Use:   "export [exportDir]",
 		Short: "Export the game catalogue to a file",
 		Long:  "Export the game catalogue to a file in the specified path in the specified format",
 		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			exportPath := args[0]
-			exportCatalogue(cmd, exportPath, exportFormat)
-		},
+		Run:   func(cmd *cobra.Command, args []string) { exportCatalogue(cmd, repo, args[0], exportFormat) },
 	}
 	cmd.Flags().StringVarP(&exportFormat, "format", "f", "csv",
 		"Format of the exported file [csv, json]")
 	return cmd
 }
 
-func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
+func exportCatalogue(cmd *cobra.Command, repo db.GameRepository, exportPath, exportFormat string) {
 	log.Info().Msg("Exporting the game catalogue...")
+	ctx := context.Background()
+	games, err := repo.List(ctx)
+	if err != nil {
+		cmd.PrintErrln("Error: Failed to list games from the repository.")
+		log.Error().Err(err).Msg("Failed to list games from the repository")
+		return
+	} else if len(games) == 0 {
+		cmd.Println("No games found to export. Did you refresh the catalogue?")
+		return
+	}
 	switch exportFormat {
 	case "json", "csv":
 	default:
@@ -329,28 +335,22 @@ func exportCatalogue(cmd *cobra.Command, exportPath, exportFormat string) {
 		fileName = fmt.Sprintf("gogg_catalogue_%s.csv", timestamp)
 	}
 	filePath := filepath.Join(exportPath, fileName)
-	var err error
+	var writeErr error
 	switch exportFormat {
 	case "json":
-		err = exportCatalogueToJSON(filePath)
+		writeErr = exportCatalogueToJSON(filePath, games)
 	case "csv":
-		err = exportCatalogueToCSV(filePath)
+		writeErr = exportCatalogueToCSV(filePath, games)
 	}
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to export the game catalogue.")
+	if writeErr != nil {
+		log.Error().Err(writeErr).Msg("Failed to export the game catalogue.")
 		cmd.PrintErrln("Error: Failed to export the game catalogue.")
 		return
 	}
 	cmd.Printf("Game catalogue exported successfully to: \"%s\"\n", filePath)
 }
 
-func exportCatalogueToCSV(path string) error {
-	games, err := db.GetCatalogue()
-	if err != nil {
-		return err
-	} else if len(games) == 0 {
-		fmt.Println("No games found to export. Did you refresh the catalogue?")
-	}
+func exportCatalogueToCSV(path string, games []db.Game) error {
 	if err := ensurePathExists(path); err != nil {
 		return err
 	}
@@ -359,7 +359,11 @@ func exportCatalogueToCSV(path string) error {
 		log.Error().Err(err).Msgf("Failed to create CSV file %s", path)
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			log.Error().Err(cerr).Msgf("Failed to close CSV file %s", path)
+		}
+	}()
 	if _, err := fmt.Fprintln(file, "ID,Title"); err != nil {
 		log.Error().Err(err).Msg("Failed to write CSV header to file")
 		return err
@@ -374,14 +378,7 @@ func exportCatalogueToCSV(path string) error {
 	return nil
 }
 
-func exportCatalogueToJSON(path string) error {
-	games, err := db.GetCatalogue()
-	if err != nil {
-		return err
-	} else if len(games) == 0 {
-		fmt.Println("No games found to export. Did you refresh the catalogue?")
-		return nil
-	}
+func exportCatalogueToJSON(path string, games []db.Game) error {
 	if err := ensurePathExists(path); err != nil {
 		return err
 	}
@@ -391,7 +388,11 @@ func exportCatalogueToJSON(path string) error {
 			log.Error().Err(err).Msgf("Failed to create JSON file %s", path)
 			return err
 		}
-		defer file.Close()
+		defer func() {
+			if cerr := file.Close(); cerr != nil {
+				log.Error().Err(cerr).Msgf("Failed to close JSON file %s", path)
+			}
+		}()
 		if err := json.NewEncoder(file).Encode(games); err != nil {
 			log.Error().Err(err).Msg("Failed to write games to JSON file")
 			return err

@@ -20,8 +20,9 @@ func Execute() {
 	}
 
 	authService := auth.NewService(tokenStore, gogClient)
+	gameRepo := db.NewGameRepository(db.GetDB())
 
-	rootCmd := createRootCmd(authService, gogClient)
+	rootCmd := createRootCmd(authService, gogClient, gameRepo)
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show help for a command")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -30,14 +31,14 @@ func Execute() {
 	}
 }
 
-func createRootCmd(authService *auth.Service, gogClient *client.GogClient) *cobra.Command {
+func createRootCmd(authService *auth.Service, gogClient *client.GogClient, gameRepo db.GameRepository) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "gogg",
 		Short: "A Downloader for GOG",
 	}
 
 	rootCmd.AddCommand(
-		catalogueCmd(authService),
+		catalogueCmd(authService, gameRepo),
 		downloadCmd(authService),
 		versionCmd(),
 		loginCmd(gogClient),
