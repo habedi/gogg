@@ -16,6 +16,7 @@ import (
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/validation"
 	"github.com/rs/zerolog/log"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
@@ -63,6 +64,7 @@ func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
 				)
 				cw.fileProgress = make(map[string]struct{ current, total int64 })
 				cw.fileBytes = make(map[string]int64)
+				cw.downloadedBytes = 0
 			case "file_progress":
 				if cw.bar != nil {
 					diff := update.CurrentBytes - cw.fileBytes[update.FileName]
@@ -128,6 +130,10 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				cmd.PrintErrln("Error: Invalid game ID. It must be a positive integer.")
 				return
 			}
+			if err := validation.ValidateGameID(gameID); err != nil {
+				cmd.PrintErrln("Error:", err)
+				return
+			}
 			downloadDir := args[1]
 			executeDownload(authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 		},
@@ -149,8 +155,13 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
-	if numThreads < 1 || numThreads > 20 {
-		fmt.Println("Number of threads must be between 1 and 20.")
+	if err := validation.ValidateThreadCount(numThreads); err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	if err := validation.ValidatePlatform(platformName); err != nil {
+		fmt.Println("Error:", err)
 		return
 	}
 

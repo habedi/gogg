@@ -67,15 +67,17 @@ func GenerateHashes(ctx context.Context, files []string, algo string, numThreads
 				default:
 				}
 
-				file, err := os.Open(filePath)
-				if err != nil {
-					results <- HashResult{File: filePath, Err: err}
-					continue
-				}
+				func() {
+					file, err := os.Open(filePath)
+					if err != nil {
+						results <- HashResult{File: filePath, Err: err}
+						return
+					}
+					defer file.Close()
 
-				hash, err := hasher.GenerateHashFromReader(file, algo)
-				file.Close() // Close the file handle
-				results <- HashResult{File: filePath, Hash: hash, Err: err}
+					hash, err := hasher.GenerateHashFromReader(file, algo)
+					results <- HashResult{File: filePath, Hash: hash, Err: err}
+				}()
 			}
 		}()
 	}

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,7 +14,7 @@ func TestFetchIdOfOwnedGames_ParsesArray(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ids, err := FetchIdOfOwnedGames("token", server.URL)
+	ids, err := FetchIdOfOwnedGames(context.Background(), "token", server.URL)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -23,7 +24,7 @@ func TestFetchIdOfOwnedGames_ParsesArray(t *testing.T) {
 }
 
 func TestCreateRequest_AddsAuthHeader(t *testing.T) {
-	req, err := createRequest("GET", "http://example.com", "abc")
+	req, err := createRequest(context.Background(), "GET", "http://example.com", "abc")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -65,15 +65,18 @@ func (pr *progressReader) Write(p []byte) (int, error) {
 func (pr *progressReader) Read(p []byte) (int, error) {
 	n, err := pr.reader.Read(p)
 	if n > 0 {
+		pr.updateLock.Lock()
 		pr.bytesRead += int64(n)
+		currentBytes := pr.bytesRead
+		pr.updateLock.Unlock()
+
 		update := ProgressUpdate{
 			Type:         "file_progress",
 			FileName:     pr.fileName,
-			CurrentBytes: pr.bytesRead,
+			CurrentBytes: currentBytes,
 			TotalBytes:   pr.totalSize,
 		}
 		jsonUpdate, _ := json.Marshal(update)
-		// Add a newline to delimit JSON objects for the decoder
 		_, _ = pr.Write(append(jsonUpdate, '\n'))
 	}
 	return n, err

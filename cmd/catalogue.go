@@ -13,6 +13,7 @@ import (
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/validation"
 	"github.com/olekukonko/tablewriter"
 	"github.com/rs/zerolog/log"
 	"github.com/schollz/progressbar/v3"
@@ -86,6 +87,10 @@ func infoCmd() *cobra.Command {
 			gameID, err := strconv.Atoi(args[0])
 			if err != nil {
 				cmd.PrintErrln("Error: Invalid game ID. It must be a number.")
+				return
+			}
+			if err := validation.ValidateGameID(gameID); err != nil {
+				cmd.PrintErrln("Error:", err)
 				return
 			}
 			showGameInfo(cmd, gameID, updatesOnly)
@@ -194,8 +199,8 @@ func refreshCmd(authService *auth.Service) *cobra.Command {
 
 func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads int) {
 	log.Info().Msg("Refreshing the game catalogue...")
-	if numThreads < 1 || numThreads > 20 {
-		cmd.PrintErrln("Error: Number of threads should be between 1 and 20.")
+	if err := validation.ValidateThreadCount(numThreads); err != nil {
+		cmd.PrintErrln("Error:", err)
 		return
 	}
 

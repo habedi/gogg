@@ -9,6 +9,7 @@ import (
 
 	"github.com/habedi/gogg/pkg/hasher"
 	"github.com/habedi/gogg/pkg/operations"
+	"github.com/habedi/gogg/pkg/validation"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -35,6 +36,11 @@ func hashCmd() *cobra.Command {
 			dir := args[0]
 			if !hasher.IsValidHashAlgo(algo) {
 				log.Error().Msgf("Unsupported hash algorithm: %s", algo)
+				return
+			}
+
+			if err := validation.ValidateThreadCount(numThreads); err != nil {
+				cmd.PrintErrln("Error:", err)
 				return
 			}
 
@@ -108,7 +114,12 @@ func sizeCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			gameID, err := strconv.Atoi(args[0])
 			if err != nil {
-				log.Fatal().Err(err).Msgf("Invalid game ID: %s", args[0])
+				cmd.PrintErrln("Error: Invalid game ID. It must be a positive integer.")
+				return
+			}
+
+			if err := validation.ValidateGameID(gameID); err != nil {
+				cmd.PrintErrln("Error:", err)
 				return
 			}
 

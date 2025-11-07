@@ -167,6 +167,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 		func() fyne.CanvasObject {
 			title := widget.NewLabel("Game Title")
 			title.TextStyle = fyne.TextStyle{Bold: true}
+			title.Truncation = fyne.TextTruncateEllipsis
 
 			actionBtn := widget.NewButtonWithIcon("Action", theme.CancelIcon(), nil)
 			clearBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
@@ -179,15 +180,44 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			status.Wrapping = fyne.TextWrapWord
 			details := widget.NewLabel("Details")
 			details.TextStyle = fyne.TextStyle{Italic: true}
+			details.Wrapping = fyne.TextWrapWord
 			progress := widget.NewProgressBar()
+
 			fileStatus := widget.NewLabel("")
 			fileStatus.TextStyle = fyne.TextStyle{Monospace: true}
-			fileStatus.Wrapping = fyne.TextWrapWord
+			fileStatus.Wrapping = fyne.TextWrapOff
+			fileStatus.Truncation = fyne.TextTruncateClip
+
+			// Wrap fileStatus in a scroll container with fixed max height
+			fileStatusScroll := container.NewVScroll(fileStatus)
+			fileStatusScroll.SetMinSize(fyne.NewSize(0, 60))
 
 			progressBox := container.NewVBox(details, progress)
-			content := container.NewVBox(topRow, status, progressBox, fileStatus)
+			separator := widget.NewSeparator()
 
-			return widget.NewCard("", "", content)
+			// Add padding between sections
+			paddedFileStatus := container.NewPadded(fileStatusScroll)
+
+			content := container.NewVBox(
+				topRow,
+				widget.NewSeparator(),
+				status,
+				progressBox,
+				paddedFileStatus,
+			)
+
+			// Add padding inside the card
+			paddedContent := container.NewPadded(content)
+			card := widget.NewCard("", "", paddedContent)
+
+			// Add extra padding and separator between cards
+			cardWithSeparator := container.NewVBox(
+				card,
+				separator,
+				layout.NewSpacer(),
+			)
+
+			return cardWithSeparator
 		},
 		func(item binding.DataItem, obj fyne.CanvasObject) {
 			taskRaw, err := item.(binding.Untyped).Get()
@@ -196,20 +226,30 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			}
 			task := taskRaw.(*DownloadTask)
 
-			card := obj.(*widget.Card)
-			contentVBox := card.Content.(*fyne.Container)
-			topRow := contentVBox.Objects[0].(*fyne.Container)
-			actionBox := topRow.Objects[1].(*fyne.Container)
+			// Navigate: cardWithSeparator -> card -> paddedContent -> content
+			cardWithSeparator := obj.(*fyne.Container)
+			card := cardWithSeparator.Objects[0].(*widget.Card)
+			paddedContent := card.Content.(*fyne.Container)
+			contentVBox := paddedContent.Objects[0].(*fyne.Container)
 
+			// Extract elements from new structure
+			topRow := contentVBox.Objects[0].(*fyne.Container)
+			// Objects[1] is separator
+			status := contentVBox.Objects[2].(*widget.Label)
+			progressBox := contentVBox.Objects[3].(*fyne.Container)
+			paddedFileStatus := contentVBox.Objects[4].(*fyne.Container)
+
+			actionBox := topRow.Objects[1].(*fyne.Container)
 			title := topRow.Objects[0].(*widget.Label)
 			actionBtn := actionBox.Objects[0].(*widget.Button)
 			clearBtn := actionBox.Objects[1].(*widget.Button)
 
-			status := contentVBox.Objects[1].(*widget.Label)
-			progressBox := contentVBox.Objects[2].(*fyne.Container)
 			details := progressBox.Objects[0].(*widget.Label)
 			progress := progressBox.Objects[1].(*widget.ProgressBar)
-			fileStatus := contentVBox.Objects[3].(*widget.Label)
+
+			// Navigate to fileStatus: paddedFileStatus -> scroll -> label
+			fileStatusScroll := paddedFileStatus.Objects[0].(*container.Scroll)
+			fileStatus := fileStatusScroll.Content.(*widget.Label)
 
 			title.SetText(task.Title)
 			status.Bind(task.Status)

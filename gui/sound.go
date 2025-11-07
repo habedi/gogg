@@ -2,6 +2,7 @@ package gui
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
 	"io"
@@ -24,15 +25,17 @@ import (
 var defaultDingSound []byte
 
 var (
-	speakerOnce sync.Once
-	mixer       *beep.Mixer
-	sampleRate  beep.SampleRate
+	speakerOnce     sync.Once
+	mixer           *beep.Mixer
+	sampleRate      beep.SampleRate
+	currentSound    context.CancelFunc
+	currentSoundMux sync.Mutex
+	soundPlaying    bool
 )
 
 func initSpeaker(sr beep.SampleRate) {
 	speakerOnce.Do(func() {
 		sampleRate = sr
-		// The buffer size should be large enough to avoid under-runs.
 		bufferSize := sr.N(time.Second / 10)
 		if err := speaker.Init(sampleRate, bufferSize); err != nil {
 			log.Error().Err(err).Msg("Failed to initialize speaker")
@@ -43,23 +46,80 @@ func initSpeaker(sr beep.SampleRate) {
 	})
 }
 
+func validateAudioFile(filePath string) error {
+	if filePath == "" {
+		return fmt.Errorf("empty file path")
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("cannot access file: %w", err)
+	}
+
+	if info.IsDir() {
+		return fmt.Errorf("path is a directory, not a file")
+	}
+
+	if info.Size() == 0 {
+		return fmt.Errorf("file is empty")
+	}
+
+	if info.Size() > 50*1024*1024 {
+		return fmt.Errorf("file is too large (>50MB), please use a shorter audio clip")
+	}
+
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if ext != ".mp3" && ext != ".wav" && ext != ".ogg" {
+		return fmt.Errorf("unsupported file format: %s (supported: .mp3, .wav, .ogg)", ext)
+	}
+
+	return nil
+}
+
 func PlayNotificationSound() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Interface("panic", r).Msg("Recovered from panic in PlayNotificationSound")
+		}
+	}()
+
 	a := fyne.CurrentApp()
 	if !a.Preferences().BoolWithFallback("soundEnabled", true) {
 		return
 	}
+
+	currentSoundMux.Lock()
+	if currentSound != nil && soundPlaying {
+		currentSound()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	currentSound = cancel
+	soundPlaying = true
+	currentSoundMux.Unlock()
+
+	defer func() {
+		currentSoundMux.Lock()
+		soundPlaying = false
+		currentSound = nil
+		currentSoundMux.Unlock()
+	}()
 
 	filePath := a.Preferences().String("soundFilePath")
 	var reader io.ReadCloser
 	isDefault := false
 
 	if filePath != "" {
-		f, err := os.Open(filePath)
-		if err != nil {
-			log.Error().Err(err).Str("path", filePath).Msg("Failed to open custom sound file, falling back to default")
+		if err := validateAudioFile(filePath); err != nil {
+			log.Error().Err(err).Str("path", filePath).Msg("Invalid custom sound file, falling back to default")
 			isDefault = true
 		} else {
-			reader = f
+			f, err := os.Open(filePath)
+			if err != nil {
+				log.Error().Err(err).Str("path", filePath).Msg("Failed to open custom sound file, falling back to default")
+				isDefault = true
+			} else {
+				reader = f
+			}
 		}
 	} else {
 		isDefault = true
@@ -71,9 +131,13 @@ func PlayNotificationSound() {
 			return
 		}
 		reader = io.NopCloser(bytes.NewReader(defaultDingSound))
-		filePath = ".mp3" // Pretend it's an mp3 for the decoder switch
+		filePath = ".mp3"
 	}
-	defer reader.Close()
+	defer func() {
+		if err := reader.Close(); err != nil {
+			log.Debug().Err(err).Msg("Failed to close audio reader")
+		}
+	}()
 
 	var streamer beep.StreamSeekCloser
 	var format beep.Format
@@ -91,22 +155,32 @@ func PlayNotificationSound() {
 	}
 
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to decode audio stream")
+		log.Error().Err(err).Str("path", filePath).Msg("Failed to decode audio stream - file may be corrupted or invalid")
 		return
 	}
+	defer func() {
+		if err := streamer.Close(); err != nil {
+			log.Debug().Err(err).Msg("Failed to close audio streamer")
+		}
+	}()
 
-	// Initialize the speaker with the format of the first sound played.
 	initSpeaker(format.SampleRate)
 
-	// Create a new streamer that is resampled to the mixer's sample rate.
 	resampled := beep.Resample(4, format.SampleRate, sampleRate, streamer)
 
-	// Add the resampled audio to the mixer. The mixer handles playing it.
-	done := make(chan bool)
+	done := make(chan bool, 1)
 	mixer.Add(beep.Seq(resampled, beep.Callback(func() {
-		done <- true
+		select {
+		case done <- true:
+		default:
+		}
 	})))
 
-	// Wait for this specific sound to finish.
-	<-done
+	select {
+	case <-done:
+	case <-ctx.Done():
+		log.Debug().Msg("Sound playback cancelled")
+	case <-time.After(30 * time.Second):
+		log.Warn().Msg("Sound playback timeout - audio file may be too long")
+	}
 }
