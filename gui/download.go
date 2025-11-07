@@ -198,6 +198,8 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 			delete(activeDownloads, game.ID)
 			activeDownloadsMutex.Unlock()
 			dm.PersistHistory()
+			// Attempt to start queued downloads if slots free
+			go dm.startNextIfAvailable()
 		}()
 
 		ctx, cancel := context.WithCancel(context.Background())

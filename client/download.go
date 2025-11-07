@@ -328,9 +328,9 @@ func DownloadGameFiles(
 			defer func() { _ = file.Close() }()
 			startOffset = 0
 		}
-
+		limitedBody := wrapWithGlobalRateLimiter(getResp.Body)
 		progressReader := &progressReader{
-			reader:    getResp.Body,
+			reader:    limitedBody,
 			writer:    sw,
 			fileName:  fileName,
 			totalSize: totalSize,

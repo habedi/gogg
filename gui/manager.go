@@ -14,6 +14,8 @@ import (
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/habedi/gogg/auth"
+	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
 )
 
@@ -52,6 +54,21 @@ type DownloadManager struct {
 	mu          sync.RWMutex
 	Tasks       binding.UntypedList
 	historyPath fyne.URI
+	queue       []queuedDownload
+}
+
+type queuedDownload struct {
+	authService     *auth.Service
+	game            db.Game
+	downloadPath    string
+	language        string
+	platformName    string
+	extrasFlag      bool
+	dlcFlag         bool
+	resumeFlag      bool
+	flattenFlag     bool
+	skipPatchesFlag bool
+	numThreads      int
 }
 
 func NewDownloadManager() *DownloadManager {
@@ -85,7 +102,7 @@ func (dm *DownloadManager) loadHistory() {
 		log.Info().Msg("No download history found or file is not readable.")
 		return
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	bytes, err := io.ReadAll(reader)
 	if err != nil || len(bytes) == 0 {
@@ -152,7 +169,7 @@ func (dm *DownloadManager) PersistHistory() {
 		log.Error().Err(err).Msg("Failed to open history file for writing.")
 		return
 	}
-	defer writer.Close()
+	defer func() { _ = writer.Close() }()
 
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
@@ -319,4 +336,96 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 	bottomBar := container.NewHBox(layout.NewSpacer(), clearAllBtn)
 
 	return container.NewBorder(nil, bottomBar, nil, nil, list)
+}
+
+func (dm *DownloadManager) activeCount() int {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	all, _ := dm.Tasks.Get()
+	c := 0
+	for _, tRaw := range all {
+		t := tRaw.(*DownloadTask)
+		switch t.State {
+		case StateDownloading:
+			c++
+		case StatePreparing:
+			if status, err := t.Status.Get(); err == nil && status == "Queued" {
+				continue
+			}
+			c++
+		case StateCompleted, StateCancelled, StateError:
+			// not active
+		}
+	}
+	return c
+}
+
+func (dm *DownloadManager) maxConcurrent() int {
+	return fyne.CurrentApp().Preferences().IntWithFallback("download.maxConcurrent", 2)
+}
+
+func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
+	// Prevent duplicate active or queued
+	dm.mu.RLock()
+	all, _ := dm.Tasks.Get()
+	for _, tRaw := range all {
+		t := tRaw.(*DownloadTask)
+		if t.ID == q.game.ID && (t.State == StatePreparing || t.State == StateDownloading) {
+			dm.mu.RUnlock()
+			return ErrDownloadInProgress
+		}
+	}
+	dm.mu.RUnlock()
+	if dm.activeCount() < dm.maxConcurrent() {
+		return executeDownload(q.authService, dm, q.game, q.downloadPath, q.language, q.platformName, q.extrasFlag, q.dlcFlag, q.resumeFlag, q.flattenFlag, q.skipPatchesFlag, q.numThreads)
+	}
+	// Enqueue
+	dm.mu.Lock()
+	dm.queue = append(dm.queue, q)
+	// Add placeholder task
+	placeholder := &DownloadTask{
+		ID:         q.game.ID,
+		InstanceID: time.Now(),
+		Title:      q.game.Title,
+		State:      StatePreparing,
+		Status:     binding.NewString(),
+		Details:    binding.NewString(),
+		Progress:   binding.NewFloat(),
+		FileStatus: binding.NewString(),
+	}
+	_ = placeholder.Status.Set("Queued")
+	_ = dm.Tasks.Append(placeholder)
+	dm.mu.Unlock()
+	return nil
+}
+
+func (dm *DownloadManager) startNextIfAvailable() {
+	for {
+		if dm.activeCount() >= dm.maxConcurrent() {
+			return
+		}
+		dm.mu.Lock()
+		if len(dm.queue) == 0 {
+			dm.mu.Unlock()
+			return
+		}
+		next := dm.queue[0]
+		dm.queue = dm.queue[1:]
+		// Remove any queued placeholder for this game
+		all, _ := dm.Tasks.Get()
+		filtered := make([]interface{}, 0, len(all))
+		for _, tRaw := range all {
+			t := tRaw.(*DownloadTask)
+			if t.ID == next.game.ID && t.State == StatePreparing {
+				status, _ := t.Status.Get()
+				if status == "Queued" {
+					continue
+				}
+			}
+			filtered = append(filtered, tRaw)
+		}
+		_ = dm.Tasks.Set(filtered)
+		dm.mu.Unlock()
+		_ = executeDownload(next.authService, dm, next.game, next.downloadPath, next.language, next.platformName, next.extrasFlag, next.dlcFlag, next.resumeFlag, next.flattenFlag, next.skipPatchesFlag, next.numThreads)
+	}
 }
