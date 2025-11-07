@@ -64,6 +64,7 @@ func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
 				)
 				cw.fileProgress = make(map[string]struct{ current, total int64 })
 				cw.fileBytes = make(map[string]int64)
+				cw.downloadedBytes = 0
 			case "file_progress":
 				if cw.bar != nil {
 					diff := update.CurrentBytes - cw.fileBytes[update.FileName]
