@@ -54,7 +54,7 @@ func RefreshCatalogue(
 	totalGames := float64(len(gameIDs))
 
 	workerFunc := func(ctx context.Context, id int) error {
-		// Defer the counter increment to guarantee it runs even if a fetch fails.
+		// Defer the counter-increment to guarantee it runs even if a fetch fails.
 		defer func() {
 			count := processedCount.Add(1)
 			if progressCb != nil {
@@ -64,10 +64,10 @@ func RefreshCatalogue(
 		}()
 
 		url := fmt.Sprintf("%s/account/gameDetails/%d.json", embedBase(), id)
-		details, raw, fetchErr := FetchGameData(token.AccessToken, url)
+		details, raw, fetchErr := FetchGameData(ctx, token.AccessToken, url)
 		if fetchErr != nil {
 			log.Warn().Err(fetchErr).Int("gameID", id).Msg("Failed to fetch game details")
-			return nil // Don't treat as a fatal error for the pool
+			return nil
 		}
 		if details.Title != "" {
 			if err := db.PutInGame(id, details.Title, raw); err != nil {

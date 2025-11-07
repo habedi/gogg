@@ -75,8 +75,8 @@ func parseSizeString(sizeStr string) (int64, error) {
 	return int64(v * mult), nil
 }
 
-func FetchGameData(accessToken string, url string) (Game, string, error) {
-	req, err := createRequest("GET", url, accessToken)
+func FetchGameData(ctx context.Context, accessToken string, url string) (Game, string, error) {
+	req, err := createRequest(ctx, "GET", url, accessToken)
 	if err != nil {
 		return Game{}, "", err
 	}
@@ -85,7 +85,11 @@ func FetchGameData(accessToken string, url string) (Game, string, error) {
 	if err != nil {
 		return Game{}, "", err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Debug().Err(err).Msg("Failed to close response body")
+		}
+	}()
 
 	body, err := readResponseBody(resp)
 	if err != nil {
@@ -100,8 +104,8 @@ func FetchGameData(accessToken string, url string) (Game, string, error) {
 	return game, string(body), nil
 }
 
-func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
-	req, err := createRequest("GET", apiURL, accessToken)
+func FetchIdOfOwnedGames(ctx context.Context, accessToken string, apiURL string) ([]int, error) {
+	req, err := createRequest(ctx, "GET", apiURL, accessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +114,11 @@ func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Debug().Err(err).Msg("Failed to close response body")
+		}
+	}()
 
 	body, err := readResponseBody(resp)
 	if err != nil {
@@ -120,8 +128,8 @@ func FetchIdOfOwnedGames(accessToken string, apiURL string) ([]int, error) {
 	return parseOwnedGames(body)
 }
 
-func createRequest(method, url, accessToken string) (*http.Request, error) {
-	req, err := http.NewRequest(method, url, nil)
+func createRequest(ctx context.Context, method, url, accessToken string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create request")
 		return nil, err

@@ -72,9 +72,9 @@ func GenerateHashes(ctx context.Context, files []string, algo string, numThreads
 					results <- HashResult{File: filePath, Err: err}
 					continue
 				}
+				defer file.Close()
 
 				hash, err := hasher.GenerateHashFromReader(file, algo)
-				file.Close() // Close the file handle
 				results <- HashResult{File: filePath, Hash: hash, Err: err}
 			}
 		}()
