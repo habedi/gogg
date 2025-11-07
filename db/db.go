@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // Database variables
@@ -22,7 +23,10 @@ func init() {
 
 // ConfigurePath determines and sets the database path based on environment variables.
 // It is public to allow for re-evaluation during testing.
-func ConfigurePath() {
+func ConfigurePath() { _ = ConfigurePathErr() }
+
+// ConfigurePathErr is like ConfigurePath but returns an error instead of calling log.Fatal.
+func ConfigurePathErr() error {
 	var baseDir string
 
 	// 1. Check for explicit GOGG_HOME override
@@ -35,12 +39,19 @@ func ConfigurePath() {
 		// 3. Fallback to the default in the user's home directory
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			log.Fatal().Err(err).Msg("Could not determine user home directory")
+			log.Error().Err(err).Msg("Could not determine user home directory; using working directory as fallback")
+			cwd, cwdErr := os.Getwd()
+			if cwdErr != nil {
+				return cwdErr
+			}
+			baseDir = filepath.Join(cwd, ".gogg")
+		} else {
+			baseDir = filepath.Join(homeDir, ".gogg")
 		}
-		baseDir = filepath.Join(homeDir, ".gogg")
 	}
 
 	Path = filepath.Join(baseDir, "games.db")
+	return nil
 }
 
 // InitDB initializes the database and creates the tables if they don't exist.
@@ -105,12 +116,21 @@ func migrateTables() error {
 
 // configureLogger configures the GORM logger based on the environment variable.
 func configureLogger() {
+	if Db == nil {
+		return
+	}
 	if zerolog.GlobalLevel() == zerolog.Disabled {
-		Db.Logger = Db.Logger.LogMode(0) // Silent mode
+		Db.Logger = Db.Logger.LogMode(logger.Silent)
 	} else {
-		Db.Logger = Db.Logger.LogMode(4) // Debug mode
+		Db.Logger = Db.Logger.LogMode(logger.Info)
 	}
 }
+
+// GetDB provides read-only access to the underlying *gorm.DB reference.
+func GetDB() *gorm.DB { return Db }
+
+// Shutdown closes the database ignoring the error (for interrupt handling).
+func Shutdown() { _ = CloseDB() }
 
 // CloseDB closes the database connection.
 // It returns an error if the database connection fails to close.

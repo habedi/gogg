@@ -9,6 +9,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Token represents the persisted auth tokens. Currently, we enforce a single-row table
+// by always upserting record with ID=1.
 type Token struct {
 	ID           uint   `gorm:"primaryKey"`
 	AccessToken  string `json:"access_token,omitempty"`
@@ -17,6 +19,7 @@ type Token struct {
 }
 
 // TokenStore is a concrete implementation of the auth.TokenStorer interface using GORM.
+// Deprecated: prefer using the TokenRepository interface for new code.
 type TokenStore struct{}
 
 func (ts *TokenStore) GetTokenRecord() (*Token, error) {

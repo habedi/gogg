@@ -75,7 +75,7 @@ func NewDownloadManager() *DownloadManager {
 	a := fyne.CurrentApp()
 	historyURI, err := storage.Child(a.Storage().RootURI(), "download_history.json")
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create history file path")
+		log.Error().Err(err).Msg("Failed to create history file path")
 	}
 
 	dm := &DownloadManager{

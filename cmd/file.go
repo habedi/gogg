@@ -132,7 +132,8 @@ func sizeCmd() *cobra.Command {
 
 			totalSizeBytes, gameData, err := operations.EstimateGameSize(gameID, params)
 			if err != nil {
-				log.Fatal().Err(err).Msg("Error estimating storage size")
+				log.Error().Err(err).Msg("Error estimating storage size")
+				cmd.PrintErrln("Error:", err)
 				return
 			}
 
@@ -150,7 +151,8 @@ func sizeCmd() *cobra.Command {
 			case "b":
 				fmt.Printf("Total download size: %d B\n", totalSizeBytes)
 			default:
-				log.Fatal().Msgf("invalid size unit: \"%s\". Unit must be one of [gb, mb, kb, b]", sizeUnit)
+				cmd.PrintErrf("invalid size unit: %q. Unit must be one of [gb, mb, kb, b]\n", sizeUnit)
+				return
 			}
 		},
 	}
