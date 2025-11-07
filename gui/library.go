@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -260,6 +261,306 @@ func clearPersistedUpdateStatus() {
 	persistUpdateStatusCache()
 }
 
+// Tag persistence
+var (
+	tagsFileURI fyne.URI
+	gameTags    = make(map[int][]string)
+)
+
+func initTagsPersistence() {
+	if tagsFileURI != nil {
+		return
+	}
+	root := fyne.CurrentApp().Storage().RootURI()
+	uri, err := storage.Child(root, "tags.json")
+	if err == nil {
+		tagsFileURI = uri
+		loadTags()
+	}
+}
+
+func loadTags() {
+	if tagsFileURI == nil {
+		return
+	}
+	r, err := storage.Reader(tagsFileURI)
+	if err != nil {
+		return
+	}
+	defer r.Close()
+	data, err := io.ReadAll(r)
+	if err != nil || len(data) == 0 {
+		return
+	}
+	var raw map[string][]string
+	if json.Unmarshal(data, &raw) != nil {
+		return
+	}
+	for k, v := range raw {
+		if id, err := strconv.Atoi(k); err == nil {
+			gameTags[id] = dedupStrings(v)
+		}
+	}
+}
+
+func persistTags() {
+	if tagsFileURI == nil {
+		return
+	}
+	w, err := storage.Writer(tagsFileURI)
+	if err != nil {
+		return
+	}
+	defer w.Close()
+	out := make(map[string][]string, len(gameTags))
+	for id, list := range gameTags {
+		out[strconv.Itoa(id)] = dedupStrings(list)
+	}
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func dedupStrings(in []string) []string {
+	m := map[string]struct{}{}
+	out := []string{}
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		ls := strings.ToLower(s)
+		if _, ok := m[ls]; !ok {
+			m[ls] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func addTag(gameID int, tag string) {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return
+	}
+	list := gameTags[gameID]
+	list = append(list, tag)
+	gameTags[gameID] = dedupStrings(list)
+	persistTags()
+}
+
+func removeTag(gameID int, tag string) {
+	list := gameTags[gameID]
+	out := []string{}
+	for _, t := range list {
+		if !strings.EqualFold(t, tag) {
+			out = append(out, t)
+		}
+	}
+	gameTags[gameID] = out
+	persistTags()
+}
+
+// Size cache
+var sizeCache = make(map[int]int64)
+
+func estimateGameSize(game db.Game) int64 {
+	if v, ok := sizeCache[game.ID]; ok {
+		return v
+	}
+	prefs := fyne.CurrentApp().Preferences()
+	lang := prefs.StringWithFallback("downloadForm.language", "en")
+	platform := prefs.StringWithFallback("downloadForm.platform", "windows")
+	extras := prefs.BoolWithFallback("downloadForm.extras", true)
+	dlcs := prefs.BoolWithFallback("downloadForm.dlcs", true)
+	parsed, err := client.ParseGameData(game.Data)
+	if err != nil {
+		sizeCache[game.ID] = 0
+		return 0
+	}
+	sz, err := parsed.EstimateStorageSize(lang, platform, extras, dlcs)
+	if err != nil {
+		sizeCache[game.ID] = 0
+		return 0
+	}
+	sizeCache[game.ID] = sz
+	return sz
+}
+
+// Active filters
+var (
+	filterDownloadedOnly bool
+	filterHasUpdateOnly  bool
+	filterSizeMin        int64
+	filterSizeMax        int64
+	filterTagsAny        []string // match ANY of these tags
+)
+
+func resetFilters() {
+	filterDownloadedOnly = false
+	filterHasUpdateOnly = false
+	filterSizeMin = 0
+	filterSizeMax = 0
+	filterTagsAny = nil
+}
+
+func passesFilters(game db.Game) bool {
+	st, ok := updateStatusCache[game.ID]
+	if filterDownloadedOnly && (!ok || !st.Downloaded) {
+		return false
+	}
+	if filterHasUpdateOnly && (!ok || !st.HasUpdate) {
+		return false
+	}
+	if filterSizeMin > 0 || filterSizeMax > 0 {
+		sz := estimateGameSize(game)
+		if filterSizeMin > 0 && sz < filterSizeMin {
+			return false
+		}
+		if filterSizeMax > 0 && sz > filterSizeMax {
+			return false
+		}
+	}
+	if len(filterTagsAny) > 0 {
+		assign := gameTags[game.ID]
+		match := false
+		for _, want := range filterTagsAny {
+			for _, have := range assign {
+				if strings.EqualFold(want, have) {
+					match = true
+					break
+				}
+			}
+			if match {
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	return true
+}
+
+func parseSizeInput(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	// Accept suffix MB/GB
+	lower := strings.ToLower(s)
+	mult := int64(1)
+	if strings.HasSuffix(lower, "mb") {
+		mult = 1024 * 1024
+		s = strings.TrimSpace(lower[:len(lower)-2])
+	}
+	if strings.HasSuffix(lower, "gb") {
+		mult = 1024 * 1024 * 1024
+		s = strings.TrimSpace(lower[:len(lower)-2])
+	}
+	if strings.HasSuffix(lower, "tb") {
+		mult = 1024 * 1024 * 1024 * 1024
+		s = strings.TrimSpace(lower[:len(lower)-2])
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(math.Round(v * float64(mult)))
+}
+
+// Create filter dialog button (compact UI).
+func newFiltersButton(refresh func()) *widget.Button {
+	var dlg *dialog.CustomDialog
+	btn := widget.NewButtonWithIcon("Filters", theme.SearchIcon(), func() {
+		// Inputs
+		downloadedChk := widget.NewCheck("Downloaded only", func(b bool) { filterDownloadedOnly = b })
+		downloadedChk.SetChecked(filterDownloadedOnly)
+		updateChk := widget.NewCheck("Has update", func(b bool) { filterHasUpdateOnly = b })
+		updateChk.SetChecked(filterHasUpdateOnly)
+		sizeMinEntry := widget.NewEntry()
+		if filterSizeMin > 0 {
+			sizeMinEntry.SetText(fmt.Sprintf("%.2f GB", float64(filterSizeMin)/1024/1024/1024))
+		}
+		sizeMaxEntry := widget.NewEntry()
+		if filterSizeMax > 0 {
+			sizeMaxEntry.SetText(fmt.Sprintf("%.2f GB", float64(filterSizeMax)/1024/1024/1024))
+		}
+		tagsAll := collectAllTags()
+		selectedTags := make(map[string]bool)
+		for _, t := range filterTagsAny {
+			selectedTags[strings.ToLower(t)] = true
+		}
+		tagsList := widget.NewList(
+			func() int { return len(tagsAll) },
+			func() fyne.CanvasObject { return container.NewHBox(widget.NewCheck("", nil), widget.NewLabel("tag")) },
+			func(id widget.ListItemID, obj fyne.CanvasObject) {
+				row := obj.(*fyne.Container)
+				chk := row.Objects[0].(*widget.Check)
+				lbl := row.Objects[1].(*widget.Label)
+				val := tagsAll[id]
+				lbl.SetText(val)
+				chk.SetChecked(selectedTags[strings.ToLower(val)])
+				chk.OnChanged = func(b bool) {
+					if b {
+						selectedTags[strings.ToLower(val)] = true
+					} else {
+						delete(selectedTags, strings.ToLower(val))
+					}
+				}
+			},
+		)
+		applyBtn := widget.NewButtonWithIcon("Apply", theme.ConfirmIcon(), func() {
+			filterSizeMin = parseSizeInput(sizeMinEntry.Text)
+			filterSizeMax = parseSizeInput(sizeMaxEntry.Text)
+			filterTagsAny = []string{}
+			for k := range selectedTags {
+				filterTagsAny = append(filterTagsAny, k)
+			}
+			// restore case from tagsAll
+			mapped := []string{}
+			for _, t := range filterTagsAny {
+				for _, orig := range tagsAll {
+					if strings.EqualFold(orig, t) {
+						mapped = append(mapped, orig)
+						break
+					}
+				}
+			}
+			filterTagsAny = mapped
+			refresh()
+			dlg.Hide()
+		})
+		resetBtn := widget.NewButtonWithIcon("Reset", theme.ViewRefreshIcon(), func() { resetFilters(); refresh(); dlg.Hide() })
+		content := container.NewVBox(
+			widget.NewLabelWithStyle("Filters", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewSeparator(),
+			container.NewGridWithColumns(2, widget.NewLabel("Min Size"), sizeMinEntry, widget.NewLabel("Max Size"), sizeMaxEntry),
+			container.NewGridWithColumns(2, downloadedChk, updateChk),
+			widget.NewLabel("Tags (any):"),
+			container.NewStack(tagsList),
+			container.NewHBox(applyBtn, resetBtn),
+		)
+		dlg = dialog.NewCustom("Library Filters", "Close", content, fyne.CurrentApp().Driver().AllWindows()[0])
+		dlg.Resize(fyne.NewSize(420, 500))
+		dlg.Show()
+	})
+	btn.Importance = widget.MediumImportance
+	return btn
+}
+
+func collectAllTags() []string {
+	set := map[string]struct{}{}
+	for _, list := range gameTags {
+		for _, t := range list {
+			set[t] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for t := range set {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) *libraryTab {
 	token, _ := db.GetTokenRecord()
 	if token == nil {
@@ -315,7 +616,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		_ = gamesListBinding.Set(untypedSlice(displayGames))
 		// Recompute cache only for displayed games for efficiency
 		computeUpdateStatus(dm, displayGames)
-		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(displayGames)))
+		// Apply post-filter pass
+		filtered := []db.Game{}
+		for _, g := range displayGames {
+			if passesFilters(g) {
+				filtered = append(filtered, g)
+			}
+		}
+		_ = gamesListBinding.Set(untypedSlice(filtered))
+		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(filtered)))
 		if searchTerm == "" {
 			clearSearchBtn.Hide()
 		} else {
@@ -449,8 +758,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// Preferences toggles for update detection scope (replaced by compact settings button)
 	prefs := fyne.CurrentApp().Preferences()
 	settingsBtn := newUpdateSettingsButton(prefs, updateDisplayedGames)
+	filtersBtn := newFiltersButton(updateDisplayedGames)
 	// Compact toolbar now
-	toolbar := container.NewHBox(refreshBtn, exportBtn, sortBtn, settingsBtn, layout.NewSpacer(), gameCountLabel)
+	toolbar := container.NewHBox(refreshBtn, exportBtn, sortBtn, settingsBtn, filtersBtn, layout.NewSpacer(), gameCountLabel)
 	leftTopContainer := container.NewVBox(searchEntry, widget.NewSeparator())
 	leftPane := container.NewBorder(leftTopContainer, toolbar, nil, nil, listContent)
 
@@ -459,11 +769,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	detailTitle.TextStyle = fyne.TextStyle{Bold: true}
 
 	accordion := createDetailsAccordion(win, authService, dm, selectedGameBinding)
-	rightPane := container.NewBorder(
-		container.NewVBox(detailTitle, widget.NewSeparator()),
-		nil, nil, nil,
-		accordion,
-	)
+	topBox := container.NewVBox(detailTitle, widget.NewSeparator())
+	rightPane := container.NewBorder(topBox, nil, nil, nil, accordion)
 	accordion.Hide()
 
 	selectedGameBinding.AddListener(binding.NewDataListener(func() {
@@ -471,23 +778,37 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		if gameRaw == nil {
 			accordion.Hide()
 			detailTitle.SetText("Select a game from the list")
+			topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator()}
+			topBox.Refresh()
 			return
 		}
 		game := gameRaw.(db.Game)
 		detailTitle.SetText(game.Title)
 		accordion.Show()
-	}))
 
-	// Removed inline checkboxes; initialization of persistence unchanged
+		// Tag editor
+		currentTags := gameTags[game.ID]
+		chips := container.NewHBox()
+		for _, t := range currentTags {
+			tt := t
+			chip := widget.NewButton(tt, func() { removeTag(game.ID, tt); updateDisplayedGames() })
+			chips.Add(chip)
+		}
+		addEntry := widget.NewEntry()
+		addEntry.SetPlaceHolder("Add tag")
+		addBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), func() { addTag(game.ID, addEntry.Text); addEntry.SetText(""); updateDisplayedGames() })
+		tagBox := container.NewVBox(widget.NewLabel("Tags:"), chips, container.NewHBox(addEntry, addBtn))
+		topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator(), tagBox}
+		topBox.Refresh()
+	}))
+	// Initialize persistence caches once UI is set up
 	initUpdateStatusPersistence()
+	initTagsPersistence()
 	catalogueUpdated.AddListener(binding.NewDataListener(func() {
 		clearPersistedUpdateStatus()
+		sizeCache = make(map[int]int64)
 	}))
-
-	return &libraryTab{
-		content:     container.NewHSplit(leftPane, rightPane),
-		searchEntry: searchEntry,
-	}
+	return &libraryTab{content: container.NewHSplit(leftPane, rightPane), searchEntry: searchEntry}
 }
 
 func untypedSlice(games []db.Game) []interface{} {
@@ -499,66 +820,31 @@ func untypedSlice(games []db.Game) []interface{} {
 }
 
 func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *DownloadManager, selectedGame binding.Untyped) *widget.Accordion {
-	detailsLabel := widget.NewLabel("Game details will appear here.")
-	detailsLabel.Wrapping = fyne.TextWrapWord
-
 	downloadForm := createDownloadForm(win, authService, dm, selectedGame)
-
-	accordion := widget.NewAccordion(
-		widget.NewAccordionItem("Download Options", downloadForm),
-	)
+	accordion := widget.NewAccordion(widget.NewAccordionItem("Download Options", downloadForm))
 	accordion.Open(0)
-
-	selectedGame.AddListener(binding.NewDataListener(func() {
-		gameRaw, _ := selectedGame.Get()
-		if gameRaw == nil {
-			detailsLabel.SetText("Select a game to see its details.")
-			return
-		}
-		game := gameRaw.(db.Game)
-
-		var gameDetails map[string]interface{}
-		if err := json.Unmarshal([]byte(game.Data), &gameDetails); err != nil {
-			detailsLabel.SetText("Error parsing game details.")
-			return
-		}
-
-		desc, ok := gameDetails["description"].(map[string]interface{})
-		if ok {
-			fullDesc, _ := desc["full"].(string)
-			detailsLabel.SetText(fullDesc)
-		} else {
-			detailsLabel.SetText("No description available.")
-		}
-	}))
-
 	return accordion
 }
 
 func createDownloadForm(win fyne.Window, authService *auth.Service, dm *DownloadManager, selectedGame binding.Untyped) fyne.CanvasObject {
 	prefs := fyne.CurrentApp().Preferences()
-
 	downloadPathEntry := widget.NewEntry()
 	lastUsedPath := prefs.String("lastUsedDownloadPath")
 	if lastUsedPath == "" {
 		lastUsedPath = prefs.StringWithFallback("downloadForm.path", "")
 	}
 	downloadPathEntry.SetText(lastUsedPath)
-
-	downloadPathEntry.OnChanged = func(s string) {
-		prefs.SetString("downloadForm.path", s)
-	}
+	downloadPathEntry.OnChanged = func(s string) { prefs.SetString("downloadForm.path", s) }
 	downloadPathEntry.SetPlaceHolder("Enter download path")
-
 	browseBtn := widget.NewButton("Browse...", func() {
-		folderDialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+		fd := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil || uri == nil {
 				return
 			}
 			downloadPathEntry.SetText(uri.Path())
 		}, win)
-		folderDialog.Resize(fyne.NewSize(800, 600))
-		folderDialog.Show()
+		fd.Resize(fyne.NewSize(800, 600))
+		fd.Show()
 	})
 	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, downloadPathEntry)
 
@@ -567,81 +853,47 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		langCodes = append(langCodes, code)
 	}
 	sort.Strings(langCodes)
-	langSelect := widget.NewSelect(langCodes, func(s string) {
-		prefs.SetString("downloadForm.language", s)
-	})
+	langSelect := widget.NewSelect(langCodes, func(s string) { prefs.SetString("downloadForm.language", s) })
 	langSelect.SetSelected(prefs.StringWithFallback("downloadForm.language", "en"))
-
-	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, func(s string) {
-		prefs.SetString("downloadForm.platform", s)
-	})
+	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, func(s string) { prefs.SetString("downloadForm.platform", s) })
 	platformSelect.SetSelected(prefs.StringWithFallback("downloadForm.platform", "windows"))
-
-	threadOptions := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
-	threadsSelect := widget.NewSelect(threadOptions, func(s string) {
-		prefs.SetString("downloadForm.threads", s)
-	})
+	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) { prefs.SetString("downloadForm.threads", s) })
 	threadsSelect.SetSelected(prefs.StringWithFallback("downloadForm.threads", "5"))
 
-	extrasCheck := widget.NewCheck("Include Extras", func(b bool) {
-		prefs.SetBool("downloadForm.extras", b)
-	})
+	extrasCheck := widget.NewCheck("Include Extras", func(b bool) { prefs.SetBool("downloadForm.extras", b) })
 	extrasCheck.SetChecked(prefs.BoolWithFallback("downloadForm.extras", true))
-
-	dlcsCheck := widget.NewCheck("Include DLCs", func(b bool) {
-		prefs.SetBool("downloadForm.dlcs", b)
-	})
+	dlcsCheck := widget.NewCheck("Include DLCs", func(b bool) { prefs.SetBool("downloadForm.dlcs", b) })
 	dlcsCheck.SetChecked(prefs.BoolWithFallback("downloadForm.dlcs", true))
-
-	resumeCheck := widget.NewCheck("Resume Downloads", func(b bool) {
-		prefs.SetBool("downloadForm.resume", b)
-	})
+	resumeCheck := widget.NewCheck("Resume Downloads", func(b bool) { prefs.SetBool("downloadForm.resume", b) })
 	resumeCheck.SetChecked(prefs.BoolWithFallback("downloadForm.resume", true))
-
-	flattenCheck := widget.NewCheck("Flatten Directory", func(b bool) {
-		prefs.SetBool("downloadForm.flatten", b)
-	})
+	flattenCheck := widget.NewCheck("Flatten Directory", func(b bool) { prefs.SetBool("downloadForm.flatten", b) })
 	flattenCheck.SetChecked(prefs.BoolWithFallback("downloadForm.flatten", true))
-
-	skipPatchesCheck := widget.NewCheck("Skip Patches", func(b bool) {
-		prefs.SetBool("downloadForm.skipPatches", b)
-	})
+	skipPatchesCheck := widget.NewCheck("Skip Patches", func(b bool) { prefs.SetBool("downloadForm.skipPatches", b) })
 	skipPatchesCheck.SetChecked(prefs.BoolWithFallback("downloadForm.skipPatches", true))
 
-	gogdbBtn := widget.NewButtonWithIcon("View on gogdb.org", theme.SearchIcon(), nil)
-	gogdbBtn.OnTapped = func() {
+	gogdbBtn := widget.NewButtonWithIcon("View on gogdb.org", theme.SearchIcon(), func() {
 		gameRaw, _ := selectedGame.Get()
 		if gameRaw == nil {
 			return
 		}
 		game := gameRaw.(db.Game)
-		gogdbURL := fmt.Sprintf("https://www.gogdb.org/product/%d", game.ID)
-		if err := fyne.CurrentApp().OpenURL(parseURL(gogdbURL)); err != nil {
-			dialog.ShowError(fmt.Errorf("failed to open gogdb URL: %w", err), win)
-		}
-	}
+		url := fmt.Sprintf("https://www.gogdb.org/product/%d", game.ID)
+		_ = fyne.CurrentApp().OpenURL(parseURL(url))
+	})
 
-	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), nil)
-	downloadBtn.Importance = widget.HighImportance
-	downloadBtn.OnTapped = func() {
+	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), func() {
 		if downloadPathEntry.Text == "" {
 			showErrorDialog(win, "Download path cannot be empty.", nil)
 			return
 		}
-
 		gameRaw, _ := selectedGame.Get()
+		if gameRaw == nil {
+			return
+		}
 		game := gameRaw.(db.Game)
 		threads, _ := strconv.Atoi(threadsSelect.Selected)
 		langFull := client.GameLanguages[langSelect.Selected]
-
-		err := executeDownload(
-			authService, dm, game,
-			downloadPathEntry.Text, langFull, platformSelect.Selected,
-			extrasCheck.Checked, dlcsCheck.Checked, resumeCheck.Checked,
-			flattenCheck.Checked, skipPatchesCheck.Checked,
-			threads,
-		)
-
+		err := executeDownload(authService, dm, game, downloadPathEntry.Text, langFull, platformSelect.Selected, extrasCheck.Checked, dlcsCheck.Checked, resumeCheck.Checked, flattenCheck.Checked, skipPatchesCheck.Checked, threads)
 		if err != nil {
 			if errors.Is(err, ErrDownloadInProgress) {
 				dialog.ShowInformation("In Progress", "This game is already being downloaded.", win)
@@ -651,7 +903,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		} else {
 			dialog.ShowInformation("Started", fmt.Sprintf("Download for '%s' has started.", game.Title), win)
 		}
-	}
+	})
+	downloadBtn.Importance = widget.HighImportance
 
 	form := widget.NewForm(
 		widget.NewFormItem("Download Path", pathContainer),
@@ -659,14 +912,12 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		widget.NewFormItem("Language", langSelect),
 		widget.NewFormItem("Threads", threadsSelect),
 	)
-
 	checkboxes := container.New(layout.NewGridLayout(3), extrasCheck, dlcsCheck, skipPatchesCheck, resumeCheck, flattenCheck)
-
 	return container.NewVBox(form, checkboxes, layout.NewSpacer(), gogdbBtn, downloadBtn)
 }
 
 func readDownloadInfo(downloadDir string) (language, platform string) {
-	infoPath := downloadDir + string(os.PathSeparator) + "download_info.json"
+	infoPath := filepath.Join(downloadDir, "download_info.json")
 	b, err := os.ReadFile(infoPath)
 	if err != nil {
 		return "", ""
@@ -681,7 +932,6 @@ func readDownloadInfo(downloadDir string) (language, platform string) {
 	return info.Language, info.Platform
 }
 
-// isPatchFile helps exclude patch files when comparing installer versions.
 func isPatchFile(f client.PlatformFile) bool {
 	name := strings.ToLower(f.Name)
 	if f.ManualURL != nil {
@@ -693,7 +943,6 @@ func isPatchFile(f client.PlatformFile) bool {
 	return strings.Contains(name, "patch")
 }
 
-// buildVersionMapExtended optionally includes extras, DLC installers, and optionally patches.
 func buildVersionMapExtended(g client.Game, language, platform string, includeExtras, includeDLCs, includePatches bool) map[string]string {
 	m := make(map[string]string)
 	add := func(prefix, pName string, files []client.PlatformFile) {
@@ -739,14 +988,11 @@ func buildVersionMapExtended(g client.Game, language, platform string, includeEx
 				platforms := []struct {
 					name  string
 					files []client.PlatformFile
-				}{
-					{"windows", dl.Platforms.Windows}, {"mac", dl.Platforms.Mac}, {"linux", dl.Platforms.Linux},
-				}
+				}{{"windows", dl.Platforms.Windows}, {"mac", dl.Platforms.Mac}, {"linux", dl.Platforms.Linux}}
 				for _, pf := range platforms {
-					if !includePlatform(pf.name) {
-						continue
+					if includePlatform(pf.name) {
+						add("dlc:"+client.SanitizePath(dlc.Title)+"|", pf.name, pf.files)
 					}
-					add("dlc:"+client.SanitizePath(dlc.Title)+"|", pf.name, pf.files)
 				}
 			}
 			if includeExtras {
@@ -759,7 +1005,6 @@ func buildVersionMapExtended(g client.Game, language, platform string, includeEx
 	return m
 }
 
-// getGameDownloadDirectory tries history first then scans root path for metadata.json.
 func getGameDownloadDirectory(dm *DownloadManager, game db.Game) (string, bool) {
 	if path, ok := getLastCompletedDownloadDir(dm, game.ID); ok {
 		return path, true
@@ -775,40 +1020,18 @@ func getGameDownloadDirectory(dm *DownloadManager, game db.Game) (string, bool) 
 	return "", false
 }
 
-// newUpdateSettingsButton creates a compact button that opens a dialog with update scope toggles.
 func newUpdateSettingsButton(prefs fyne.Preferences, refresh func()) *widget.Button {
 	btn := widget.NewButtonWithIcon("Update Settings", theme.SettingsIcon(), func() {
-		extrasUpd := widget.NewCheck("Include Extras in update check", func(b bool) {
-			prefs.SetBool("downloadForm.includeExtrasUpdates", b)
-			refresh()
-		})
+		extrasUpd := widget.NewCheck("Include Extras in update check", func(b bool) { prefs.SetBool("downloadForm.includeExtrasUpdates", b); refresh() })
 		extrasUpd.SetChecked(prefs.BoolWithFallback("downloadForm.includeExtrasUpdates", false))
-
-		dlcUpd := widget.NewCheck("Include DLCs in update check", func(b bool) {
-			prefs.SetBool("downloadForm.includeDLCUpdates", b)
-			refresh()
-		})
+		dlcUpd := widget.NewCheck("Include DLCs in update check", func(b bool) { prefs.SetBool("downloadForm.includeDLCUpdates", b); refresh() })
 		dlcUpd.SetChecked(prefs.BoolWithFallback("downloadForm.includeDLCUpdates", false))
-
-		patchUpd := widget.NewCheck("Include patches", func(b bool) {
-			prefs.SetBool("downloadForm.includePatchUpdates", b)
-			refresh()
-		})
+		patchUpd := widget.NewCheck("Include patches", func(b bool) { prefs.SetBool("downloadForm.includePatchUpdates", b); refresh() })
 		patchUpd.SetChecked(prefs.BoolWithFallback("downloadForm.includePatchUpdates", false))
-
-		scanDirs := widget.NewCheck("Scan folders when history missing", func(b bool) {
-			prefs.SetBool("downloadForm.scanDirsForDownloads", b)
-			refresh()
-		})
+		scanDirs := widget.NewCheck("Scan folders when history missing", func(b bool) { prefs.SetBool("downloadForm.scanDirsForDownloads", b); refresh() })
 		scanDirs.SetChecked(prefs.BoolWithFallback("downloadForm.scanDirsForDownloads", true))
-
 		content := container.NewVBox(
-			widget.NewLabelWithStyle("Update Detection Options", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewSeparator(),
-			extrasUpd,
-			dlcUpd,
-			patchUpd,
-			scanDirs,
+			widget.NewLabelWithStyle("Update Detection Options", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewSeparator(), extrasUpd, dlcUpd, patchUpd, scanDirs,
 		)
 		d := dialog.NewCustom("Update Settings", "Close", content, fyne.CurrentApp().Driver().AllWindows()[0])
 		d.Resize(fyne.NewSize(380, 260))
@@ -817,3 +1040,6 @@ func newUpdateSettingsButton(prefs fyne.Preferences, refresh func()) *widget.But
 	btn.Importance = widget.MediumImportance
 	return btn
 }
+
+// FIX tag buttons capture
+// Adjust tag editing to use proper closure - already handled by tt variable

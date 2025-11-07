@@ -316,7 +316,7 @@ func DownloadGameFiles(
 			return fmt.Errorf("failed to download %s: HTTP %d", fileName, getResp.StatusCode)
 		}
 
-		// If server ignored Range and returned 200, make sure we start from the beginning
+		// If the server ignored Range and returned 200, make sure we start from the beginning
 		if requestedRange > 0 && getResp.StatusCode == http.StatusOK {
 			if err := file.Close(); err != nil {
 				return err
