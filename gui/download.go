@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -265,6 +266,29 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		_ = task.Progress.Set(1.0)
 		_ = task.FileStatus.Set("")
 		go PlayNotificationSound()
+		// Persist download info for future update checks.
+		info := struct {
+			Language    string `json:"language"`
+			Platform    string `json:"platform"`
+			Extras      bool   `json:"extras"`
+			DLCs        bool   `json:"dlcs"`
+			SkipPatches bool   `json:"skipPatches"`
+			Flatten     bool   `json:"flatten"`
+			Resume      bool   `json:"resume"`
+			Threads     int    `json:"threads"`
+		}{
+			Language:    language,
+			Platform:    platformName,
+			Extras:      extrasFlag,
+			DLCs:        dlcFlag,
+			SkipPatches: skipPatchesFlag,
+			Flatten:     flattenFlag,
+			Resume:      resumeFlag,
+			Threads:     numThreads,
+		}
+		if data, mErr := json.MarshalIndent(info, "", "  "); mErr == nil {
+			_ = os.WriteFile(filepath.Join(targetDir, "download_info.json"), data, 0644)
+		}
 	}()
 
 	return nil
