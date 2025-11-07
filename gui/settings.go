@@ -1,7 +1,7 @@
 package gui
 
 import (
-	"os"
+	"fmt"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -64,12 +64,12 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		}
 
 		soundPathLabel.SetText(path)
-		if _, err := os.Stat(path); err != nil {
-			soundStatusLabel.SetText("File not found. Using default sound.")
+		if err := validateAudioFile(path); err != nil {
+			soundStatusLabel.SetText(fmt.Sprintf("⚠ %s. Using default.", err.Error()))
 			soundStatusLabel.Show()
 		} else {
-			soundStatusLabel.SetText("")
-			soundStatusLabel.Hide()
+			soundStatusLabel.SetText("✓ Valid audio file")
+			soundStatusLabel.Show()
 		}
 	}
 	validateSoundPath(prefs.String("soundFilePath"))
@@ -84,6 +84,14 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 				return
 			}
 			path := reader.URI().Path()
+
+			if err := validateAudioFile(path); err != nil {
+				errDialog := dialog.NewError(fmt.Errorf("invalid audio file: %w\n\nSupported formats: .mp3, .wav, .ogg\nMax size: 50MB", err), win)
+				errDialog.SetDismissText("OK")
+				errDialog.Show()
+				return
+			}
+
 			prefs.SetString("soundFilePath", path)
 			validateSoundPath(path)
 		}, win)
@@ -98,7 +106,13 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	})
 
 	testSoundBtn := widget.NewButton("Test", func() {
-		validateSoundPath(prefs.String("soundFilePath"))
+		path := prefs.String("soundFilePath")
+		if path != "" {
+			if err := validateAudioFile(path); err != nil {
+				dialog.ShowError(fmt.Errorf("can't play sound: %w", err), win)
+				return
+			}
+		}
 		go PlayNotificationSound()
 	})
 
@@ -106,6 +120,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		widget.NewLabel("Current sound file:"),
 		soundPathLabel,
 		soundStatusLabel,
+		widget.NewLabelWithStyle("Tip: Use short audio clips (2-5 seconds) for best results", fyne.TextAlignLeading, fyne.TextStyle{Italic: true}),
 		container.NewHBox(selectSoundBtn, resetSoundBtn, testSoundBtn),
 	)
 
