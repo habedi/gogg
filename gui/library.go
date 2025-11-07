@@ -311,6 +311,19 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	})
 	skipPatchesCheck.SetChecked(prefs.BoolWithFallback("downloadForm.skipPatches", true))
 
+	gogdbBtn := widget.NewButtonWithIcon("View on gogdb.org", theme.SearchIcon(), nil)
+	gogdbBtn.OnTapped = func() {
+		gameRaw, _ := selectedGame.Get()
+		if gameRaw == nil {
+			return
+		}
+		game := gameRaw.(db.Game)
+		gogdbURL := fmt.Sprintf("https://www.gogdb.org/product/%d", game.ID)
+		if err := fyne.CurrentApp().OpenURL(parseURL(gogdbURL)); err != nil {
+			dialog.ShowError(fmt.Errorf("failed to open gogdb URL: %w", err), win)
+		}
+	}
+
 	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), nil)
 	downloadBtn.Importance = widget.HighImportance
 	downloadBtn.OnTapped = func() {
@@ -352,5 +365,5 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 
 	checkboxes := container.New(layout.NewGridLayout(3), extrasCheck, dlcsCheck, skipPatchesCheck, resumeCheck, flattenCheck)
 
-	return container.NewVBox(form, checkboxes, layout.NewSpacer(), downloadBtn)
+	return container.NewVBox(form, checkboxes, layout.NewSpacer(), gogdbBtn, downloadBtn)
 }

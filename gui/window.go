@@ -36,7 +36,7 @@ func Run(version string, authService *auth.Service) {
 		container.NewTabItemWithIcon("Downloads", theme.DownloadIcon(), DownloadsTabUI(dm)),
 		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
 		container.NewTabItemWithIcon("Settings", theme.SettingsIcon(), SettingsTabUI(myWindow)),
-		container.NewTabItemWithIcon("About", theme.InfoIcon(), ShowAboutUI(version)),
+		container.NewTabItemWithIcon("About", theme.HelpIcon(), ShowAboutUI(version)),
 	)
 
 	mainTabs.OnSelected = func(tab *container.TabItem) {
