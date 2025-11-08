@@ -42,7 +42,11 @@ format: ## Format Go files
 .PHONY: test
 test: format ## Run tests with coverage
 	$(ECHO) "Running all tests with coverage"
-	@$(GO) test -v ./... --cover --coverprofile=$(COVER_PROFILE) --race
+	@if [ "$$(go env GOOS)" = "windows" ] && [ "$$(go env GOARCH)" = "arm64" ]; then \
+		$(GO) test -v ./... --cover --coverprofile=$(COVER_PROFILE); \
+	else \
+		$(GO) test -v ./... --cover --coverprofile=$(COVER_PROFILE) --race; \
+	fi
 
 .PHONY: showcov
 showcov: test ## Display test coverage report

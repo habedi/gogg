@@ -118,12 +118,10 @@ jobs:
 
   build-linux-arm64:
     name: Build Linux Binary (ARM64)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     env:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
-      GOOS: linux
-      GOARCH: arm64
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -135,16 +133,18 @@ jobs:
         with:
           go-version: stable
 
-      - name: Run Tests (skip for cross-compile)
+      - name: Install Dependencies
         run: |
-          echo "Skipping tests for cross-compilation build"
-          echo "Tests run on AMD64 build only"
+          sudo apt-get update
+          make install-deps
 
-      - name: Build Linux ARM64 Binary (Headless)
+      - name: Run Tests
         run: |
-          echo "Building headless ARM64 binary (CLI-only)"
-          echo "ARM64 Linux users can build GUI version locally if needed"
-          make release-headless
+          make test
+
+      - name: Build Linux ARM64 Binary
+        run: |
+          make release
 
       - name: Upload Linux ARM64 Artifact
         uses: actions/upload-artifact@v4
@@ -269,7 +269,7 @@ jobs:
           cd dist/windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ../..
           cd dist/linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ../..
           cd dist/macos && zip -r9 ../gogg-macos-arm64.zip gogg && cd ../..
-          cd dist/linux-arm64 && zip -r9 ../gogg-linux-arm64-cli-only.zip gogg && cd ../..
+          cd dist/linux-arm64 && zip -r9 ../gogg-linux-arm64.zip gogg && cd ../..
           cd dist/windows-arm64 && zip -r9 ../gogg-windows-arm64.zip gogg.exe && cd ../..
 
       - name: List Archives (for debugging)
@@ -288,7 +288,7 @@ jobs:
             dist/gogg-windows-amd64.zip
             dist/gogg-windows-arm64.zip
             dist/gogg-linux-amd64.zip
-            dist/gogg-linux-arm64-cli-only.zip
+            dist/gogg-linux-arm64.zip
             dist/gogg-macos-arm64.zip
           draft: true
           prerelease: false
