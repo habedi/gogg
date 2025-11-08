@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 
 	"github.com/habedi/gogg/auth"
@@ -14,15 +15,25 @@ func Execute() {
 	initializeDatabase()
 	defer closeDatabase()
 
-	tokenStore := &db.TokenStore{}
-	gogClient := &client.GogClient{
-		TokenURL: "https://auth.gog.com/token",
-	}
-
-	authService := auth.NewService(tokenStore, gogClient)
 	gameRepo := db.NewGameRepository(db.GetDB())
+	tokenRepo := db.NewTokenRepository(db.GetDB())
+	gogClient := &client.GogClient{TokenURL: "https://auth.gog.com/token"}
+	authService := auth.NewServiceWithRepo(tokenRepo, gogClient)
 
 	rootCmd := createRootCmd(authService, gogClient, gameRepo)
+	rootCmd.PersistentFlags().DurationP("timeout", "T", 0, "Global timeout for command execution (e.g. 30s, 2m). 0 means no timeout")
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		to, err := cmd.Flags().GetDuration("timeout")
+		if err != nil {
+			return err
+		}
+		ctx := context.Background()
+		if to > 0 {
+			ctx, _ = context.WithTimeout(ctx, to)
+		}
+		cmd.SetContext(ctx)
+		return nil
+	}
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show help for a command")
 
 	if err := rootCmd.Execute(); err != nil {

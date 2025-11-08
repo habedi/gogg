@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,7 +46,7 @@ func listCmd(repo db.GameRepository) *cobra.Command {
 
 func listGames(cmd *cobra.Command, repo db.GameRepository) {
 	log.Info().Msg("Listing all games in the catalogue...")
-	games, err := repo.List(context.Background())
+	games, err := repo.List(cmd.Context())
 	if err != nil {
 		cmd.PrintErrln("Error: Unable to list games. Please check the logs for details.")
 		log.Error().Err(err).Msg("Failed to fetch games from the game catalogue.")
@@ -106,8 +105,7 @@ func showGameInfo(cmd *cobra.Command, repo db.GameRepository, gameID int, update
 		return
 	}
 	log.Info().Msgf("Fetching info for game with ID=%d", gameID)
-	ctx := context.Background()
-	game, err := repo.GetByID(ctx, gameID)
+	game, err := repo.GetByID(cmd.Context(), gameID)
 	if err != nil {
 		log.Error().Err(err).Msgf("Failed to fetch info for game with ID=%d", gameID)
 		cmd.PrintErrln("Error:", err)
@@ -218,7 +216,7 @@ func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads 
 		_ = bar.Set(int(progress * 1000))
 	}
 
-	err := client.RefreshCatalogue(context.Background(), authService, numThreads, progressCb)
+	err := client.RefreshCatalogue(cmd.Context(), authService, numThreads, progressCb)
 	if err != nil {
 		cmd.PrintErrln("Error: Failed to refresh catalogue. Please check the logs for details.")
 		log.Error().Err(err).Msg("Failed to refresh the game catalogue")
@@ -245,7 +243,7 @@ func searchCmd(repo db.GameRepository) *cobra.Command {
 func searchGames(cmd *cobra.Command, repo db.GameRepository, query string, searchByID bool) {
 	var games []db.Game
 	var err error
-	ctx := context.Background()
+	ctx := cmd.Context()
 	if searchByID {
 		gameID, err := strconv.Atoi(query)
 		if err != nil {
@@ -309,7 +307,7 @@ func exportCmd(repo db.GameRepository) *cobra.Command {
 
 func exportCatalogue(cmd *cobra.Command, repo db.GameRepository, exportPath, exportFormat string) {
 	log.Info().Msg("Exporting the game catalogue...")
-	ctx := context.Background()
+	ctx := cmd.Context()
 	games, err := repo.List(ctx)
 	if err != nil {
 		cmd.PrintErrln("Error: Failed to list games from the repository.")

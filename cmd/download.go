@@ -135,7 +135,8 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				return
 			}
 			downloadDir := args[1]
-			executeDownload(authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
+			ctx := cmd.Context()
+			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 		},
 	}
 
@@ -151,7 +152,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	return cmd
 }
 
-func executeDownload(authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
+func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
@@ -196,7 +197,8 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 		}
 	}
 
-	game, err := db.GetGameByID(gameID)
+	gameRepo := db.NewGameRepository(db.GetDB())
+	game, err := gameRepo.GetByID(ctx, gameID)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get game by ID.")
 		fmt.Println("Error retrieving game from local catalogue.")
@@ -216,7 +218,6 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 
 	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
-	ctx := context.Background()
 	progressWriter := &cliProgressWriter{}
 
 	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)

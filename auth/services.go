@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -20,6 +21,12 @@ func NewService(storer TokenStorer, refresher TokenRefresher) *Service {
 		Storer:    storer,
 		Refresher: refresher,
 	}
+}
+
+// NewServiceWithRepo constructs Service using a TokenRepository directly.
+func NewServiceWithRepo(tokenRepo db.TokenRepository, refresher TokenRefresher) *Service {
+	adapter := &struct{ TokenStorer }{TokenStorer: &tokenRepoStorer{repo: tokenRepo}}
+	return NewService(adapter.TokenStorer, refresher)
 }
 
 // RefreshToken is a method that handles the full token refresh logic.
@@ -68,4 +75,14 @@ func isTokenValid(token *db.Token) (bool, error) {
 		return false, err
 	}
 	return time.Now().Add(5 * time.Minute).Before(expiresAt), nil
+}
+
+// tokenRepoStorer adapts db.TokenRepository to TokenStorer.
+type tokenRepoStorer struct{ repo db.TokenRepository }
+
+func (s *tokenRepoStorer) GetTokenRecord() (*db.Token, error) {
+	return s.repo.Get(context.Background())
+}
+func (s *tokenRepoStorer) UpsertTokenRecord(token *db.Token) error {
+	return s.repo.Upsert(context.Background(), token)
 }
