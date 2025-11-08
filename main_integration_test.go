@@ -46,6 +46,10 @@ func TestTimeoutContext(t *testing.T) {
 
 // TestGracefulInterrupt runs the binary and sends SIGINT, expecting it to exit promptly.
 func TestGracefulInterrupt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping interrupt test on Windows - os.Interrupt signal not supported")
+	}
+
 	bin := buildTestBinary(t)
 	cmd := exec.Command(bin, "catalogue", "list")
 	if err := cmd.Start(); err != nil {
