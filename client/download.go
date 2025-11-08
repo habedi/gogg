@@ -150,7 +150,7 @@ func DownloadGameFiles(
 	ctx context.Context,
 	accessToken string, game Game, downloadPath string,
 	gameLanguage string, platformName string, extrasFlag bool, dlcFlag bool, resumeFlag bool,
-	flattenFlag bool, skipPatchesFlag bool, numThreads int,
+	flattenFlag bool, skipPatchesFlag bool, rommLayout bool, numThreads int,
 	updateWriter io.Writer,
 ) error {
 	// This transport is configured for large file downloads. It has connection
@@ -247,7 +247,17 @@ func DownloadGameFiles(
 		if task.flatten {
 			subDir = ""
 		}
-		targetDir := filepath.Join(downloadPath, SanitizePath(game.Title), SanitizePath(subDir))
+		var targetDir string
+		if rommLayout {
+			// RomM layout: platform/game/
+			plat := strings.ToLower(strings.TrimSpace(strings.Split(subDir, string(os.PathSeparator))[0]))
+			if plat == "" {
+				plat = strings.ToLower(platformName)
+			}
+			targetDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
+		} else {
+			targetDir = filepath.Join(downloadPath, SanitizePath(game.Title), SanitizePath(subDir))
+		}
 		filePath := filepath.Join(targetDir, fileName)
 
 		if err := ensureDirExists(targetDir); err != nil {

@@ -68,6 +68,8 @@ type queuedDownload struct {
 	resumeFlag      bool
 	flattenFlag     bool
 	skipPatchesFlag bool
+	keepLatestFlag  bool
+	rommLayoutFlag  bool
 	numThreads      int
 }
 
@@ -377,7 +379,7 @@ func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
 	}
 	dm.mu.RUnlock()
 	if dm.activeCount() < dm.maxConcurrent() {
-		return executeDownload(q.authService, dm, q.game, q.downloadPath, q.language, q.platformName, q.extrasFlag, q.dlcFlag, q.resumeFlag, q.flattenFlag, q.skipPatchesFlag, q.numThreads)
+		return executeDownload(q.authService, dm, q.game, q.downloadPath, q.language, q.platformName, q.extrasFlag, q.dlcFlag, q.resumeFlag, q.flattenFlag, q.skipPatchesFlag, q.keepLatestFlag, q.rommLayoutFlag, q.numThreads)
 	}
 	// Enqueue
 	dm.mu.Lock()
@@ -426,6 +428,6 @@ func (dm *DownloadManager) startNextIfAvailable() {
 		}
 		_ = dm.Tasks.Set(filtered)
 		dm.mu.Unlock()
-		_ = executeDownload(next.authService, dm, next.game, next.downloadPath, next.language, next.platformName, next.extrasFlag, next.dlcFlag, next.resumeFlag, next.flattenFlag, next.skipPatchesFlag, next.numThreads)
+		_ = executeDownload(next.authService, dm, next.game, next.downloadPath, next.language, next.platformName, next.extrasFlag, next.dlcFlag, next.resumeFlag, next.flattenFlag, next.skipPatchesFlag, next.keepLatestFlag, next.rommLayoutFlag, next.numThreads)
 	}
 }

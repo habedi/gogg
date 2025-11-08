@@ -684,6 +684,10 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	flattenCheck.SetChecked(prefs.BoolWithFallback("downloadForm.flatten", true))
 	skipPatchesCheck := widget.NewCheck("Skip Patches", func(b bool) { prefs.SetBool("downloadForm.skipPatches", b) })
 	skipPatchesCheck.SetChecked(prefs.BoolWithFallback("downloadForm.skipPatches", true))
+	keepLatestCheck := widget.NewCheck("Keep only latest installer", func(b bool) { prefs.SetBool("downloadForm.keepLatest", b) })
+	keepLatestCheck.SetChecked(prefs.BoolWithFallback("downloadForm.keepLatest", false))
+	rommCheck := widget.NewCheck("RomM folder layout (platform/game)", func(b bool) { prefs.SetBool("downloadForm.romm", b) })
+	rommCheck.SetChecked(prefs.BoolWithFallback("downloadForm.romm", false))
 
 	gogdbBtn := widget.NewButtonWithIcon("View on gogdb.org", theme.SearchIcon(), func() {
 		gameRaw, _ := selectedGame.Get()
@@ -707,7 +711,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		game := gameRaw.(db.Game)
 		threads, _ := strconv.Atoi(threadsSelect.Selected)
 		langFull := client.GameLanguages[langSelect.Selected]
-		err := dm.QueueOrStart(queuedDownload{authService: authService, game: game, downloadPath: downloadPathEntry.Text, language: langFull, platformName: platformSelect.Selected, extrasFlag: extrasCheck.Checked, dlcFlag: dlcsCheck.Checked, resumeFlag: resumeCheck.Checked, flattenFlag: flattenCheck.Checked, skipPatchesFlag: skipPatchesCheck.Checked, numThreads: threads})
+		err := dm.QueueOrStart(queuedDownload{authService: authService, game: game, downloadPath: downloadPathEntry.Text, language: langFull, platformName: platformSelect.Selected, extrasFlag: extrasCheck.Checked, dlcFlag: dlcsCheck.Checked, resumeFlag: resumeCheck.Checked, flattenFlag: flattenCheck.Checked, skipPatchesFlag: skipPatchesCheck.Checked, keepLatestFlag: keepLatestCheck.Checked, rommLayoutFlag: rommCheck.Checked, numThreads: threads})
 		if err != nil {
 			if errors.Is(err, ErrDownloadInProgress) {
 				dialog.ShowInformation("In Progress", "This game is already being downloaded.", win)
@@ -726,7 +730,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		widget.NewFormItem("Language", langSelect),
 		widget.NewFormItem("Threads", threadsSelect),
 	)
-	checkboxes := container.New(layout.NewGridLayout(3), extrasCheck, dlcsCheck, skipPatchesCheck, resumeCheck, flattenCheck)
+	checkboxes := container.New(layout.NewGridLayout(2), extrasCheck, dlcsCheck, resumeCheck, flattenCheck, skipPatchesCheck, keepLatestCheck, rommCheck)
 	return container.NewVBox(form, checkboxes, layout.NewSpacer(), gogdbBtn, downloadBtn)
 }
 

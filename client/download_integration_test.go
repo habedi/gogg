@@ -36,7 +36,7 @@ func TestPartialCleanupOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// Cancel shortly after starting
 	go func() { time.Sleep(10 * time.Millisecond); cancel() }()
-	err := DownloadGameFiles(ctx, "tok", g, tmp, "English", "windows", false, false, true, true, false, 1, os.Stdout)
+	err := DownloadGameFiles(ctx, "tok", g, tmp, "English", "windows", false, false, true, true, false, false, 1, os.Stdout)
 	if err == nil {
 		// Should cancel
 		t.Fatal("expected cancellation error")

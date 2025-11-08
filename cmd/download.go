@@ -119,7 +119,7 @@ func (cw *cliProgressWriter) getFileStatusString() string {
 
 func downloadCmd(authService *auth.Service) *cobra.Command {
 	var language, platformName string
-	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag bool
+	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool
 	var numThreads int
 
 	cmd := &cobra.Command{
@@ -139,7 +139,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 			}
 			downloadDir := args[1]
 			ctx := cmd.Context()
-			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, numThreads)
+			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, numThreads)
 		},
 	}
 
@@ -152,11 +152,12 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", true, "Flatten the directory structure when downloading? [true, false]")
 	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", false, "Skip patches when downloading? [true, false]")
 	cmd.Flags().BoolVar(&keepLatestFlag, "keep-latest", false, "Remove older installer versions after successful download (keep only highest version)")
+	cmd.Flags().BoolVar(&rommLayoutFlag, "romm", false, "Use RomM compatible folder layout (platform/game)")
 
 	return cmd
 }
 
-func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag bool, numThreads int) {
+func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
@@ -221,7 +222,7 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 
 	progressWriter := &cliProgressWriter{}
 
-	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
+	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, rommLayoutFlag, numThreads, progressWriter)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			fmt.Println(clierr.New(clierr.Internal, "Download cancelled or timed out", err).Message)

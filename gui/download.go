@@ -9,7 +9,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -181,7 +183,7 @@ func (pu *progressUpdater) updateFileStatusText() {
 
 func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Game,
 	downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag,
-	flattenFlag, skipPatchesFlag bool, numThreads int) error {
+	flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool, numThreads int) error {
 
 	activeDownloadsMutex.Lock()
 	if _, exists := activeDownloads[game.ID]; exists {
@@ -210,7 +212,17 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 			cancel()
 			return
 		}
-		targetDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
+		var targetDir string
+		if rommLayoutFlag {
+			plat := strings.ToLower(platformName)
+			if plat == "all" { // show root for mixed
+				targetDir = downloadPath
+			} else {
+				targetDir = filepath.Join(downloadPath, plat, client.SanitizePath(parsedGameData.Title))
+			}
+		} else {
+			targetDir = filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
+		}
 
 		task := &DownloadTask{
 			ID:           game.ID,
@@ -245,7 +257,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 
 		err = client.DownloadGameFiles(
 			ctx, token.AccessToken, parsedGameData, downloadPath, language, platformName,
-			extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads,
+			extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, rommLayoutFlag, numThreads,
 			updater,
 		)
 
@@ -289,9 +301,122 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 			Threads:     numThreads,
 		}
 		if data, mErr := json.MarshalIndent(info, "", "  "); mErr == nil {
+			_ = os.MkdirAll(targetDir, 0755)
 			_ = os.WriteFile(filepath.Join(targetDir, "download_info.json"), data, 0644)
+		}
+
+		if keepLatestFlag {
+			if err := guiPruneOldVersions(downloadPath, parsedGameData.Title, rommLayoutFlag, platformName); err != nil {
+				log.Warn().Err(err).Msg("Failed to prune old versions (GUI)")
+			}
 		}
 	}()
 
+	return nil
+}
+
+var guiVersionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
+
+func guiParseVersion(filename string) (prefix string, verSlice []int, ok bool) {
+	m := guiVersionPattern.FindStringSubmatch(filename)
+	if m == nil {
+		return "", nil, false
+	}
+	prefix = m[1]
+	parts := strings.Split(m[2], ".")
+	for _, p := range parts {
+		v, err := strconv.Atoi(p)
+		if err != nil {
+			return "", nil, false
+		}
+		verSlice = append(verSlice, v)
+	}
+	return prefix, verSlice, true
+}
+
+func guiCompareVersions(a, b []int) int {
+	for i := 0; i < len(a) || i < len(b); i++ {
+		va, vb := 0, 0
+		if i < len(a) {
+			va = a[i]
+		}
+		if i < len(b) {
+			vb = b[i]
+		}
+		if va > vb {
+			return 1
+		}
+		if va < vb {
+			return -1
+		}
+	}
+	return 0
+}
+
+func guiPruneOldVersions(rootPath, title string, romm bool, platformName string) error {
+	// Determine roots to scan
+	var roots []string
+	if romm {
+		plats := []string{"windows", "mac", "linux"}
+		if strings.ToLower(platformName) != "all" {
+			plats = []string{strings.ToLower(platformName)}
+		}
+		for _, p := range plats {
+			roots = append(roots, filepath.Join(rootPath, p, client.SanitizePath(title)))
+		}
+	} else {
+		roots = []string{filepath.Join(rootPath, client.SanitizePath(title))}
+	}
+	extAllowed := map[string]struct{}{".exe": {}, ".bin": {}, ".dmg": {}, ".sh": {}, ".zip": {}, ".tar.gz": {}, ".rar": {}}
+	for _, root := range roots {
+		if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
+			continue
+		}
+		latest := map[string][]int{}
+		filesByPrefix := map[string][]string{}
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			name := info.Name()
+			ext := filepath.Ext(name)
+			if strings.HasSuffix(name, ".tar.gz") {
+				ext = ".tar.gz"
+			}
+			if _, ok := extAllowed[ext]; !ok {
+				return nil
+			}
+			prefix, ver, ok := guiParseVersion(name)
+			if !ok {
+				return nil
+			}
+			filesByPrefix[prefix] = append(filesByPrefix[prefix], path)
+			if cur, ok := latest[prefix]; !ok || guiCompareVersions(ver, cur) == 1 {
+				latest[prefix] = ver
+			}
+			return nil
+		})
+		for _, paths := range filesByPrefix {
+			// find the latest file among paths
+			var best string
+			var bestVer []int
+			for _, p := range paths {
+				name := filepath.Base(p)
+				_, ver, ok := guiParseVersion(name)
+				if !ok {
+					continue
+				}
+				if best == "" || guiCompareVersions(ver, bestVer) == 1 {
+					best = p
+					bestVer = ver
+				}
+			}
+			for _, p := range paths {
+				if p != best {
+					_ = os.Remove(p)
+				}
+			}
+		}
+	}
 	return nil
 }

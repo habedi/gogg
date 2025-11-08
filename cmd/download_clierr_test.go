@@ -34,5 +34,5 @@ func TestExecuteDownload_Cancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	svc := &auth.Service{Storer: testStorer{}}
-	executeDownload(ctx, svc, 1, "/tmp", "en", "windows", false, false, true, true, false, false, 1)
+	executeDownload(ctx, svc, 1, "/tmp", "en", "windows", false, false, true, true, false, false, false, 1)
 }

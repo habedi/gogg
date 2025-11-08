@@ -143,6 +143,7 @@ The `download` command supports the following additional options:
 - `--flatten`: Flatten the directory structure of the downloaded files (default is true)
 - `--skip-patches`: Skip patches when downloading (default is false)
 - `--keep-latest`: After a successful download, remove older installer versions and keep only the latest version (default is false)
+- `--romm`: Use RomM compatible folder layout `platform/game` for better integration with ROM Manager (default is false)
 
 > [!NOTE]
 > The `--keep-latest` flag scans downloaded installer files whose names contain a version-like pattern of digits separated by dots (like `game_installer_1.2.3.exe`).
