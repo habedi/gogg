@@ -154,33 +154,34 @@ jobs:
 
   build-windows-arm64:
     name: Build Windows Binary (ARM64)
-    runs-on: ubuntu-latest
-    env:
-      LANG: en_US.UTF-8
-      LC_ALL: en_US.UTF-8
+    runs-on: windows-11-arm
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           lfs: true
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Setup MSYS2 Environment
+        uses: msys2/setup-msys2@v2
         with:
-          go-version: stable
-
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          make install-deps
+          msystem: CLANGARM64
+          update: true
+          install: >-
+            make
+            mingw-w64-clang-aarch64-go
+            mingw-w64-clang-aarch64-gcc
+            mingw-w64-clang-aarch64-pkg-config
+            mingw-w64-clang-aarch64-freeglut
 
       - name: Run Tests
+        shell: msys2 {0}
         run: |
           make test
 
       - name: Build Windows ARM64 Binary
+        shell: msys2 {0}
         run: |
-          GOOS=windows GOARCH=arm64 make release-headless GOGG_BINARY=gogg.exe
+          make release GOGG_BINARY=gogg.exe
 
       - name: Upload Windows ARM64 Artifact
         uses: actions/upload-artifact@v4
@@ -269,7 +270,7 @@ jobs:
           cd dist/linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ../..
           cd dist/macos && zip -r9 ../gogg-macos-arm64.zip gogg && cd ../..
           cd dist/linux-arm64 && zip -r9 ../gogg-linux-arm64-cli-only.zip gogg && cd ../..
-          cd dist/windows-arm64 && zip -r9 ../gogg-windows-arm64-cli-only.zip gogg.exe && cd ../..
+          cd dist/windows-arm64 && zip -r9 ../gogg-windows-arm64.zip gogg.exe && cd ../..
 
       - name: List Archives (for debugging)
         run: ls -l dist/gogg-*.zip
@@ -285,7 +286,7 @@ jobs:
             Release version ${{ github.ref_name }}
           artifacts: |
             dist/gogg-windows-amd64.zip
-            dist/gogg-windows-arm64-cli-only.zip
+            dist/gogg-windows-arm64.zip
             dist/gogg-linux-amd64.zip
             dist/gogg-linux-arm64-cli-only.zip
             dist/gogg-macos-arm64.zip
