@@ -29,7 +29,7 @@ func Execute() {
 	authService := auth.NewServiceWithRepo(tokenRepo, gogClient)
 
 	rootCmd := createRootCmd(authService, gogClient, gameRepo)
-	rootCmd.PersistentFlags().DurationP("timeout", "T", 0, "Global timeout for command execution (e.g. 30s, 2m). 0 means no timeout")
+	rootCmd.PersistentFlags().DurationP("timeout", "T", 0, "Global timeout for command execution (like 30s or 2m). 0 means no timeout")
 	var cancel context.CancelFunc
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		to, err := cmd.Flags().GetDuration("timeout")

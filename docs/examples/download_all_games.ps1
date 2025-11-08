@@ -61,7 +61,7 @@ Get-Content $latest_csv.FullName | Select-Object -Skip 1 | ForEach-Object {
   Write-Host "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
   & $GOGG download $game_id $OUTPUT_DIR --platform=$PLATFORM --lang=$LANG `
         --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS `
-        --flatten=$FLATTEN
+        --flatten=$FLATTEN --keep-latest=true
   Start-Sleep -Seconds 1
 }
 

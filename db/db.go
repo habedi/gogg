@@ -33,7 +33,7 @@ func ConfigurePathErr() error {
 	if goggHome := os.Getenv("GOGG_HOME"); goggHome != "" {
 		baseDir = goggHome
 	} else if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
-		// 2. Check for XDG_DATA_HOME convention (e.g., ~/.local/share)
+		// 2. Check for XDG_DATA_HOME convention (like `~/.local/share`)
 		baseDir = filepath.Join(xdgDataHome, "gogg")
 	} else {
 		// 3. Fallback to the default in the user's home directory

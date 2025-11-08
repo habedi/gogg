@@ -56,7 +56,7 @@ tail -n +2 "$latest_csv" | while IFS=, read -r game_id game_title; do
     echo -e "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
     DEBUG_GOGG=$DEBUG_MODE $GOGG download "$game_id" $OUTPUT_DIR --platform=$PLATFORM --lang=$LANG \
         --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS \
-        --flatten=$FLATTEN
+        --flatten=$FLATTEN --keep-latest=true
     sleep 1
     #break # Comment out this line to download all games
 done

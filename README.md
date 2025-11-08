@@ -127,7 +127,7 @@ gogg catalogue search "Witcher"
 ```bash
 # Will download the files for `The Witcher: Enhanced Edition` to `./games` directory (without extra content)
 gogg download 1207658924 ./games --platform=windows --lang=en --dlcs=true --extras=false \
- --resume=true --threads 5 --flatten=true
+ --resume=true --threads 5 --flatten=true --keep-latest=true
 ```
 
 ##### File Hashes (For Verification)

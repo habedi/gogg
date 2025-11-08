@@ -79,7 +79,7 @@ func randDLC(r *rand.Rand) DLC {
 	return DLC{Title: randString(r, 10), Downloads: dl, Extras: extras}
 }
 
-// Property-like test: generate many valid JSON structures and ensure our Unmarshal succeeds and invariants hold.
+// Property-like test: generate many valid JSON structures and guarantees our Unmarshal succeeds, and invariants hold.
 func TestProperty_UnmarshalGameJSON(t *testing.T) {
 	r := rand.New(rand.NewSource(1234))
 	for i := 0; i < 200; i++ {

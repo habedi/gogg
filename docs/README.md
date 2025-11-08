@@ -135,21 +135,21 @@ gogg download <game_id> <download_dir>
 The `download` command supports the following additional options:
 
 - `--platform`: Filter the files to be downloaded by platform (all, windows, mac, linux) (default is windows)
-- `--lang`: Filter the files to be downloaded by language (en, fr, de, es, it, ru, pl, pt-BR, zh-Hans, ja, ko) (default
-  is en)
+- `--lang`: Filter the files to be downloaded by language (en, fr, de, es, it, ru, pl, pt-BR, zh-Hans, ja, ko) (default is en)
 - `--dlcs`: Include DLC files in the download (default is true)
 - `--extras`: Include extra files in the download like soundtracks, wallpapers, etc. (default is true)
 - `--resume`: Resume interrupted downloads (default is true)
 - `--threads`: Number of worker threads to use for downloading (default is 5)
 - `--flatten`: Flatten the directory structure of the downloaded files (default is true)
 - `--skip-patches`: Skip patches when downloading (default is false)
+- `--keep-latest`: After a successful download, remove older installer versions and keep only the latest version (default is false)
 
 For example, to download all files (English language) of a game with the ID `<game_id>` to the directory
 `<download_dir>` with the specified options:
 
 ```sh
 gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --extras=true \
---resume=true --threads=5 --flatten=true
+--resume=true --threads=5 --flatten=true --keep-latest=true
 ```
 
 ---

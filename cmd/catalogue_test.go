@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-// cleanDBTables ensures test isolation by clearing tables before each test.
+// cleanDBTables makes sure test isolation by clearing tables before each test.
 func cleanDBTables(t *testing.T) {
 	t.Helper()
 	err := db.Db.Exec("DELETE FROM games").Error

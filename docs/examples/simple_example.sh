@@ -28,7 +28,7 @@ $GOGG catalogue search "mess"
 
 echo "Download a specific game (\"The Messenger\") with the given options"
 $GOGG download 1433116924 ./games --platform=all --lang=en --threads=4 \
-    --dlcs=true --extras=false --resume=true --flatten=true
+    --dlcs=true --extras=false --resume=true --flatten=true --keep-latest=true
 
 echo "Show the downloaded game files"
 tree ./games

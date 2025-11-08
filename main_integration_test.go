@@ -19,7 +19,7 @@ func buildTestBinary(t *testing.T) string {
 	return bin
 }
 
-// TestTimeoutContext ensures a short timeout cancels a long-running catalogue refresh (simulated by sleep via env flag).
+// TestTimeoutContext make sure a short timeout cancels a long-running catalogue refresh (simulated by sleep via env flag).
 func TestTimeoutContext(t *testing.T) {
 	bin := buildTestBinary(t)
 	start := time.Now()

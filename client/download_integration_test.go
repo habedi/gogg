@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestPartialCleanupOnCancel ensures partial files are removed when not resuming on ctx cancel.
+// TestPartialCleanupOnCancel make sure partial files are removed when not resuming on ctx cancel.
 func TestPartialCleanupOnCancel(t *testing.T) {
 	// Fake server that serves a large content slowly
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
