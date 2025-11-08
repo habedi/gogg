@@ -132,6 +132,14 @@ release: ## Build the release binary for current platform (Linux and Windows)
 	@$(GO) build $(RELEASE_FLAGS) $(FYNE_TAGS) -o $(BINARY) $(MAIN)
 	@$(ECHO) "Build complete: $(BINARY)"
 
+.PHONY: release-headless
+release-headless: ## Build headless (CLI-only) release without GUI
+	$(ECHO) "Tidying dependencies..."
+	@$(GO) mod tidy
+	$(ECHO) "Building headless release binary (CLI-only, no GUI)..."
+	@$(GO) build $(RELEASE_FLAGS) -tags headless -o $(BINARY) $(MAIN)
+	@$(ECHO) "Build complete: $(BINARY)"
+
 .PHONY: release-macos
 release-macos: ## Build release binary for macOS (v14 and newer; arm64)
 	$(ECHO) "Tidying dependencies..."

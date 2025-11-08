@@ -117,11 +117,13 @@ jobs:
           path: bin/gogg
 
   build-linux-arm64:
-    name: Build Linux ARM64 Binary
+    name: Build Linux Binary (ARM64)
     runs-on: ubuntu-latest
     env:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
+      GOOS: linux
+      GOARCH: arm64
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -133,18 +135,16 @@ jobs:
         with:
           go-version: stable
 
-      - name: Install Dependencies
+      - name: Run Tests (skip for cross-compile)
         run: |
-          sudo apt-get update
-          make install-deps
+          echo "Skipping tests for cross-compilation build"
+          echo "Tests run on AMD64 build only"
 
-      - name: Run Tests
+      - name: Build Linux ARM64 Binary (Headless)
         run: |
-          make test
-
-      - name: Build Linux ARM64 Binary
-        run: |
-          GOARCH=arm64 make release
+          echo "Building headless ARM64 binary (CLI-only)"
+          echo "ARM64 Linux users can build GUI version locally if needed"
+          make release-headless
 
       - name: Upload Linux ARM64 Artifact
         uses: actions/upload-artifact@v4
@@ -153,7 +153,7 @@ jobs:
           path: bin/gogg
 
   build-windows-arm64:
-    name: Build Windows ARM64 Binary
+    name: Build Windows Binary (ARM64)
     runs-on: ubuntu-latest
     env:
       LANG: en_US.UTF-8
@@ -180,7 +180,7 @@ jobs:
 
       - name: Build Windows ARM64 Binary
         run: |
-          GOOS=windows GOARCH=arm64 make release GOGG_BINARY=gogg.exe
+          GOOS=windows GOARCH=arm64 make release-headless GOGG_BINARY=gogg.exe
 
       - name: Upload Windows ARM64 Artifact
         uses: actions/upload-artifact@v4
@@ -268,8 +268,8 @@ jobs:
           cd dist/windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ../..
           cd dist/linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ../..
           cd dist/macos && zip -r9 ../gogg-macos-arm64.zip gogg && cd ../..
-          cd dist/linux-arm64 && zip -r9 ../gogg-linux-arm64.zip gogg && cd ../..
-          cd dist/windows-arm64 && zip -r9 ../gogg-windows-arm64.zip gogg.exe && cd ../..
+          cd dist/linux-arm64 && zip -r9 ../gogg-linux-arm64-cli-only.zip gogg && cd ../..
+          cd dist/windows-arm64 && zip -r9 ../gogg-windows-arm64-cli-only.zip gogg.exe && cd ../..
 
       - name: List Archives (for debugging)
         run: ls -l dist/gogg-*.zip
@@ -285,9 +285,9 @@ jobs:
             Release version ${{ github.ref_name }}
           artifacts: |
             dist/gogg-windows-amd64.zip
-            dist/gogg-windows-arm64.zip
+            dist/gogg-windows-arm64-cli-only.zip
             dist/gogg-linux-amd64.zip
-            dist/gogg-linux-arm64.zip
+            dist/gogg-linux-arm64-cli-only.zip
             dist/gogg-macos-arm64.zip
           draft: true
           prerelease: false

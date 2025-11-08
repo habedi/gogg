@@ -13,9 +13,15 @@ type RateLimiter struct {
 	last   time.Time
 }
 
-var GlobalDownloadRateLimiter *RateLimiter
+var (
+	GlobalDownloadRateLimiter *RateLimiter
+	rateLimiterMu             sync.RWMutex
+)
 
 func SetGlobalDownloadRateLimit(bytesPerSecond int64) {
+	rateLimiterMu.Lock()
+	defer rateLimiterMu.Unlock()
+
 	if bytesPerSecond <= 0 {
 		GlobalDownloadRateLimiter = nil
 		return
@@ -77,8 +83,12 @@ func (lr *limitedReader) Read(p []byte) (int, error) {
 }
 
 func wrapWithGlobalRateLimiter(r io.Reader) io.Reader {
-	if GlobalDownloadRateLimiter == nil {
+	rateLimiterMu.RLock()
+	lim := GlobalDownloadRateLimiter
+	rateLimiterMu.RUnlock()
+
+	if lim == nil {
 		return r
 	}
-	return &limitedReader{under: r, lim: GlobalDownloadRateLimiter}
+	return &limitedReader{under: r, lim: lim}
 }

@@ -20,11 +20,11 @@ type Token struct {
 }
 
 // GetTokenRecord retrieves the token record from the database.
+// Deprecated: Use TokenRepository.Get with context for better cancellation support.
 func GetTokenRecord() (*Token, error) {
 	if Db == nil {
 		return nil, fmt.Errorf("database connection is not initialized")
 	}
-
 	var token Token
 	if err := Db.First(&token).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -33,18 +33,16 @@ func GetTokenRecord() (*Token, error) {
 		log.Error().Err(err).Msg("Failed to retrieve token data")
 		return nil, err
 	}
-
 	return &token, nil
 }
 
 // UpsertTokenRecord inserts or updates the token record in the database.
+// Deprecated: Use TokenRepository.Upsert with context for better cancellation support.
 func UpsertTokenRecord(token *Token) error {
 	if Db == nil {
 		return fmt.Errorf("database connection is not initialized")
 	}
-
 	token.ID = 1
-
 	if err := Db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"access_token", "refresh_token", "expires_at"}),

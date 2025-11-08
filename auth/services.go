@@ -30,35 +30,9 @@ func NewServiceWithRepo(tokenRepo db.TokenRepository, refresher TokenRefresher) 
 }
 
 // RefreshToken is a method that handles the full token refresh logic.
+// Deprecated: Use RefreshTokenCtx for context-aware cancellation support.
 func (s *Service) RefreshToken() (*db.Token, error) {
-	token, err := s.Storer.GetTokenRecord()
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve token record: %w", err)
-	}
-
-	valid, err := isTokenValid(token)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check token validity: %w", err)
-	}
-
-	if !valid {
-		log.Info().Msg("Access token expired or invalid, refreshing...")
-		newAccessToken, newRefreshToken, expiresIn, err := s.Refresher.PerformTokenRefresh(token.RefreshToken)
-		if err != nil {
-			return nil, fmt.Errorf("failed to perform token refresh via client: %w", err)
-		}
-
-		token.AccessToken = newAccessToken
-		token.RefreshToken = newRefreshToken
-		token.ExpiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second).Format(time.RFC3339)
-
-		if err := s.Storer.UpsertTokenRecord(token); err != nil {
-			return nil, fmt.Errorf("failed to save refreshed token: %w", err)
-		}
-		log.Info().Msg("Token refreshed and saved successfully.")
-	}
-
-	return token, nil
+	return s.RefreshTokenCtx(context.Background())
 }
 
 // RefreshTokenCtx performs refresh honoring cancellation if the refresher supports it.

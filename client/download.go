@@ -51,15 +51,10 @@ type progressReader struct {
 	updateLock sync.Mutex
 }
 
-func (pr *progressReader) Write(p []byte) (int, error) {
-	pr.updateLock.Lock()
-	defer pr.updateLock.Unlock()
-
-	n, err := pr.writer.Write(p)
-	if err != nil {
+func (pr *progressReader) writeProgress(data []byte) {
+	if _, err := pr.writer.Write(data); err != nil {
 		log.Error().Err(err).Msg("Failed to write progress update")
 	}
-	return n, err
 }
 
 func (pr *progressReader) Read(p []byte) (int, error) {
@@ -77,7 +72,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 			TotalBytes:   pr.totalSize,
 		}
 		jsonUpdate, _ := json.Marshal(update)
-		_, _ = pr.Write(append(jsonUpdate, '\n'))
+		pr.writeProgress(append(jsonUpdate, '\n'))
 	}
 	return n, err
 }

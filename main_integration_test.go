@@ -4,12 +4,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
 
 func buildTestBinary(t *testing.T) string {
-	bin := filepath.Join(t.TempDir(), "gogg_it_bin")
+	binName := "gogg_it_bin"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(t.TempDir(), binName)
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
