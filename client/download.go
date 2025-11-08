@@ -150,7 +150,7 @@ func DownloadGameFiles(
 	ctx context.Context,
 	accessToken string, game Game, downloadPath string,
 	gameLanguage string, platformName string, extrasFlag bool, dlcFlag bool, resumeFlag bool,
-	flattenFlag bool, skipPatchesFlag bool, numThreads int,
+	flattenFlag bool, skipPatchesFlag bool, rommLayout bool, numThreads int,
 	updateWriter io.Writer,
 ) error {
 	// This transport is configured for large file downloads. It has connection
@@ -247,7 +247,17 @@ func DownloadGameFiles(
 		if task.flatten {
 			subDir = ""
 		}
-		targetDir := filepath.Join(downloadPath, SanitizePath(game.Title), SanitizePath(subDir))
+		var targetDir string
+		if rommLayout {
+			// RomM layout: platform/game/
+			plat := strings.ToLower(strings.TrimSpace(strings.Split(subDir, string(os.PathSeparator))[0]))
+			if plat == "" {
+				plat = strings.ToLower(platformName)
+			}
+			targetDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
+		} else {
+			targetDir = filepath.Join(downloadPath, SanitizePath(game.Title), SanitizePath(subDir))
+		}
 		filePath := filepath.Join(targetDir, fileName)
 
 		if err := ensureDirExists(targetDir); err != nil {
@@ -316,7 +326,7 @@ func DownloadGameFiles(
 			return fmt.Errorf("failed to download %s: HTTP %d", fileName, getResp.StatusCode)
 		}
 
-		// If server ignored Range and returned 200, make sure we start from the beginning
+		// If the server ignored Range and returned 200, make sure we start from the beginning
 		if requestedRange > 0 && getResp.StatusCode == http.StatusOK {
 			if err := file.Close(); err != nil {
 				return err
@@ -328,9 +338,9 @@ func DownloadGameFiles(
 			defer func() { _ = file.Close() }()
 			startOffset = 0
 		}
-
+		limitedBody := wrapWithGlobalRateLimiter(getResp.Body)
 		progressReader := &progressReader{
-			reader:    getResp.Body,
+			reader:    limitedBody,
 			writer:    sw,
 			fileName:  fileName,
 			totalSize: totalSize,
@@ -348,11 +358,18 @@ func DownloadGameFiles(
 			}
 		}
 		if err != nil {
-			if ctx.Err() == context.Canceled {
+			if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
+				// On cancellation, remove partial file unless resume was requested
+				if !task.resume {
+					_ = file.Close()
+					_ = os.Remove(filePath)
+					log.Warn().Str("file", filePath).Msg("Download cancelled, removed partial file")
+				}
 				return ctx.Err()
 			}
-			// On resume, keep the partial file
+			// On other errors, keep partial if resume, else remove
 			if !task.resume {
+				_ = file.Close()
 				_ = os.Remove(filePath)
 			}
 			return fmt.Errorf("failed to save file %s: %w", filePath, err)

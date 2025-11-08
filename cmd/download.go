@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/clierr"
 	"github.com/habedi/gogg/pkg/validation"
 	"github.com/rs/zerolog/log"
 	"github.com/schollz/progressbar/v3"
@@ -116,7 +119,7 @@ func (cw *cliProgressWriter) getFileStatusString() string {
 
 func downloadCmd(authService *auth.Service) *cobra.Command {
 	var language, platformName string
-	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool
+	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool
 	var numThreads int
 
 	cmd := &cobra.Command{
@@ -135,7 +138,8 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				return
 			}
 			downloadDir := args[1]
-			executeDownload(authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
+			ctx := cmd.Context()
+			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, numThreads)
 		},
 	}
 
@@ -147,21 +151,22 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cmd.Flags().IntVarP(&numThreads, "threads", "t", 5, "Number of worker threads to use for downloading [1-20]")
 	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", true, "Flatten the directory structure when downloading? [true, false]")
 	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", false, "Skip patches when downloading? [true, false]")
+	cmd.Flags().BoolVar(&keepLatestFlag, "keep-latest", false, "Remove older installer versions after successful download (keep only highest version)")
+	cmd.Flags().BoolVar(&rommLayoutFlag, "romm", false, "Use RomM compatible folder layout (platform/game)")
 
 	return cmd
 }
 
-func executeDownload(authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {
+func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
 	if err := validation.ValidateThreadCount(numThreads); err != nil {
-		fmt.Println("Error:", err)
+		fmt.Println(clierr.New(clierr.Validation, "Invalid thread count", err).Message)
 		return
 	}
-
 	if err := validation.ValidatePlatform(platformName); err != nil {
-		fmt.Println("Error:", err)
+		fmt.Println(clierr.New(clierr.Validation, "Invalid platform", err).Message)
 		return
 	}
 
@@ -175,14 +180,14 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 		}
 	}
 	if !found {
-		fmt.Println("Invalid language code. Supported languages are:")
+		fmt.Println(clierr.New(clierr.Validation, "Invalid language code", nil).Message)
 		for langCode, langName := range client.GameLanguages {
 			fmt.Printf("'%s' for %s\n", langCode, langName)
 		}
 		return
 	}
 
-	user, err := authService.RefreshToken()
+	user, err := authService.RefreshTokenCtx(ctx)
 	if err != nil {
 		fmt.Println("Failed to find or refresh the access token. Did you login?")
 		return
@@ -196,15 +201,14 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 		}
 	}
 
-	game, err := db.GetGameByID(gameID)
+	gameRepo := db.NewGameRepository(db.GetDB())
+	game, err := gameRepo.GetByID(ctx, gameID)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get game by ID.")
-		fmt.Println("Error retrieving game from local catalogue.")
+		fmt.Println(clierr.New(clierr.Internal, "Error retrieving game from local catalogue", err).Message)
 		return
 	}
 	if game == nil {
-		log.Error().Msg("Game not found in the catalogue.")
-		fmt.Printf("Game with ID %d not found in the local catalogue.\n", gameID)
+		fmt.Println(clierr.New(clierr.NotFound, fmt.Sprintf("Game %d not found in local catalogue", gameID), nil).Message)
 		return
 	}
 	parsedGameData, err := client.ParseGameData(game.Data)
@@ -216,22 +220,116 @@ func executeDownload(authService *auth.Service, gameID int, downloadPath, langua
 
 	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
-	ctx := context.Background()
 	progressWriter := &cliProgressWriter{}
 
-	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
+	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, rommLayoutFlag, numThreads, progressWriter)
 	if err != nil {
-		if err == context.Canceled || err == context.DeadlineExceeded {
-			log.Warn().Err(err).Msg("Download operation cancelled or timed out.")
-			fmt.Println("\nDownload cancelled or timed out.")
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			fmt.Println(clierr.New(clierr.Internal, "Download cancelled or timed out", err).Message)
 		} else {
-			log.Error().Err(err).Msg("Failed to download game files.")
-			fmt.Printf("\nError downloading game files: %v\n", err)
+			fmt.Println(clierr.New(clierr.Download, "Failed to download game files", err).Message)
 		}
 		return
 	}
 
 	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title)))
+	if keepLatestFlag {
+		if err := pruneOldVersions(downloadPath, parsedGameData.Title); err != nil {
+			log.Warn().Err(err).Msg("Failed to prune old versions")
+		}
+	}
+}
+
+var versionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
+
+func parseVersion(filename string) (prefix string, verSlice []int, suffix string, ok bool) {
+	m := versionPattern.FindStringSubmatch(filename)
+	if m == nil {
+		return "", nil, "", false
+	}
+	prefix = m[1]
+	suffix = m[3]
+	verParts := strings.Split(m[2], ".")
+	for _, p := range verParts {
+		v, err := strconv.Atoi(p)
+		if err != nil {
+			return "", nil, "", false
+		}
+		verSlice = append(verSlice, v)
+	}
+	return prefix, verSlice, suffix, true
+}
+
+func compareVersions(a, b []int) int { // 1 if a>b, -1 if a<b, 0 if eq
+	for i := 0; i < len(a) || i < len(b); i++ {
+		va, vb := 0, 0
+		if i < len(a) {
+			va = a[i]
+		}
+		if i < len(b) {
+			vb = b[i]
+		}
+		if va > vb {
+			return 1
+		}
+		if va < vb {
+			return -1
+		}
+	}
+	return 0
+}
+
+func pruneOldVersions(downloadPath, title string) error {
+	root := filepath.Join(downloadPath, client.SanitizePath(title))
+	if _, err := os.Stat(root); err != nil {
+		return err
+	}
+	// Candidate extensions (installer types)
+	extAllowed := map[string]struct{}{".exe": {}, ".bin": {}, ".dmg": {}, ".sh": {}, ".zip": {}, ".tar.gz": {}, ".rar": {}}
+	latestByPrefix := make(map[string]struct {
+		file string
+		ver  []int
+	})
+	filesByPrefix := make(map[string][]string)
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		name := info.Name()
+		ext := filepath.Ext(name)
+		// handle .tar.gz
+		if strings.HasSuffix(name, ".tar.gz") {
+			ext = ".tar.gz"
+		}
+		if _, ok := extAllowed[ext]; !ok {
+			return nil
+		}
+		prefix, ver, _, ok := parseVersion(name)
+		if !ok || len(ver) == 0 {
+			return nil
+		}
+		filesByPrefix[prefix] = append(filesByPrefix[prefix], path)
+		curr, exists := latestByPrefix[prefix]
+		if !exists || compareVersions(ver, curr.ver) == 1 {
+			latestByPrefix[prefix] = struct {
+				file string
+				ver  []int
+			}{file: path, ver: ver}
+		}
+		return nil
+	})
+	// Remove older ones
+	for prefix, files := range filesByPrefix {
+		latest := latestByPrefix[prefix].file
+		for _, f := range files {
+			if f != latest {
+				if err := os.Remove(f); err != nil {
+					log.Warn().Err(err).Str("file", f).Msg("Failed to remove old version file")
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {

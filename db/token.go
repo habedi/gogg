@@ -9,24 +9,17 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Token represents the persisted auth tokens. Currently we enforce a single-row table
+// by always upserting record with ID=1. A unique index on ID is implicit via primary key.
+// Future multi-user support could drop this constraint and add a user scoping column.
 type Token struct {
-	ID           uint   `gorm:"primaryKey"`
+	ID           uint   `gorm:"primaryKey;uniqueIndex"`
 	AccessToken  string `json:"access_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	ExpiresAt    string `json:"expires_at,omitempty"`
 }
 
-// TokenStore is a concrete implementation of the auth.TokenStorer interface using GORM.
-type TokenStore struct{}
-
-func (ts *TokenStore) GetTokenRecord() (*Token, error) {
-	return GetTokenRecord()
-}
-
-func (ts *TokenStore) UpsertTokenRecord(token *Token) error {
-	return UpsertTokenRecord(token)
-}
-
+// GetTokenRecord retrieves the token record from the database.
 func GetTokenRecord() (*Token, error) {
 	if Db == nil {
 		return nil, fmt.Errorf("database connection is not initialized")
@@ -44,6 +37,7 @@ func GetTokenRecord() (*Token, error) {
 	return &token, nil
 }
 
+// UpsertTokenRecord inserts or updates the token record in the database.
 func UpsertTokenRecord(token *Token) error {
 	if Db == nil {
 		return fmt.Errorf("database connection is not initialized")

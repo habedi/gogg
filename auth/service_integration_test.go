@@ -30,12 +30,15 @@ func TestRefreshToken_Integration_Success(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/token", r.URL.Path)
-		r.ParseForm()
+		if err := r.ParseForm(); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		assert.Equal(t, "expired-refresh-token", r.FormValue("refresh_token"))
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token":  "new-shiny-access-token",
 			"refresh_token": "new-shiny-refresh-token",
 			"expires_in":    3600,
@@ -50,9 +53,9 @@ func TestRefreshToken_Integration_Success(t *testing.T) {
 	}
 	require.NoError(t, db.UpsertTokenRecord(expiredToken))
 
-	storer := &db.TokenStore{}
+	tokenRepo := db.NewTokenRepository(db.GetDB())
 	refresher := &client.GogClient{TokenURL: server.URL + "/token"}
-	authService := auth.NewService(storer, refresher)
+	authService := auth.NewServiceWithRepo(tokenRepo, refresher)
 
 	refreshedToken, err := authService.RefreshToken()
 
@@ -71,7 +74,7 @@ func TestRefreshToken_Integration_ApiFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"error_description": "Invalid refresh token",
 		})
 	}))
@@ -84,9 +87,9 @@ func TestRefreshToken_Integration_ApiFailure(t *testing.T) {
 	}
 	require.NoError(t, db.UpsertTokenRecord(expiredToken))
 
-	storer := &db.TokenStore{}
+	tokenRepo := db.NewTokenRepository(db.GetDB())
 	refresher := &client.GogClient{TokenURL: server.URL + "/token"}
-	authService := auth.NewService(storer, refresher)
+	authService := auth.NewServiceWithRepo(tokenRepo, refresher)
 
 	_, err := authService.RefreshToken()
 

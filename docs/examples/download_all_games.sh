@@ -16,11 +16,11 @@ GOGG=$(command -v bin/gogg || command -v gogg)
 # Download options
 LANG=en # Language English
 PLATFORM=windows # Platform Windows
-INCLUDE_DLC=1 # Include DLCs
-INCLUDE_EXTRA_CONTENT=1 # Include extra content
-RESUME_DOWNLOAD=1 # Resume download
+INCLUDE_DLC=true
+INCLUDE_EXTRA_CONTENT=true
+RESUME_DOWNLOAD=true
 NUM_THREADS=4 # Number of worker threads for downloading
-FLATTEN=1 # Flatten the directory structure
+FLATTEN=true # Flatten the directory structure
 OUTPUT_DIR=./games # Output directory
 
 # Function to clean up the CSV file
@@ -56,7 +56,7 @@ tail -n +2 "$latest_csv" | while IFS=, read -r game_id game_title; do
     echo -e "${YELLOW}Game ID: $game_id, Title: $game_title${NC}"
     DEBUG_GOGG=$DEBUG_MODE $GOGG download "$game_id" $OUTPUT_DIR --platform=$PLATFORM --lang=$LANG \
         --dlcs=$INCLUDE_DLC --extras=$INCLUDE_EXTRA_CONTENT --resume=$RESUME_DOWNLOAD --threads=$NUM_THREADS \
-        --flatten=$FLATTEN
+        --flatten=$FLATTEN --keep-latest=true
     sleep 1
     #break # Comment out this line to download all games
 done

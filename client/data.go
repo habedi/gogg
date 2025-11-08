@@ -67,19 +67,19 @@ type Downloadable struct {
 // UnmarshalJSON is a custom unmarshal function for Game to process downloads and DLCs correctly.
 func (gd *Game) UnmarshalJSON(data []byte) error {
 	type Alias Game
-	aux := &struct {
+	// Unmarshal into a temporary value to avoid aliasing into a possibly nil receiver
+	var tmp struct {
 		RawDownloads [][]interface{} `json:"downloads"`
-		*Alias
-	}{
-		Alias: (*Alias)(gd),
+		Alias
 	}
-
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
 	}
+	// Copy basic fields
+	*gd = Game(tmp.Alias)
 
 	// Process RawDownloads for Game.
-	gd.Downloads = parseRawDownloads(aux.RawDownloads)
+	gd.Downloads = parseRawDownloads(tmp.RawDownloads)
 
 	// Process DLC downloads.
 	for i, dlc := range gd.DLCs {

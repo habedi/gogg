@@ -2,6 +2,9 @@ package gui
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/habedi/gogg/client"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -124,6 +127,40 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		container.NewHBox(selectSoundBtn, resetSoundBtn, testSoundBtn),
 	)
 
+	// --- Download Limits ---
+	maxConcSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) {
+		prefs.SetString("download.maxConcurrent", s)
+	})
+	maxConcSelect.SetSelected(fmt.Sprintf("%d", prefs.IntWithFallback("download.maxConcurrent", 2)))
+
+	speedEntry := widget.NewEntry()
+	speedEntry.SetPlaceHolder("Speed limit KB/s (0=unlimited)")
+	if v := prefs.IntWithFallback("download.maxSpeedKBps", 0); v > 0 {
+		speedEntry.SetText(fmt.Sprintf("%d", v))
+	}
+	speedEntry.OnChanged = func(s string) {
+		if s == "" {
+			prefs.SetInt("download.maxSpeedKBps", 0)
+			client.SetGlobalDownloadRateLimit(0)
+			return
+		}
+		var val int
+		_, err := fmt.Sscanf(strings.TrimSpace(s), "%d", &val)
+		if err != nil {
+			return
+		}
+		prefs.SetInt("download.maxSpeedKBps", val)
+		if val <= 0 {
+			client.SetGlobalDownloadRateLimit(0)
+		} else {
+			client.SetGlobalDownloadRateLimit(int64(val) * 1024)
+		}
+	}
+	limitsBox := container.NewVBox(widget.NewLabel("Download Limits"), widget.NewForm(
+		widget.NewFormItem("Max Concurrent", maxConcSelect),
+		widget.NewFormItem("Speed Limit", speedEntry),
+	))
+
 	// --- Layout ---
 	mainCard := widget.NewCard("Settings", "", container.NewVBox(
 		themeBox,
@@ -132,6 +169,8 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		widget.NewSeparator(),
 		soundCheck,
 		soundConfigBox,
+		widget.NewSeparator(),
+		limitsBox,
 	))
 
 	return container.NewCenter(mainCard)

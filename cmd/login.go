@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/pkg/clierr"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -26,7 +27,7 @@ func loginCmd(gogClient *client.GogClient) *cobra.Command {
 
 			if validateCredentials(gogUsername, gogPassword) {
 				if err := gogClient.Login(client.GOGLoginURL, gogUsername, gogPassword, headless); err != nil {
-					cmd.PrintErrln("Error: Failed to login to GOG.com.")
+					cmd.PrintErrln(clierr.New(clierr.Internal, "Failed to login to GOG.com", err).Message)
 					if strings.Contains(err.Error(), "executable found in PATH") {
 						cmd.PrintErrln("Hint: Make sure Google Chrome or Chromium is installed and accessible in your system's PATH.")
 					}
@@ -34,7 +35,7 @@ func loginCmd(gogClient *client.GogClient) *cobra.Command {
 					cmd.Println("Login was successful.")
 				}
 			} else {
-				cmd.PrintErrln("Error: Username and password cannot be empty.")
+				cmd.PrintErrln(clierr.New(clierr.Validation, "Username and password cannot be empty", nil).Message)
 			}
 		},
 	}

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/habedi/gogg/pkg/clierr"
 	"github.com/habedi/gogg/pkg/hasher"
 	"github.com/habedi/gogg/pkg/operations"
 	"github.com/habedi/gogg/pkg/validation"
@@ -35,12 +36,15 @@ func hashCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			dir := args[0]
 			if !hasher.IsValidHashAlgo(algo) {
-				log.Error().Msgf("Unsupported hash algorithm: %s", algo)
+				e := clierr.New(clierr.Validation, "Unsupported hash algorithm", nil)
+				cmd.PrintErrln(e.Message)
+				setLastCliErr(e)
 				return
 			}
-
 			if err := validation.ValidateThreadCount(numThreads); err != nil {
-				cmd.PrintErrln("Error:", err)
+				e := clierr.New(clierr.Validation, "Invalid thread count", err)
+				cmd.PrintErrln(e.Message)
+				setLastCliErr(e)
 				return
 			}
 
@@ -119,7 +123,9 @@ func sizeCmd() *cobra.Command {
 			}
 
 			if err := validation.ValidateGameID(gameID); err != nil {
-				cmd.PrintErrln("Error:", err)
+				e := clierr.New(clierr.Validation, "Invalid game ID", err)
+				cmd.PrintErrln(e.Message)
+				setLastCliErr(e)
 				return
 			}
 
@@ -132,7 +138,9 @@ func sizeCmd() *cobra.Command {
 
 			totalSizeBytes, gameData, err := operations.EstimateGameSize(gameID, params)
 			if err != nil {
-				log.Fatal().Err(err).Msg("Error estimating storage size")
+				e := clierr.New(clierr.Internal, "Error estimating storage size", err)
+				cmd.PrintErrln(e.Message)
+				setLastCliErr(e)
 				return
 			}
 
@@ -150,7 +158,8 @@ func sizeCmd() *cobra.Command {
 			case "b":
 				fmt.Printf("Total download size: %d B\n", totalSizeBytes)
 			default:
-				log.Fatal().Msgf("invalid size unit: \"%s\". Unit must be one of [gb, mb, kb, b]", sizeUnit)
+				cmd.PrintErrf("invalid size unit: %q. Unit must be one of [gb, mb, kb, b]\n", sizeUnit)
+				return
 			}
 		},
 	}

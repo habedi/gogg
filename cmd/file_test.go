@@ -51,6 +51,30 @@ func TestFileHashCmd_InvalidAlgo(t *testing.T) {
 	cmd.Execute()
 }
 
+func TestFileHashCmd_InvalidAlgo_ShowsError(t *testing.T) {
+	cmd := hashCmd()
+	cmd.SetArgs([]string{"/irrelevant", "-a", "notanalgo"})
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.Execute()
+	if !strings.Contains(buf.String(), "Unsupported hash algorithm") {
+		t.Fatalf("expected unsupported algo message, got: %s", buf.String())
+	}
+}
+
+func TestFileHashCmd_InvalidThreads(t *testing.T) {
+	cmd := hashCmd()
+	cmd.SetArgs([]string{"/irrelevant", "-t", "99"})
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.Execute()
+	if !strings.Contains(buf.String(), "Invalid thread count") {
+		t.Fatalf("expected invalid thread count message, got: %s", buf.String())
+	}
+}
+
 func setupMemDB(t *testing.T) {
 	t.Helper()
 	gormDB, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})

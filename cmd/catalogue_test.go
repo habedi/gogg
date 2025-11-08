@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/db"
@@ -18,7 +20,7 @@ import (
 
 // TestMain sets up the database once for all tests in this package.
 func TestMain(m *testing.M) {
-	// Setup: Initialize the database once.
+	// Setup: Initialize the database at once.
 	tmpDir, err := os.MkdirTemp("", "gogg-cmd-test-")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create temp dir for testing")
@@ -40,7 +42,7 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-// cleanDBTables ensures test isolation by clearing tables before each test.
+// cleanDBTables makes sure test isolation by clearing tables before each test.
 func cleanDBTables(t *testing.T) {
 	t.Helper()
 	err := db.Db.Exec("DELETE FROM games").Error
@@ -67,11 +69,9 @@ func (m *mockTokenRefresher) PerformTokenRefresh(refreshToken string) (string, s
 	return "new-access-token", "new-refresh-token", 3600, nil
 }
 
-func addTestGame(t *testing.T, id int, title, data string) {
+func addTestGame(t *testing.T, repo db.GameRepository, id int, title, data string) {
 	t.Helper()
-	if err := db.PutInGame(id, title, data); err != nil {
-		t.Fatalf("failed to add game: %v", err)
-	}
+	require.NoError(t, repo.Put(context.Background(), db.Game{ID: id, Title: title, Data: data}))
 }
 
 func captureCombinedOutput(cmd *cobra.Command, args ...string) (string, error) {
@@ -87,10 +87,11 @@ func captureCombinedOutput(cmd *cobra.Command, args ...string) (string, error) {
 
 func TestListCmd(t *testing.T) {
 	cleanDBTables(t)
+	repo := db.NewGameRepository(db.GetDB())
 	dummyData := `{"dummy": "data"}`
-	addTestGame(t, 1, "Test Game 1", dummyData)
-	addTestGame(t, 2, "Test Game 2", dummyData)
-	listCommand := listCmd()
+	addTestGame(t, repo, 1, "Test Game 1", dummyData)
+	addTestGame(t, repo, 2, "Test Game 2", dummyData)
+	listCommand := listCmd(repo)
 	output, err := captureCombinedOutput(listCommand)
 	require.NoError(t, err)
 	assert.Contains(t, output, "Test Game 1")
@@ -99,14 +100,15 @@ func TestListCmd(t *testing.T) {
 
 func TestInfoCmd(t *testing.T) {
 	cleanDBTables(t)
+	repo := db.NewGameRepository(db.GetDB())
 	nested := map[string]interface{}{
 		"description": "A cool game",
 		"rating":      5,
 	}
 	nestedBytes, err := json.Marshal(nested)
 	require.NoError(t, err)
-	addTestGame(t, 10, "Info Test Game", string(nestedBytes))
-	infoCommand := infoCmd()
+	addTestGame(t, repo, 10, "Info Test Game", string(nestedBytes))
+	infoCommand := infoCmd(repo)
 	output, err := captureCombinedOutput(infoCommand, "10")
 	require.NoError(t, err)
 	assert.Contains(t, output, "cool game")
@@ -114,17 +116,18 @@ func TestInfoCmd(t *testing.T) {
 
 func TestSearchCmd(t *testing.T) {
 	cleanDBTables(t)
+	repo := db.NewGameRepository(db.GetDB())
 	dummyData := `{"dummy": "data"}`
-	addTestGame(t, 20, "Awesome Game", dummyData)
-	addTestGame(t, 21, "Not So Awesome", dummyData)
-	searchCommand := searchCmd()
+	addTestGame(t, repo, 20, "Awesome Game", dummyData)
+	addTestGame(t, repo, 21, "Not So Awesome", dummyData)
+	searchCommand := searchCmd(repo)
 	output, err := captureCombinedOutput(searchCommand, "Awesome")
 	require.NoError(t, err)
 	assert.Contains(t, output, "Awesome Game")
 	assert.Contains(t, output, "Not So Awesome")
 
-	addTestGame(t, 30, "ID Game", dummyData)
-	searchCommand = searchCmd()
+	addTestGame(t, repo, 30, "ID Game", dummyData)
+	searchCommand = searchCmd(repo)
 	output, err = captureCombinedOutput(searchCommand, "30", "--id")
 	require.NoError(t, err)
 	assert.Contains(t, output, "ID Game")
@@ -132,10 +135,11 @@ func TestSearchCmd(t *testing.T) {
 
 func TestExportCmd(t *testing.T) {
 	cleanDBTables(t)
+	repo := db.NewGameRepository(db.GetDB())
 	dummyData := `{"dummy": "data"}`
-	addTestGame(t, 40, "Export Test Game", dummyData)
+	addTestGame(t, repo, 40, "Export Test Game", dummyData)
 	tmpExportDir := t.TempDir()
-	exportCommand := exportCmd()
+	exportCommand := exportCmd(repo)
 	exportCommand.Flags().Set("format", "json")
 	output, err := captureCombinedOutput(exportCommand, tmpExportDir)
 	require.NoError(t, err)
@@ -155,4 +159,24 @@ func TestRefreshCmd(t *testing.T) {
 
 	expectedErrorMsg := "Error: Failed to refresh catalogue. Please check the logs for details."
 	assert.Contains(t, output, expectedErrorMsg)
+}
+
+func TestCatalogueCliErr_NotFound(t *testing.T) {
+	cleanDBTables(t)
+	repo := db.NewGameRepository(db.GetDB())
+	infoCommand := infoCmd(repo)
+	output, err := captureCombinedOutput(infoCommand, "99999")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Game not found")
+}
+
+func TestCatalogueCliErr_InvalidExportFormat(t *testing.T) {
+	cleanDBTables(t)
+	repo := db.NewGameRepository(db.GetDB())
+	addTestGame(t, repo, 50, "Export Err Game", "{}")
+	cmd := exportCmd(repo)
+	cmd.Flags().Set("format", "xml")
+	output, err := captureCombinedOutput(cmd, t.TempDir())
+	require.NoError(t, err)
+	assert.Contains(t, output, "Invalid export format")
 }

@@ -6,17 +6,25 @@ import (
 	"strings"
 
 	"github.com/habedi/gogg/cmd"
+	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
 func main() {
+	log.Info().Msg("Gogg starting up")
 	configureLogLevelFromEnv()
 
 	stopChan := setupInterruptListener()
 	go handleInterrupt(stopChan,
-		func(msg string) { log.Fatal().Msg(msg) },
-		os.Exit,
+		func(msg string) { log.Warn().Msg(msg) }, // avoid log.Fatal to keep control flow explicit
+		func(code int) {
+			log.Info().Msg("Shutdown initiated")
+			// graceful cleanup
+			db.Shutdown()
+			log.Info().Msg("Shutdown complete")
+			os.Exit(code)
+		},
 	)
 	execute()
 }
@@ -37,9 +45,10 @@ func setupInterruptListener() chan os.Signal {
 	return stopChan
 }
 
-func handleInterrupt(stopChan chan os.Signal, fatalLog func(string), exitFunc func(int)) {
+func handleInterrupt(stopChan chan os.Signal, logFunc func(string), exitFunc func(int)) {
 	<-stopChan
-	fatalLog("Interrupt signal received. Exiting...")
+	logFunc("Interrupt signal received. Exiting...")
+	exitFunc(1)
 }
 
 func execute() {

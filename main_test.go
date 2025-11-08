@@ -12,21 +12,20 @@ func TestConfigureLogLevelFromEnv_Disabled(t *testing.T) {
 	originalLevel := zerolog.GlobalLevel()
 	t.Cleanup(func() { zerolog.SetGlobalLevel(originalLevel) })
 
-	testCases := []struct {
+	for _, tc := range []struct {
 		envVal      string
 		expectedLvl zerolog.Level
 	}{
 		{"false", zerolog.Disabled},
 		{"0", zerolog.Disabled},
 		{"", zerolog.Disabled},
-	}
-
-	for _, tc := range testCases {
-		os.Setenv("DEBUG_GOGG", tc.envVal)
+	} {
+		if err := os.Setenv("DEBUG_GOGG", tc.envVal); err != nil {
+			t.Fatalf("failed to set env: %v", err)
+		}
 		configureLogLevelFromEnv()
 		if zerolog.GlobalLevel() != tc.expectedLvl {
-			t.Errorf("DEBUG_GOGG=%q: expected log level %v, got %v",
-				tc.envVal, tc.expectedLvl, zerolog.GlobalLevel())
+			t.Errorf("DEBUG_GOGG=%q: expected log level %v, got %v", tc.envVal, tc.expectedLvl, zerolog.GlobalLevel())
 		}
 	}
 }
@@ -35,21 +34,20 @@ func TestConfigureLogLevelFromEnv_Debug(t *testing.T) {
 	originalLevel := zerolog.GlobalLevel()
 	t.Cleanup(func() { zerolog.SetGlobalLevel(originalLevel) })
 
-	testCases := []struct {
+	for _, tc := range []struct {
 		envVal      string
 		expectedLvl zerolog.Level
 	}{
 		{"true", zerolog.DebugLevel},
 		{"1", zerolog.DebugLevel},
 		{"random", zerolog.DebugLevel},
-	}
-
-	for _, tc := range testCases {
-		os.Setenv("DEBUG_GOGG", tc.envVal)
+	} {
+		if err := os.Setenv("DEBUG_GOGG", tc.envVal); err != nil {
+			t.Fatalf("failed to set env: %v", err)
+		}
 		configureLogLevelFromEnv()
 		if zerolog.GlobalLevel() != tc.expectedLvl {
-			t.Errorf("DEBUG_GOGG=%q: expected log level %v, got %v",
-				tc.envVal, tc.expectedLvl, zerolog.GlobalLevel())
+			t.Errorf("DEBUG_GOGG=%q: expected log level %v, got %v", tc.envVal, tc.expectedLvl, zerolog.GlobalLevel())
 		}
 	}
 }
@@ -80,17 +78,10 @@ func TestHandleInterrupt(t *testing.T) {
 	exitCalled := make(chan int, 1)
 	var loggedMessage string
 
-	fakeFatalLog := func(msg string) {
-		loggedMessage = msg
-		// In a real scenario log.Fatal would os.Exit, so we simulate the exit part
-		exitCalled <- 1
-	}
-	// We don't need a fake exit anymore since log.Fatal now handles it.
-	fakeExit := func(code int) {
-		// This function is no longer called by the modified handleInterrupt
-	}
+	fakeLog := func(msg string) { loggedMessage = msg }
+	fakeExit := func(code int) { exitCalled <- code }
 
-	go handleInterrupt(stopChan, fakeFatalLog, fakeExit)
+	go handleInterrupt(stopChan, fakeLog, fakeExit)
 
 	stopChan <- os.Interrupt
 
@@ -104,6 +95,6 @@ func TestHandleInterrupt(t *testing.T) {
 			t.Errorf("expected log message %q, got %q", expectedMsg, loggedMessage)
 		}
 	case <-time.After(100 * time.Millisecond):
-		t.Error("fatal log function was not called on interrupt")
+		t.Error("exit function was not called on interrupt")
 	}
 }

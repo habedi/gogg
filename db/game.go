@@ -47,11 +47,13 @@ func upsertGame(game Game) error {
 // EmptyCatalogue removes all records from the game catalogue.
 // It returns an error if the operation fails.
 func EmptyCatalogue() error {
-	if err := Db.Unscoped().Where("1 = 1").Delete(&Game{}).Error; err != nil {
+	if Db == nil {
+		return fmt.Errorf("database connection is not initialized")
+	}
+	if err := Db.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(&Game{}).Error; err != nil {
 		log.Error().Err(err).Msg("Failed to empty game catalogue")
 		return err
 	}
-
 	log.Info().Msg("Game catalogue emptied successfully")
 	return nil
 }
