@@ -230,7 +230,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 
 		fyne.CurrentApp().Preferences().SetString("lastUsedDownloadPath", downloadPath)
 
-		token, err := authService.RefreshToken()
+		token, err := authService.RefreshTokenCtx(ctx)
 		if err != nil {
 			task.State = StateError
 			_ = task.Status.Set(fmt.Sprintf("Error: %v", err))

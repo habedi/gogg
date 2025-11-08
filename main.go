@@ -12,14 +12,17 @@ import (
 )
 
 func main() {
+	log.Info().Msg("Gogg starting up")
 	configureLogLevelFromEnv()
 
 	stopChan := setupInterruptListener()
 	go handleInterrupt(stopChan,
-		func(msg string) { log.Error().Msg(msg) }, // avoid log.Fatal to keep control flow explicit
+		func(msg string) { log.Warn().Msg(msg) }, // avoid log.Fatal to keep control flow explicit
 		func(code int) {
+			log.Info().Msg("Shutdown initiated")
 			// graceful cleanup
 			db.Shutdown()
+			log.Info().Msg("Shutdown complete")
 			os.Exit(code)
 		},
 	)

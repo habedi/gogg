@@ -12,6 +12,7 @@ import (
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/clierr"
 	"github.com/habedi/gogg/pkg/validation"
 	"github.com/olekukonko/tablewriter"
 	"github.com/rs/zerolog/log"
@@ -48,7 +49,9 @@ func listGames(cmd *cobra.Command, repo db.GameRepository) {
 	log.Info().Msg("Listing all games in the catalogue...")
 	games, err := repo.List(cmd.Context())
 	if err != nil {
-		cmd.PrintErrln("Error: Unable to list games. Please check the logs for details.")
+		e := clierr.New(clierr.Internal, "Unable to list games", err)
+		cmd.PrintErrln(e.Message)
+		setLastCliErr(e)
 		log.Error().Err(err).Msg("Failed to fetch games from the game catalogue.")
 		return
 	}
@@ -107,11 +110,16 @@ func showGameInfo(cmd *cobra.Command, repo db.GameRepository, gameID int, update
 	log.Info().Msgf("Fetching info for game with ID=%d", gameID)
 	game, err := repo.GetByID(cmd.Context(), gameID)
 	if err != nil {
+		e := clierr.New(clierr.Internal, "Failed to fetch game info", err)
+		cmd.PrintErrln(e.Message)
+		setLastCliErr(e)
 		log.Error().Err(err).Msgf("Failed to fetch info for game with ID=%d", gameID)
-		cmd.PrintErrln("Error:", err)
 		return
 	}
 	if game == nil {
+		e := clierr.New(clierr.NotFound, "Game not found", nil)
+		cmd.PrintErrln(e.Message)
+		setLastCliErr(e)
 		log.Info().Msgf("No game found with ID=%d", gameID)
 		cmd.Println("No game found with the specified ID. Please check the game ID.")
 		return
@@ -137,8 +145,9 @@ func showGameInfo(cmd *cobra.Command, repo db.GameRepository, gameID int, update
 	// If --updates flag is used, show the version table
 	var gameData client.Game
 	if err := json.Unmarshal([]byte(game.Data), &gameData); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal game data for update view")
-		cmd.PrintErrln("Error: Failed to parse game data.")
+		e := clierr.New(clierr.Internal, "Failed to parse game data", err)
+		cmd.PrintErrln(e.Message)
+		setLastCliErr(e)
 		return
 	}
 
@@ -264,9 +273,10 @@ func searchGames(cmd *cobra.Command, repo db.GameRepository, query string, searc
 		log.Info().Msgf("Searching for games with term=%s in their title", query)
 		games, err = repo.SearchByTitle(ctx, query)
 		if err != nil {
+			setLastCliErr(clierr.New(clierr.Internal, "Failed to search games", err))
+			cmd.PrintErrln(clierr.New(clierr.Internal, "Failed to search games", err).Message)
 			log.Error().Err(err).Msgf("Failed to search games with term=%s in their title",
 				query)
-			cmd.PrintErrln("Error:", err)
 			return
 		}
 	}
@@ -310,7 +320,8 @@ func exportCatalogue(cmd *cobra.Command, repo db.GameRepository, exportPath, exp
 	ctx := cmd.Context()
 	games, err := repo.List(ctx)
 	if err != nil {
-		cmd.PrintErrln("Error: Failed to list games from the repository.")
+		setLastCliErr(clierr.New(clierr.Internal, "Failed to list games for export", err))
+		cmd.PrintErrln(clierr.New(clierr.Internal, "Failed to list games for export", err).Message)
 		log.Error().Err(err).Msg("Failed to list games from the repository")
 		return
 	} else if len(games) == 0 {
@@ -320,7 +331,7 @@ func exportCatalogue(cmd *cobra.Command, repo db.GameRepository, exportPath, exp
 	switch exportFormat {
 	case "json", "csv":
 	default:
-		log.Error().Msg("Invalid export format. Supported formats: json, csv")
+		setLastCliErr(clierr.New(clierr.Validation, "Invalid export format", nil))
 		cmd.PrintErrln("Error: Invalid export format. Supported formats: json, csv")
 		return
 	}
@@ -341,8 +352,9 @@ func exportCatalogue(cmd *cobra.Command, repo db.GameRepository, exportPath, exp
 		writeErr = exportCatalogueToCSV(filePath, games)
 	}
 	if writeErr != nil {
+		setLastCliErr(clierr.New(clierr.Internal, "Failed exporting catalogue", writeErr))
+		cmd.PrintErrln(clierr.New(clierr.Internal, "Failed exporting catalogue", writeErr).Message)
 		log.Error().Err(writeErr).Msg("Failed to export the game catalogue.")
-		cmd.PrintErrln("Error: Failed to export the game catalogue.")
 		return
 	}
 	cmd.Printf("Game catalogue exported successfully to: \"%s\"\n", filePath)

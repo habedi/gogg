@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/clierr"
 	"github.com/habedi/gogg/pkg/validation"
 	"github.com/rs/zerolog/log"
 	"github.com/schollz/progressbar/v3"
@@ -157,12 +159,11 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
 	if err := validation.ValidateThreadCount(numThreads); err != nil {
-		fmt.Println("Error:", err)
+		fmt.Println(clierr.New(clierr.Validation, "Invalid thread count", err).Message)
 		return
 	}
-
 	if err := validation.ValidatePlatform(platformName); err != nil {
-		fmt.Println("Error:", err)
+		fmt.Println(clierr.New(clierr.Validation, "Invalid platform", err).Message)
 		return
 	}
 
@@ -176,14 +177,14 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		}
 	}
 	if !found {
-		fmt.Println("Invalid language code. Supported languages are:")
+		fmt.Println(clierr.New(clierr.Validation, "Invalid language code", nil).Message)
 		for langCode, langName := range client.GameLanguages {
 			fmt.Printf("'%s' for %s\n", langCode, langName)
 		}
 		return
 	}
 
-	user, err := authService.RefreshToken()
+	user, err := authService.RefreshTokenCtx(ctx)
 	if err != nil {
 		fmt.Println("Failed to find or refresh the access token. Did you login?")
 		return
@@ -200,13 +201,11 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 	gameRepo := db.NewGameRepository(db.GetDB())
 	game, err := gameRepo.GetByID(ctx, gameID)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get game by ID.")
-		fmt.Println("Error retrieving game from local catalogue.")
+		fmt.Println(clierr.New(clierr.Internal, "Error retrieving game from local catalogue", err).Message)
 		return
 	}
 	if game == nil {
-		log.Error().Msg("Game not found in the catalogue.")
-		fmt.Printf("Game with ID %d not found in the local catalogue.\n", gameID)
+		fmt.Println(clierr.New(clierr.NotFound, fmt.Sprintf("Game %d not found in local catalogue", gameID), nil).Message)
 		return
 	}
 	parsedGameData, err := client.ParseGameData(game.Data)
@@ -222,12 +221,10 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 
 	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads, progressWriter)
 	if err != nil {
-		if err == context.Canceled || err == context.DeadlineExceeded {
-			log.Warn().Err(err).Msg("Download operation cancelled or timed out.")
-			fmt.Println("\nDownload cancelled or timed out.")
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			fmt.Println(clierr.New(clierr.Internal, "Download cancelled or timed out", err).Message)
 		} else {
-			log.Error().Err(err).Msg("Failed to download game files.")
-			fmt.Printf("\nError downloading game files: %v\n", err)
+			fmt.Println(clierr.New(clierr.Download, "Failed to download game files", err).Message)
 		}
 		return
 	}

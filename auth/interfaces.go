@@ -1,6 +1,10 @@
 package auth
 
-import "github.com/habedi/gogg/db"
+import (
+	"context"
+
+	"github.com/habedi/gogg/db"
+)
 
 // TokenStorer defines the contract for any component that can store and retrieve a token.
 type TokenStorer interface {
@@ -11,4 +15,9 @@ type TokenStorer interface {
 // TokenRefresher defines the contract for any component that can perform a token refresh action.
 type TokenRefresher interface {
 	PerformTokenRefresh(refreshToken string) (accessToken string, newRefreshToken string, expiresIn int64, err error)
+}
+
+// TokenRefresherWithCtx optionally supports context-aware refresh.
+type TokenRefresherWithCtx interface {
+	PerformTokenRefreshCtx(ctx context.Context, refreshToken string) (accessToken, newRefreshToken string, expiresIn int64, err error)
 }

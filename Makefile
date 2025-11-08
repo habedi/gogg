@@ -106,12 +106,17 @@ install-deps: ## Install development dependencies (for Debian-based systems)
 	@sudo snap install go --classic
 	@sudo snap install golangci-lint --classic
 	@$(GO) install mvdan.cc/gofumpt@latest
+	@$(GO) install honnef.co/go/tools/cmd/staticcheck@latest
 	@$(GO) install github.com/google/pprof@latest
 	@$(GO) mod download
 
 .PHONY: lint
-lint: format ## Run the linters
-	$(ECHO) "Linting Go files..."
+lint: format ## Run linter checks
+	$(ECHO) "Running go vet..."
+	@$(GO) vet ./...
+	$(ECHO) "Running staticcheck..."
+	@command -v staticcheck >/dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed"
+	$(ECHO) "Running golangci-lint..."
 	@golangci-lint run ./...
 
 .PHONY: gofumpt

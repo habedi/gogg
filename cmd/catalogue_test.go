@@ -160,3 +160,23 @@ func TestRefreshCmd(t *testing.T) {
 	expectedErrorMsg := "Error: Failed to refresh catalogue. Please check the logs for details."
 	assert.Contains(t, output, expectedErrorMsg)
 }
+
+func TestCatalogueCliErr_NotFound(t *testing.T) {
+	cleanDBTables(t)
+	repo := db.NewGameRepository(db.GetDB())
+	infoCommand := infoCmd(repo)
+	output, err := captureCombinedOutput(infoCommand, "99999")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Game not found")
+}
+
+func TestCatalogueCliErr_InvalidExportFormat(t *testing.T) {
+	cleanDBTables(t)
+	repo := db.NewGameRepository(db.GetDB())
+	addTestGame(t, repo, 50, "Export Err Game", "{}")
+	cmd := exportCmd(repo)
+	cmd.Flags().Set("format", "xml")
+	output, err := captureCombinedOutput(cmd, t.TempDir())
+	require.NoError(t, err)
+	assert.Contains(t, output, "Invalid export format")
+}

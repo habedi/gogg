@@ -348,11 +348,18 @@ func DownloadGameFiles(
 			}
 		}
 		if err != nil {
-			if ctx.Err() == context.Canceled {
+			if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
+				// On cancellation, remove partial file unless resume was requested
+				if !task.resume {
+					_ = file.Close()
+					_ = os.Remove(filePath)
+					log.Warn().Str("file", filePath).Msg("Download cancelled, removed partial file")
+				}
 				return ctx.Err()
 			}
-			// On resume, keep the partial file
+			// On other errors, keep partial if resume, else remove
 			if !task.resume {
+				_ = file.Close()
 				_ = os.Remove(filePath)
 			}
 			return fmt.Errorf("failed to save file %s: %w", filePath, err)
