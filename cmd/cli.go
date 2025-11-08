@@ -48,7 +48,6 @@ func Execute() {
 			cancel()
 		}
 	}
-	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show help for a command")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Error().Err(err).Msg("Command execution failed.")

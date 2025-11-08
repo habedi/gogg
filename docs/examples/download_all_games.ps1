@@ -17,11 +17,11 @@ $GOGG = ".\bin/gogg" # Path to Gogg's executable file (for example, ".\bin\gogg"
 # Download options
 $LANG = "en" # Language English
 $PLATFORM = "windows" # Platform Windows
-$INCLUDE_DLC = 1 # Include DLCs
-$INCLUDE_EXTRA_CONTENT = 1 # Include extra content
-$RESUME_DOWNLOAD = 1 # Resume download
+$INCLUDE_DLC = $true
+$INCLUDE_EXTRA_CONTENT = $true
+$RESUME_DOWNLOAD = $true
 $NUM_THREADS = 4 # Number of worker threads for downloading
-$FLATTEN = 1 # Flatten directory structure
+$FLATTEN = $true
 $OUTPUT_DIR = "./games" # Output directory
 
 # Function to clean up the CSV file

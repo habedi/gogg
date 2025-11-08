@@ -144,6 +144,12 @@ The `download` command supports the following additional options:
 - `--skip-patches`: Skip patches when downloading (default is false)
 - `--keep-latest`: After a successful download, remove older installer versions and keep only the latest version (default is false)
 
+> [!NOTE]
+> The `--keep-latest` flag scans downloaded installer files whose names contain a version-like pattern of digits separated by dots (like `game_installer_1.2.3.exe`).
+> For each prefix before the version (like `game_installer_`), it keeps only the file with the highest numeric version and removes older ones (like keeps `1.2.3` and removes `1.1.0`).
+> Files without a detectable version pattern are left untouched.
+> Supported installer extensions for pruning include: `.exe`, `.bin`, `.dmg`, `.sh`, `.zip`, `.tar.gz`, and `.rar`.
+
 For example, to download all files (English language) of a game with the ID `<game_id>` to the directory
 `<download_dir>` with the specified options:
 

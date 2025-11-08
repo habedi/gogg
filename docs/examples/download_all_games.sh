@@ -16,11 +16,11 @@ GOGG=$(command -v bin/gogg || command -v gogg)
 # Download options
 LANG=en # Language English
 PLATFORM=windows # Platform Windows
-INCLUDE_DLC=1 # Include DLCs
-INCLUDE_EXTRA_CONTENT=1 # Include extra content
-RESUME_DOWNLOAD=1 # Resume download
+INCLUDE_DLC=true
+INCLUDE_EXTRA_CONTENT=true
+RESUME_DOWNLOAD=true
 NUM_THREADS=4 # Number of worker threads for downloading
-FLATTEN=1 # Flatten the directory structure
+FLATTEN=true # Flatten the directory structure
 OUTPUT_DIR=./games # Output directory
 
 # Function to clean up the CSV file
