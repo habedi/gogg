@@ -4,12 +4,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
 
 func buildTestBinary(t *testing.T) string {
-	bin := filepath.Join(t.TempDir(), "gogg_it_bin")
+	binName := "gogg_it_bin"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(t.TempDir(), binName)
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
@@ -41,6 +46,10 @@ func TestTimeoutContext(t *testing.T) {
 
 // TestGracefulInterrupt runs the binary and sends SIGINT, expecting it to exit promptly.
 func TestGracefulInterrupt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping interrupt test on Windows - os.Interrupt signal not supported")
+	}
+
 	bin := buildTestBinary(t)
 	cmd := exec.Command(bin, "catalogue", "list")
 	if err := cmd.Start(); err != nil {

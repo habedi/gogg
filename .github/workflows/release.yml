@@ -116,6 +116,79 @@ jobs:
           name: gogg-macos-arm64
           path: bin/gogg
 
+  build-linux-arm64:
+    name: Build Linux Binary (ARM64)
+    runs-on: ubuntu-24.04-arm
+    env:
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          make install-deps
+
+      - name: Run Tests
+        run: |
+          make test
+
+      - name: Build Linux ARM64 Binary
+        run: |
+          make release
+
+      - name: Upload Linux ARM64 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gogg-linux-arm64
+          path: bin/gogg
+
+  build-windows-arm64:
+    name: Build Windows Binary (ARM64)
+    runs-on: windows-11-arm
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup MSYS2 Environment
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANGARM64
+          update: true
+          install: >-
+            make
+            mingw-w64-clang-aarch64-go
+            mingw-w64-clang-aarch64-gcc
+            mingw-w64-clang-aarch64-pkg-config
+            mingw-w64-clang-aarch64-freeglut
+
+      - name: Run Tests
+        shell: msys2 {0}
+        run: |
+          make test
+
+      - name: Build Windows ARM64 Binary
+        shell: msys2 {0}
+        run: |
+          make release GOGG_BINARY=gogg.exe
+
+      - name: Upload Windows ARM64 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gogg-windows-arm64
+          path: bin/gogg.exe
+
   build-and-push-docker:
     runs-on: ubuntu-latest
     needs: [ build-linux ]
@@ -154,7 +227,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: [ build-windows, build-linux, build-macos ]
+    needs: [ build-windows, build-linux, build-macos, build-linux-arm64, build-windows-arm64 ]
     permissions:
       contents: write
     steps:
@@ -176,6 +249,18 @@ jobs:
           name: gogg-macos-arm64
           path: ./dist/macos
 
+      - name: Download Linux ARM64 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gogg-linux-arm64
+          path: ./dist/linux-arm64
+
+      - name: Download Windows ARM64 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gogg-windows-arm64
+          path: ./dist/windows-arm64
+
       - name: List Downloaded Files (for debugging)
         run: ls -R ./dist
 
@@ -184,6 +269,8 @@ jobs:
           cd dist/windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ../..
           cd dist/linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ../..
           cd dist/macos && zip -r9 ../gogg-macos-arm64.zip gogg && cd ../..
+          cd dist/linux-arm64 && zip -r9 ../gogg-linux-arm64.zip gogg && cd ../..
+          cd dist/windows-arm64 && zip -r9 ../gogg-windows-arm64.zip gogg.exe && cd ../..
 
       - name: List Archives (for debugging)
         run: ls -l dist/gogg-*.zip
@@ -199,7 +286,9 @@ jobs:
             Release version ${{ github.ref_name }}
           artifacts: |
             dist/gogg-windows-amd64.zip
+            dist/gogg-windows-arm64.zip
             dist/gogg-linux-amd64.zip
+            dist/gogg-linux-arm64.zip
             dist/gogg-macos-arm64.zip
           draft: true
           prerelease: false

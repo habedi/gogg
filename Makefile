@@ -42,7 +42,11 @@ format: ## Format Go files
 .PHONY: test
 test: format ## Run tests with coverage
 	$(ECHO) "Running all tests with coverage"
-	@$(GO) test -v ./... --cover --coverprofile=$(COVER_PROFILE) --race
+	@if [ "$$(go env GOOS)" = "windows" ] && [ "$$(go env GOARCH)" = "arm64" ]; then \
+		$(GO) test -v ./... --cover --coverprofile=$(COVER_PROFILE); \
+	else \
+		$(GO) test -v ./... --cover --coverprofile=$(COVER_PROFILE) --race; \
+	fi
 
 .PHONY: showcov
 showcov: test ## Display test coverage report
@@ -130,6 +134,14 @@ release: ## Build the release binary for current platform (Linux and Windows)
 	@$(GO) mod tidy
 	$(ECHO) "Building the release binary..."
 	@$(GO) build $(RELEASE_FLAGS) $(FYNE_TAGS) -o $(BINARY) $(MAIN)
+	@$(ECHO) "Build complete: $(BINARY)"
+
+.PHONY: release-headless
+release-headless: ## Build headless (CLI-only) release without GUI
+	$(ECHO) "Tidying dependencies..."
+	@$(GO) mod tidy
+	$(ECHO) "Building headless release binary (CLI-only, no GUI)..."
+	@$(GO) build $(RELEASE_FLAGS) -tags headless -o $(BINARY) $(MAIN)
 	@$(ECHO) "Build complete: $(BINARY)"
 
 .PHONY: release-macos

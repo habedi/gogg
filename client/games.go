@@ -157,9 +157,7 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 
 		if resp.StatusCode >= 500 {
 			log.Warn().Int("status", resp.StatusCode).Int("attempt", i+1).Int("max_attempts", maxRetries).Msg("Server error, retrying...")
-			// Ensure body is closed before retry to avoid leaks
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
+			closeResponseBody(resp)
 			time.Sleep(backoff)
 			backoff *= 2
 			continue
@@ -175,9 +173,7 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Error().Int("status", resp.StatusCode).Msg("HTTP request failed with non-successful status")
-		// Drain and close to free the connection
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
+		closeResponseBody(resp)
 		return nil, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
 	}
 	return resp, nil
@@ -190,6 +186,14 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 		return nil, err
 	}
 	return body, nil
+}
+
+func closeResponseBody(resp *http.Response) {
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	_, _ = io.CopyN(io.Discard, resp.Body, 1024*1024)
+	_ = resp.Body.Close()
 }
 
 func parseGameData(body []byte, game *Game) error {
