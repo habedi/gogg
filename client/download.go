@@ -223,9 +223,7 @@ func DownloadGameFiles(
 			url = location
 			if parsedLoc, parseErr := netURL.Parse(location); parseErr == nil && parsedLoc.Path != "" {
 				if base := filepath.Base(parsedLoc.Path); base != "." && base != "/" {
-					if fileName == "" {
-						fileName = base
-					}
+					fileName = base
 				}
 			}
 		}
