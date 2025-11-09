@@ -94,7 +94,7 @@ func TestFilenameExtractionFromRedirectURL(t *testing.T) {
 			base := filepath.Base(tt.redirectURL)
 			assert.Equal(t, tt.expectedBase, base, tt.description)
 
-			// Verify extension is present
+			// Verify the extension is present
 			ext := filepath.Ext(base)
 			assert.NotEmpty(t, ext, "Filename should have an extension: %s", tt.description)
 		})
