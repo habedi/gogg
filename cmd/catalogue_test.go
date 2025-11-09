@@ -144,7 +144,23 @@ func TestExportCmd(t *testing.T) {
 	output, err := captureCombinedOutput(exportCommand, tmpExportDir)
 	require.NoError(t, err)
 	assert.Contains(t, output, tmpExportDir)
-	// ... rest of assertions
+
+	exportedFiles, err := os.ReadDir(tmpExportDir)
+	require.NoError(t, err)
+	assert.NotEmpty(t, exportedFiles, "Export directory should contain files")
+
+	var foundJSONFile bool
+	for _, file := range exportedFiles {
+		if filepath.Ext(file.Name()) == ".json" {
+			foundJSONFile = true
+			exportedFilePath := filepath.Join(tmpExportDir, file.Name())
+			content, err := os.ReadFile(exportedFilePath)
+			require.NoError(t, err)
+			assert.Contains(t, string(content), "Export Test Game", "Exported JSON should contain game title")
+			break
+		}
+	}
+	assert.True(t, foundJSONFile, "Should export at least one JSON file")
 }
 
 func TestRefreshCmd(t *testing.T) {
@@ -155,7 +171,7 @@ func TestRefreshCmd(t *testing.T) {
 
 	refreshCommand := refreshCmd(authService)
 	output, err := captureCombinedOutput(refreshCommand)
-	require.NoError(t, err) // The command itself should not error, just print an error message
+	require.NoError(t, err)
 
 	expectedErrorMsg := "Error: Failed to refresh catalogue. Please check the logs for details."
 	assert.Contains(t, output, expectedErrorMsg)
