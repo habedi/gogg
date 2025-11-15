@@ -20,23 +20,26 @@ var (
 
 func SetGlobalDownloadRateLimit(bytesPerSecond int64) {
 	rateLimiterMu.Lock()
-	defer rateLimiterMu.Unlock()
-
+	lim := GlobalDownloadRateLimiter
 	if bytesPerSecond <= 0 {
 		GlobalDownloadRateLimiter = nil
+		rateLimiterMu.Unlock()
 		return
 	}
-	if GlobalDownloadRateLimiter == nil {
+	if lim == nil {
 		GlobalDownloadRateLimiter = &RateLimiter{rate: bytesPerSecond, tokens: float64(bytesPerSecond), last: time.Now()}
-	} else {
-		GlobalDownloadRateLimiter.mu.Lock()
-		GlobalDownloadRateLimiter.rate = bytesPerSecond
-		if GlobalDownloadRateLimiter.tokens > float64(bytesPerSecond) {
-			GlobalDownloadRateLimiter.tokens = float64(bytesPerSecond)
-		}
-		GlobalDownloadRateLimiter.last = time.Now()
-		GlobalDownloadRateLimiter.mu.Unlock()
+		rateLimiterMu.Unlock()
+		return
 	}
+	// Update existing limiter outside of rateLimiterMu to avoid lock ordering issues
+	rateLimiterMu.Unlock()
+	lim.mu.Lock()
+	lim.rate = bytesPerSecond
+	if lim.tokens > float64(bytesPerSecond) {
+		lim.tokens = float64(bytesPerSecond)
+	}
+	lim.last = time.Now()
+	lim.mu.Unlock()
 }
 
 type limitedReader struct {

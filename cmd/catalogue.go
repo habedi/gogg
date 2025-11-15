@@ -225,7 +225,8 @@ func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads 
 		_ = bar.Set(int(progress * 1000))
 	}
 
-	err := client.RefreshCatalogue(cmd.Context(), authService, numThreads, progressCb)
+	repo := db.NewGameRepository(db.GetDB())
+	err := client.RefreshCatalogue(cmd.Context(), authService, repo, numThreads, progressCb)
 	if err != nil {
 		cmd.PrintErrln("Error: Failed to refresh catalogue. Please check the logs for details.")
 		log.Error().Err(err).Msg("Failed to refresh the game catalogue")

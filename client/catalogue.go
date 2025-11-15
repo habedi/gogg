@@ -20,15 +20,17 @@ func embedBase() string {
 	return "https://embed.gog.com"
 }
 
-// RefreshCatalogue fetches all owned game details from GOG and updates the local database.
+// RefreshCatalogue fetches all owned game details from GOG and updates the local database via the provided repo.
 // It reports progress via the progressCb callback, which receives a value from 0.0 to 1.0.
 func RefreshCatalogue(
 	ctx context.Context,
 	authService *auth.Service,
+	repo db.GameRepository,
 	numWorkers int,
 	progressCb func(float64),
 ) error {
-	token, err := authService.RefreshToken()
+	// Prefer context-aware token refresh to honor cancellations/timeouts
+	token, err := authService.RefreshTokenCtx(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to refresh token: %w", err)
 	}
@@ -46,7 +48,7 @@ func RefreshCatalogue(
 		return nil
 	}
 
-	if err := db.EmptyCatalogue(); err != nil {
+	if err := repo.Clear(ctx); err != nil {
 		return fmt.Errorf("failed to empty catalogue: %w", err)
 	}
 
@@ -70,9 +72,7 @@ func RefreshCatalogue(
 			return nil
 		}
 		if details.Title != "" {
-			if err := db.PutInGame(id, details.Title, raw); err != nil {
-				log.Error().Err(err).Int("gameID", id).Msg("Failed to save game to DB")
-			}
+			_ = repo.Put(ctx, db.Game{ID: id, Title: details.Title, Data: raw})
 		}
 
 		return nil
