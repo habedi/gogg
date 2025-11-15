@@ -49,6 +49,9 @@ jobs:
           make install-deps
 
       - name: Run Tests and Generate Coverage Report
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
         run: |
           make test
           make test-integration
