@@ -71,8 +71,12 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 			CurrentBytes: currentBytes,
 			TotalBytes:   pr.totalSize,
 		}
-		jsonUpdate, _ := json.Marshal(update)
-		pr.writeProgress(append(jsonUpdate, '\n'))
+		jsonUpdate, jsonErr := json.Marshal(update)
+		if jsonErr != nil {
+			log.Error().Err(jsonErr).Msg("Failed to marshal progress update")
+		} else {
+			pr.writeProgress(append(jsonUpdate, '\n'))
+		}
 	}
 	return n, err
 }
@@ -87,20 +91,22 @@ func ParseGameData(data string) (Game, error) {
 }
 
 func ensureDirExists(path string) error {
+	err := os.MkdirAll(path, 0755)
+	if err != nil {
+		log.Error().Err(err).Msgf("Failed to create directory: %s", path)
+		return err
+	}
+
 	info, err := os.Stat(path)
-	if err == nil {
-		if !info.IsDir() {
-			log.Error().Msgf("Path %s exists but is not a directory", path)
-			return fmt.Errorf("path %s exists but is not a directory", path)
-		}
-		return nil
+	if err != nil {
+		log.Error().Err(err).Msgf("Error checking directory %s", path)
+		return err
 	}
-	if os.IsNotExist(err) {
-		log.Info().Msgf("Creating directory: %s", path)
-		return os.MkdirAll(path, 0755)
+	if !info.IsDir() {
+		log.Error().Msgf("Path %s exists but is not a directory", path)
+		return fmt.Errorf("path %s exists but is not a directory", path)
 	}
-	log.Error().Err(err).Msgf("Error checking directory %s", path)
-	return err
+	return nil
 }
 
 var pathSanitizer = strings.NewReplacer(
@@ -130,6 +136,16 @@ func SanitizePath(name string) string {
 	name = allowedChars.ReplaceAllString(name, "")
 	name = multiDash.ReplaceAllString(name, "-")
 	name = strings.Trim(name, "-")
+
+	// If empty, return empty to preserve previous behavior
+	if name == "" {
+		return ""
+	}
+
+	const maxPathLength = 200
+	if len(name) > maxPathLength {
+		name = strings.TrimRight(name[:maxPathLength], "-")
+	}
 	return name
 }
 
@@ -179,8 +195,12 @@ func DownloadGameFiles(
 		return fmt.Errorf("failed to estimate total download size: %w", err)
 	}
 	startUpdate := ProgressUpdate{Type: "start", OverallTotalBytes: totalDownloadSize}
-	jsonStart, _ := json.Marshal(startUpdate)
-	_, _ = fmt.Fprintln(sw, string(jsonStart))
+	jsonStart, jsonErr := json.Marshal(startUpdate)
+	if jsonErr != nil {
+		log.Error().Err(jsonErr).Msg("Failed to marshal start update")
+	} else {
+		_, _ = fmt.Fprintln(sw, string(jsonStart))
+	}
 
 	findFileLocation := func(ctx context.Context, url string) (string, error) {
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -264,16 +284,22 @@ func DownloadGameFiles(
 			if fileInfo, statErr := os.Stat(filePath); statErr == nil {
 				startOffset = fileInfo.Size()
 				file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+				if err != nil {
+					return err
+				}
 			} else if os.IsNotExist(statErr) {
 				file, err = os.Create(filePath)
+				if err != nil {
+					return err
+				}
 			} else {
 				return statErr
 			}
 		} else {
 			file, err = os.Create(filePath)
-		}
-		if err != nil {
-			return err
+			if err != nil {
+				return err
+			}
 		}
 		defer func() { _ = file.Close() }()
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,11 +24,13 @@ func TestMain(m *testing.M) {
 	// Setup: Initialize the database at once.
 	tmpDir, err := os.MkdirTemp("", "gogg-cmd-test-")
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create temp dir for testing")
+		fmt.Fprintf(os.Stderr, "Failed to create temp dir for testing: %v\n", err)
+		os.Exit(1)
 	}
 	db.Path = filepath.Join(tmpDir, "games.db")
 	if err := db.InitDB(); err != nil {
-		log.Fatal().Err(err).Msg("Failed to init db for testing")
+		fmt.Fprintf(os.Stderr, "Failed to init db for testing: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Run all tests in the package.

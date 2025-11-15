@@ -192,7 +192,7 @@ func closeResponseBody(resp *http.Response) {
 	if resp == nil || resp.Body == nil {
 		return
 	}
-	_, _ = io.CopyN(io.Discard, resp.Body, 1024*1024)
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 10*1024*1024))
 	_ = resp.Body.Close()
 }
 

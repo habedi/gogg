@@ -34,13 +34,14 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 			})
 		}
 
-		err := client.RefreshCatalogue(ctx, authService, 10, progressCb)
+		repo := db.NewGameRepository(db.GetDB())
+		err := client.RefreshCatalogue(ctx, authService, repo, 10, progressCb)
 
 		runOnMain(func() {
 			dlg.Hide()
 
 			if errors.Is(err, context.Canceled) {
-				games, dbErr := db.GetCatalogue()
+				games, dbErr := repo.List(context.Background())
 				var msg string
 				if dbErr != nil {
 					msg = "Refresh was cancelled. Could not retrieve partial game count."
@@ -52,7 +53,7 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 			} else if err != nil {
 				showErrorDialog(win, "Failed to refresh catalogue", err)
 			} else {
-				games, dbErr := db.GetCatalogue()
+				games, dbErr := repo.List(context.Background())
 				if dbErr != nil {
 					dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
 				} else {
