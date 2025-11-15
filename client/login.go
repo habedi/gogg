@@ -39,7 +39,7 @@ func (c *GogClient) PerformTokenRefresh(refreshToken string) (accessToken string
 	if err != nil {
 		return "", "", 0, fmt.Errorf("failed to post form for token refresh: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -66,65 +66,6 @@ func (c *GogClient) PerformTokenRefresh(refreshToken string) (accessToken string
 	}
 
 	return result.AccessToken, result.RefreshToken, result.ExpiresIn, nil
-}
-
-func (c *GogClient) PerformTokenRefreshCtx(ctx context.Context, refreshToken string) (string, string, int64, error) {
-	query := url.Values{
-		"client_id":     {"46899977096215655"},
-		"client_secret": {"9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"},
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {refreshToken},
-	}
-	var lastErr error
-	backoff := 200 * time.Millisecond
-	for attempt := 0; attempt < 3; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.TokenURL, strings.NewReader(query.Encode()))
-		if err != nil {
-			return "", "", 0, fmt.Errorf("failed to construct request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			if ctx.Err() != nil {
-				return "", "", 0, ctx.Err()
-			}
-			lastErr = err
-			time.Sleep(backoff)
-			backoff *= 2
-			continue
-		}
-		body, berr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if berr != nil {
-			return "", "", 0, fmt.Errorf("failed to read token refresh response: %w", berr)
-		}
-		if resp.StatusCode >= 500 {
-			lastErr = fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(body))
-			time.Sleep(backoff)
-			backoff *= 2
-			continue
-		}
-		if resp.StatusCode >= 400 {
-			return "", "", 0, fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(body))
-		}
-		var result struct {
-			AccessToken  string `json:"access_token"`
-			ExpiresIn    int64  `json:"expires_in"`
-			RefreshToken string `json:"refresh_token"`
-			Error        string `json:"error_description"`
-		}
-		if err := json.Unmarshal(body, &result); err != nil {
-			return "", "", 0, fmt.Errorf("failed to parse token refresh response: %w", err)
-		}
-		if result.Error != "" {
-			return "", "", 0, fmt.Errorf("token refresh API error: %s", result.Error)
-		}
-		return result.AccessToken, result.RefreshToken, result.ExpiresIn, nil
-	}
-	if lastErr != nil {
-		return "", "", 0, lastErr
-	}
-	return "", "", 0, fmt.Errorf("token refresh failed")
 }
 
 func (c *GogClient) Login(loginURL string, username string, password string, headless bool) error {
@@ -176,7 +117,9 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 		return fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
 
-	log.Info().Msg("Login succeeded and tokens were received.")
+	log.Info().Msgf("Access token: %s", token[:10])
+	log.Info().Msgf("Refresh token: %s", refreshToken[:10])
+	log.Info().Msgf("Expires at: %s", expiresAt)
 
 	return db.UpsertTokenRecord(&db.Token{AccessToken: token, RefreshToken: refreshToken, ExpiresAt: expiresAt})
 }
@@ -184,11 +127,7 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
 	var execPath string
 	// Search for browsers in order of preference
-	browserExecutables := []string{
-		"google-chrome", "Google Chrome", "chromium", "Chromium", "chrome", "msedge", "Microsoft Edge",
-		"/app/bin/chromium",  // flatpak chromium
-		"/snap/bin/chromium", // snap chromium
-	}
+	browserExecutables := []string{"google-chrome", "Google Chrome", "chromium", "Chromium", "chrome", "msedge", "Microsoft Edge"}
 	for _, browser := range browserExecutables {
 		if p, err := exec.LookPath(browser); err == nil {
 			execPath = p
@@ -282,7 +221,7 @@ func (c *GogClient) exchangeCodeForToken(code string) (string, string, string, e
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to exchange code for token: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
