@@ -59,7 +59,15 @@ func (r *stubGameRepo) GetByID(_ context.Context, id int) (*db.Game, error) {
 	}
 	return &g, nil
 }
-func (r *stubGameRepo) List(_ context.Context) ([]db.Game, error)                    { return nil, nil }
+func (r *stubGameRepo) List(_ context.Context) ([]db.Game, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	games := make([]db.Game, 0, len(r.games))
+	for _, g := range r.games {
+		games = append(games, g)
+	}
+	return games, nil
+}
 func (r *stubGameRepo) SearchByTitle(_ context.Context, _ string) ([]db.Game, error) { return nil, nil }
 func (r *stubGameRepo) Clear(_ context.Context) error                                { return r.clearErr }
 
@@ -98,7 +106,7 @@ func TestRefreshCatalogue_TokenRefreshError(t *testing.T) {
 		&stubTokenStore{token: &db.Token{}},
 		&stubRefresher{err: errors.New("auth failed")},
 	)
-	err := RefreshCatalogue(context.Background(), svc, newStubRepo(), 1, nil)
+	_, err := RefreshCatalogue(context.Background(), svc, newStubRepo(), 1, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to refresh token")
 }
@@ -111,7 +119,7 @@ func TestRefreshCatalogue_NoGames(t *testing.T) {
 	t.Setenv("GOGG_EMBED_BASE", server.URL)
 
 	var got float64
-	err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), newStubRepo(), 1, func(p float64) {
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), newStubRepo(), 1, func(p float64) {
 		got = p
 	})
 	require.NoError(t, err)
@@ -127,7 +135,7 @@ func TestRefreshCatalogue_ClearError(t *testing.T) {
 
 	repo := newStubRepo()
 	repo.clearErr = errors.New("db error")
-	err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to empty catalogue")
 }
@@ -151,7 +159,7 @@ func TestRefreshCatalogue_StoresGames(t *testing.T) {
 
 	repo := newStubRepo()
 	var progress []float64
-	err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, func(p float64) {
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, func(p float64) {
 		progress = append(progress, p)
 	})
 	require.NoError(t, err)
@@ -178,7 +186,7 @@ func TestRefreshCatalogue_SkipsGameWithoutTitle(t *testing.T) {
 	t.Setenv("GOGG_EMBED_BASE", server.URL)
 
 	repo := newStubRepo()
-	err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
 	require.NoError(t, err)
 
 	g, _ := repo.GetByID(context.Background(), 7)
@@ -202,7 +210,7 @@ func TestRefreshCatalogue_FetchGameDataError(t *testing.T) {
 	t.Setenv("GOGG_EMBED_BASE", server.URL)
 
 	repo := newStubRepo()
-	err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
 	require.NoError(t, err)
 	g, _ := repo.GetByID(context.Background(), 99)
 	assert.Nil(t, g)
@@ -216,7 +224,7 @@ func TestRefreshCatalogue_FetchOwnedIDsError(t *testing.T) {
 	defer server.Close()
 	t.Setenv("GOGG_EMBED_BASE", server.URL)
 
-	err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), newStubRepo(), 1, nil)
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), newStubRepo(), 1, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to fetch owned game IDs")
 }
@@ -242,7 +250,7 @@ func TestRefreshCatalogue_MultipleGames(t *testing.T) {
 	repo := newStubRepo()
 	var mu sync.Mutex
 	var progressValues []float64
-	err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 3, func(p float64) {
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 3, func(p float64) {
 		mu.Lock()
 		progressValues = append(progressValues, p)
 		mu.Unlock()
@@ -255,4 +263,147 @@ func TestRefreshCatalogue_MultipleGames(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, g, "game %d should be stored", id)
 	}
+}
+
+func TestExtractVersion_NilVersions(t *testing.T) {
+	g := Game{Downloads: []Downloadable{{
+		Language:  "en",
+		Platforms: Platform{Windows: []PlatformFile{{Name: "setup.exe"}}},
+	}}}
+	assert.Equal(t, "", extractVersion(g))
+}
+
+func TestExtractVersion_WindowsVersion(t *testing.T) {
+	v := "1.2.3"
+	g := Game{Downloads: []Downloadable{{
+		Language:  "en",
+		Platforms: Platform{Windows: []PlatformFile{{Name: "setup.exe", Version: &v}}},
+	}}}
+	assert.Equal(t, "1.2.3", extractVersion(g))
+}
+
+func TestExtractVersion_FallsBackToMac(t *testing.T) {
+	v := "2.0"
+	g := Game{Downloads: []Downloadable{{
+		Language:  "en",
+		Platforms: Platform{Mac: []PlatformFile{{Name: "game.dmg", Version: &v}}},
+	}}}
+	assert.Equal(t, "2.0", extractVersion(g))
+}
+
+func TestRefreshCatalogue_VersionChange_NewGame(t *testing.T) {
+	v := "1.0"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user/data/games":
+			json.NewEncoder(w).Encode(map[string]interface{}{"owned": []int{10}})
+		case "/account/gameDetails/10.json":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"title": "New Game",
+				"downloads": [][]interface{}{
+					{"en", map[string]interface{}{
+						"windows": []map[string]interface{}{{"name": "setup.exe", "version": &v, "size": "0"}},
+					}},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GOGG_EMBED_BASE", server.URL)
+
+	repo := newStubRepo() // empty — game 10 is brand new
+	changes, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	assert.Equal(t, 10, changes[0].GameID)
+	assert.Equal(t, "New Game", changes[0].Title)
+	assert.Equal(t, "", changes[0].OldVersion)
+}
+
+func TestRefreshCatalogue_VersionChange_Updated(t *testing.T) {
+	newVer := "2.0"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user/data/games":
+			json.NewEncoder(w).Encode(map[string]interface{}{"owned": []int{20}})
+		case "/account/gameDetails/20.json":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"title": "Old Game",
+				"downloads": [][]interface{}{
+					{"en", map[string]interface{}{
+						"windows": []map[string]interface{}{{"name": "setup.exe", "version": &newVer, "size": "0"}},
+					}},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GOGG_EMBED_BASE", server.URL)
+
+	// Seed the repo with an older version of game 20.
+	repo := newStubRepo()
+	_ = repo.Put(context.Background(), db.Game{ID: 20, Title: "Old Game", Version: "1.0"})
+
+	changes, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	assert.Equal(t, "1.0", changes[0].OldVersion)
+	assert.Equal(t, "2.0", changes[0].NewVersion)
+}
+
+func TestRefreshCatalogue_VersionChange_Removed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// GOG no longer lists game 30 as owned.
+		if r.URL.Path == "/user/data/games" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"owned": []int{}})
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GOGG_EMBED_BASE", server.URL)
+
+	// Seed repo with game 30 that was previously owned.
+	repo := newStubRepo()
+	_ = repo.Put(context.Background(), db.Game{ID: 30, Title: "Lost Game", Version: "3.0"})
+
+	changes, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	require.NoError(t, err)
+	require.Len(t, changes, 1)
+	assert.Equal(t, 30, changes[0].GameID)
+	assert.Equal(t, "Lost Game", changes[0].Title)
+	assert.Equal(t, "3.0", changes[0].OldVersion)
+	assert.Equal(t, "", changes[0].NewVersion)
+}
+
+func TestRefreshCatalogue_VersionChange_NoChange(t *testing.T) {
+	v := "1.5"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user/data/games":
+			json.NewEncoder(w).Encode(map[string]interface{}{"owned": []int{40}})
+		case "/account/gameDetails/40.json":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"title": "Stable Game",
+				"downloads": [][]interface{}{
+					{"en", map[string]interface{}{
+						"windows": []map[string]interface{}{{"name": "setup.exe", "version": &v, "size": "0"}},
+					}},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GOGG_EMBED_BASE", server.URL)
+
+	repo := newStubRepo()
+	_ = repo.Put(context.Background(), db.Game{ID: 40, Title: "Stable Game", Version: "1.5"})
+
+	changes, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	require.NoError(t, err)
+	assert.Empty(t, changes)
 }

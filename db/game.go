@@ -11,9 +11,10 @@ import (
 
 // Game represents a game record in the catalogue.
 type Game struct {
-	ID    int    `gorm:"primaryKey" json:"id"`
-	Title string `gorm:"index" json:"title"` // Indexed for faster queries
-	Data  string `json:"data"`
+	ID      int    `gorm:"primaryKey" json:"id"`
+	Title   string `gorm:"index" json:"title"` // Indexed for faster queries
+	Data    string `json:"data"`
+	Version string `json:"version"` // Extracted installer version; empty when unavailable
 }
 
 // PutInGame inserts or updates a game record in the catalogue.
