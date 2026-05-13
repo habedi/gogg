@@ -83,7 +83,7 @@ func TestIntegration_RefreshCatalogue_WithPaginationAndEdgeCases(t *testing.T) {
 
 	repo := db.NewGameRepository(db.GetDB())
 	ctx := context.Background()
-	err := RefreshCatalogue(ctx, svc, repo, 3, nil)
+	_, err := RefreshCatalogue(ctx, svc, repo, 3, nil)
 	if err != nil && err != context.Canceled {
 		t.Fatalf("refresh failed: %v", err)
 	}
