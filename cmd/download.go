@@ -101,7 +101,7 @@ func (cw *cliProgressWriter) getFileStatusString() string {
 	sort.Strings(files)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Downloading %d files: ", len(files)))
+	fmt.Fprintf(&sb, "Downloading %d files: ", len(files))
 	for i, file := range files {
 		shortName := file
 		if len(shortName) > 25 {
@@ -109,7 +109,7 @@ func (cw *cliProgressWriter) getFileStatusString() string {
 		}
 		progress := cw.fileProgress[file]
 		sizeStr := fmt.Sprintf("%s/%s", formatBytes(progress.current), formatBytes(progress.total))
-		sb.WriteString(fmt.Sprintf("%s %s", shortName, sizeStr))
+		fmt.Fprintf(&sb, "%s %s", shortName, sizeStr)
 		if i < len(files)-1 {
 			sb.WriteString(" | ")
 		}

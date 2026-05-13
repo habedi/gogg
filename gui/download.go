@@ -160,7 +160,7 @@ func (pu *progressUpdater) updateFileStatusText() {
 
 	for i, file := range files {
 		if i >= maxLines {
-			sb.WriteString(fmt.Sprintf("...and %d more files", len(files)-maxLines))
+			fmt.Fprintf(&sb, "...and %d more files", len(files)-maxLines)
 			break
 		}
 
@@ -175,7 +175,7 @@ func (pu *progressUpdater) updateFileStatusText() {
 			percentage = int((float64(progress.current) / float64(progress.total)) * 100)
 		}
 		sizeStr := fmt.Sprintf("%s/%s", formatBytes(progress.current), formatBytes(progress.total))
-		sb.WriteString(fmt.Sprintf("%s: %s (%d%%)\n", displayName, sizeStr, percentage))
+		fmt.Fprintf(&sb, "%s: %s (%d%%)\n", displayName, sizeStr, percentage)
 	}
 
 	_ = pu.task.FileStatus.Set(strings.TrimSpace(sb.String()))
