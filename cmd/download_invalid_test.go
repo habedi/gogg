@@ -11,6 +11,22 @@ import (
 	"github.com/habedi/gogg/auth"
 )
 
+func TestDownloadCmd_MissingDirNoConfig(t *testing.T) {
+	// When downloadDir is omitted and no config download_dir is set, the command
+	// must print an error and not panic.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty config dir — no config.json
+	authService := auth.NewService(nil, nil)
+	cmd := downloadCmd(authService)
+	cmd.SetArgs([]string{"1234567890"}) // gameID only, no dir
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.Execute()
+	if got := buf.String(); got == "" {
+		t.Fatalf("expected error output, got empty")
+	}
+}
+
 func TestDownloadCmd_InvalidID(t *testing.T) {
 	authService := auth.NewService(nil, nil)
 	cmd := downloadCmd(authService)

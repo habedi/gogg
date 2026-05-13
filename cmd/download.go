@@ -19,6 +19,7 @@ import (
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/habedi/gogg/pkg/clierr"
+	"github.com/habedi/gogg/pkg/config"
 	"github.com/habedi/gogg/pkg/validation"
 	"github.com/rs/zerolog/log"
 	"github.com/schollz/progressbar/v3"
@@ -118,6 +119,8 @@ func (cw *cliProgressWriter) getFileStatusString() string {
 }
 
 func downloadCmd(authService *auth.Service) *cobra.Command {
+	cfg := config.Load()
+
 	var language, platformName string
 	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool
 	var numThreads int
@@ -125,8 +128,9 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "download [gameID] [downloadDir]",
 		Short: "Download game files from GOG",
-		Long:  "Download game files from GOG for the specified game ID to the specified directory",
-		Args:  cobra.ExactArgs(2),
+		Long: "Download game files from GOG for the specified game ID to the specified directory.\n" +
+			"downloadDir may be omitted when download_dir is set in ~/.config/gogg/config.json.",
+		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			gameID, err := strconv.Atoi(args[0])
 			if err != nil {
@@ -137,22 +141,31 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				cmd.PrintErrln("Error:", err)
 				return
 			}
-			downloadDir := args[1]
+			var downloadDir string
+			if len(args) == 2 {
+				downloadDir = args[1]
+			} else {
+				downloadDir = cfg.DownloadDir
+				if downloadDir == "" {
+					cmd.PrintErrln("Error: downloadDir argument is required (or set download_dir in ~/.config/gogg/config.json)")
+					return
+				}
+			}
 			ctx := cmd.Context()
 			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, numThreads)
 		},
 	}
 
-	cmd.Flags().StringVarP(&language, "lang", "l", "en", "Game language [en, fr, de, es, it, ru, pl, pt-BR, zh-Hans, ja, ko]")
-	cmd.Flags().StringVarP(&platformName, "platform", "p", "windows", "Platform name [all, windows, mac, linux]; all means all platforms")
-	cmd.Flags().BoolVarP(&extrasFlag, "extras", "e", true, "Include extra content files? [true, false]")
-	cmd.Flags().BoolVarP(&dlcFlag, "dlcs", "d", true, "Include DLC files? [true, false]")
-	cmd.Flags().BoolVarP(&resumeFlag, "resume", "r", true, "Resume downloading? [true, false]")
-	cmd.Flags().IntVarP(&numThreads, "threads", "t", 5, "Number of worker threads to use for downloading [1-20]")
-	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", true, "Flatten the directory structure when downloading? [true, false]")
-	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", false, "Skip patches when downloading? [true, false]")
-	cmd.Flags().BoolVar(&keepLatestFlag, "keep-latest", false, "Remove older installer versions after successful download (keep only highest version)")
-	cmd.Flags().BoolVar(&rommLayoutFlag, "romm", false, "Use RomM compatible folder layout (platform/game)")
+	cmd.Flags().StringVarP(&language, "lang", "l", cfg.Language, "Game language [en, fr, de, es, it, ru, pl, pt-BR, zh-Hans, ja, ko]")
+	cmd.Flags().StringVarP(&platformName, "platform", "p", cfg.Platform, "Platform name [all, windows, mac, linux]; all means all platforms")
+	cmd.Flags().BoolVarP(&extrasFlag, "extras", "e", cfg.Extras, "Include extra content files? [true, false]")
+	cmd.Flags().BoolVarP(&dlcFlag, "dlcs", "d", cfg.DLCs, "Include DLC files? [true, false]")
+	cmd.Flags().BoolVarP(&resumeFlag, "resume", "r", cfg.Resume, "Resume downloading? [true, false]")
+	cmd.Flags().IntVarP(&numThreads, "threads", "t", cfg.Threads, "Number of worker threads to use for downloading [1-20]")
+	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", cfg.Flatten, "Flatten the directory structure when downloading? [true, false]")
+	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", cfg.SkipPatches, "Skip patches when downloading? [true, false]")
+	cmd.Flags().BoolVar(&keepLatestFlag, "keep-latest", cfg.KeepLatest, "Remove older installer versions after successful download (keep only highest version)")
+	cmd.Flags().BoolVar(&rommLayoutFlag, "romm", cfg.RommLayout, "Use RomM compatible folder layout (platform/game)")
 
 	return cmd
 }
