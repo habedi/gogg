@@ -9,8 +9,14 @@ on:
       - '**.md'
       - 'docs/**'
   push:
+    branches:
+      - "develop"
     tags:
       - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
