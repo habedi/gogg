@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,6 +227,62 @@ func TestDownloadGameFiles_EnqueueError(t *testing.T) {
 	err := DownloadGameFiles(ctx, "token", game, tmp,
 		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestDownloadGameFiles_HTTP403OnHEAD(t *testing.T) {
+	// Server returns 403 on HEAD; the task must be skipped (nil error) and
+	// the empty file must be removed. DownloadGameFiles returns no error.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/dlc/setup.exe"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &rawURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	err := DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	require.NoError(t, err)
+
+	// The empty partial file must have been cleaned up.
+	entries, _ := os.ReadDir(filepath.Join(tmp, "mygame"))
+	for _, e := range entries {
+		assert.NotEqual(t, "setup.exe", e.Name(), "partial file should have been removed")
+	}
+}
+
+func TestDownloadGameFiles_HTTP403OnGET(t *testing.T) {
+	// Server returns 200 on HEAD but 403 on GET; same skip-and-no-error behaviour.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", "1024")
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusForbidden)
+		}
+	}))
+	defer server.Close()
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/dlc/setup.exe"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &rawURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	err := DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	require.NoError(t, err)
 }
 
 func TestDownloadGameFiles_DownloadTaskError(t *testing.T) {

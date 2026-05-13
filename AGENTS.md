@@ -28,8 +28,8 @@ Priorities, in order:
 - Do not use em dashes. Restructure the sentence, or use a colon or semicolon instead.
 - Avoid colorful adjectives and adverbs. Write "rate limiter" not "smart rate limiter".
 - Use noun phrases for checklist items, not imperative verbs. Write "rate limit enforcement" not "enforce rate limits".
-- Headings in Markdown files must be in title case: "Build from Source" not "Build from source". Minor words
-  (a, an, the, and, but, or, for, in, on, at, to, by, of, is, are, was, were, be) stay lowercase unless they are the first word.
+- Headings in Markdown files must be in title case: "Build from Source" not "Build from source". Minor words (a, an, the, and, but, or, for, in, on,
+  at, to, by, of, is, are, was, were, be) stay lowercase unless they are the first word.
 
 ## Repository Layout
 
@@ -89,16 +89,16 @@ Fyne dependency. Use `-tags headless` when running in environments without a dis
 
 Run the relevant targets for any change:
 
-| Target            | Command                  | What It Runs                                                        |
-|-------------------|--------------------------|---------------------------------------------------------------------|
-| Format            | `make format`            | `go fmt ./...`                                                      |
-| Unit tests        | `make test`              | `go test ./...` with coverage and race detector                     |
-| Integration tests | `make test-integration`  | `go test -tags=integration ./...`                                   |
-| Fuzz tests        | `make test-fuzz`         | Short fuzz runs for `FuzzParseSizeString` and `FuzzParseGameData`   |
-| Lint              | `make lint`              | `go vet`, `staticcheck`, and `golangci-lint`                        |
-| Build             | `make build`             | Builds the desktop binary into `bin/`                               |
-| Headless build    | `make release-headless`  | Builds the CLI-only binary without GUI dependencies                 |
-| Coverage report   | `make showcov`           | Displays per-function coverage after running tests                  |
+| Target            | Command                 | What It Runs                                                      |
+|-------------------|-------------------------|-------------------------------------------------------------------|
+| Format            | `make format`           | `go fmt ./...`                                                    |
+| Unit tests        | `make test`             | `go test ./...` with coverage and race detector                   |
+| Integration tests | `make test-integration` | `go test -tags=integration ./...`                                 |
+| Fuzz tests        | `make test-fuzz`        | Short fuzz runs for `FuzzParseSizeString` and `FuzzParseGameData` |
+| Lint              | `make lint`             | `go vet`, `staticcheck`, and `golangci-lint`                      |
+| Build             | `make build`            | Builds the desktop binary into `bin/`                             |
+| Headless build    | `make release-headless` | Builds the CLI-only binary without GUI dependencies               |
+| Coverage report   | `make showcov`          | Displays per-function coverage after running tests                |
 
 ## First Contribution Flow
 

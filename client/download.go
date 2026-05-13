@@ -314,6 +314,14 @@ func DownloadGameFiles(
 			return err
 		}
 		_ = headResp.Body.Close()
+		if headResp.StatusCode == http.StatusForbidden {
+			log.Warn().Str("file", fileName).Str("url", url).Msg("Skipping file: server returned HTTP 403; file may be bundled in the main installer")
+			if !task.resume {
+				_ = file.Close()
+				_ = os.Remove(filePath)
+			}
+			return nil
+		}
 
 		totalSize := headResp.ContentLength
 		if task.resume && totalSize > 0 && startOffset >= totalSize {
@@ -342,6 +350,14 @@ func DownloadGameFiles(
 		defer func() { _ = getResp.Body.Close() }()
 
 		if getResp.StatusCode != http.StatusOK && getResp.StatusCode != http.StatusPartialContent {
+			if getResp.StatusCode == http.StatusForbidden {
+				log.Warn().Str("file", fileName).Str("url", url).Msg("Skipping file: server returned HTTP 403; file may be bundled in the main installer")
+				if !task.resume {
+					_ = file.Close()
+					_ = os.Remove(filePath)
+				}
+				return nil
+			}
 			return fmt.Errorf("failed to download %s: HTTP %d", fileName, getResp.StatusCode)
 		}
 
