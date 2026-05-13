@@ -1,8 +1,12 @@
 package client
 
 import (
+	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -166,4 +170,79 @@ func TestBuildManualURL(t *testing.T) {
 		result := buildManualURL(tt.input)
 		assert.Equal(t, tt.expected, result)
 	}
+}
+
+// errWriter returns an error on every Write, used to exercise the writeProgress error branch.
+type errWriter struct{}
+
+func (errWriter) Write(_ []byte) (int, error) { return 0, errors.New("write failed") }
+
+func TestWriteProgress_WriterError(t *testing.T) {
+	pr := &progressReader{writer: errWriter{}}
+	pr.writeProgress([]byte("data")) // must not panic; error is only logged
+}
+
+func TestSanitizePath_TruncatesAt200Chars(t *testing.T) {
+	long := strings.Repeat("a", 300)
+	result := SanitizePath(long)
+	assert.LessOrEqual(t, len(result), 200)
+	assert.NotEmpty(t, result)
+}
+
+func TestDownloadGameFiles_BadDownloadPath(t *testing.T) {
+	tmp := t.TempDir()
+	// Place a file where a directory is required so MkdirAll fails.
+	blockingFile := filepath.Join(tmp, "block")
+	require.NoError(t, os.WriteFile(blockingFile, []byte("x"), 0o644))
+	badPath := filepath.Join(blockingFile, "sub")
+
+	err := DownloadGameFiles(context.Background(), "token", Game{}, badPath,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	assert.Error(t, err)
+}
+
+func TestDownloadGameFiles_EmptyGame(t *testing.T) {
+	// An empty Game with no downloads produces no tasks; the function succeeds
+	// and writes a metadata.json file.
+	tmp := t.TempDir()
+	err := DownloadGameFiles(context.Background(), "token", Game{Title: "mygame"}, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	require.NoError(t, err)
+}
+
+func TestDownloadGameFiles_EnqueueError(t *testing.T) {
+	// A pre-cancelled context causes enqueueGameFiles to return context.Canceled,
+	// which propagates as the function's return value.
+	tmp := t.TempDir()
+	url := "/files/setup.exe"
+	game := Game{Downloads: []Downloadable{{
+		Language:  "en",
+		Platforms: Platform{Windows: []PlatformFile{{ManualURL: &url, Name: "setup.exe"}}},
+	}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := DownloadGameFiles(ctx, "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestDownloadGameFiles_DownloadTaskError(t *testing.T) {
+	// A null-byte in the URL is invalid; http.NewRequestWithContext fails inside
+	// findFileLocation, so pool.Run collects the download error and the function
+	// returns a "download tasks failed" error.
+	tmp := t.TempDir()
+	badURL := "\x00invalid"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &badURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	err := DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "download tasks failed")
 }

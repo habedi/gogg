@@ -38,6 +38,14 @@ func TestURLHelpers(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeURL_RootPath(t *testing.T) {
+	// A URL whose path is exactly "/" should have the slash stripped.
+	got := canonicalizeURL("http://example.com/")
+	if got != "http://example.com" {
+		t.Fatalf("expected http://example.com, got %q", got)
+	}
+}
+
 func TestResolveNext(t *testing.T) {
 	base := "https://example.com/user/data/games"
 	if got := resolveNext(base, ""); got != "" {

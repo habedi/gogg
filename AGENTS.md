@@ -29,8 +29,7 @@ Priorities, in order:
 - Avoid colorful adjectives and adverbs. Write "rate limiter" not "smart rate limiter".
 - Use noun phrases for checklist items, not imperative verbs. Write "rate limit enforcement" not "enforce rate limits".
 - Headings in Markdown files must be in title case: "Build from Source" not "Build from source". Minor words
-  (a, an, the, and, but, or, for, in, on, at, to, by, of, is, are, was, were, be) stay lowercase unless they are
-  the first word.
+  (a, an, the, and, but, or, for, in, on, at, to, by, of, is, are, was, were, be) stay lowercase unless they are the first word.
 
 ## Repository Layout
 
