@@ -252,7 +252,7 @@ func TestDownloadGameFiles_HTTP403OnHEAD(t *testing.T) {
 	require.NoError(t, err)
 
 	// The empty partial file must have been cleaned up.
-	entries, _ := os.ReadDir(filepath.Join(tmp, "mygame"))
+	entries, _ := os.ReadDir(filepath.Join(tmp, "mygame", "windows"))
 	for _, e := range entries {
 		assert.NotEqual(t, "setup.exe", e.Name(), "partial file should have been removed")
 	}
@@ -283,6 +283,71 @@ func TestDownloadGameFiles_HTTP403OnGET(t *testing.T) {
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
 		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
 	require.NoError(t, err)
+}
+
+func TestDownloadGameFiles_PartFileRenamedOnSuccess(t *testing.T) {
+	// Server responds with a complete 1-byte body. After download the final file
+	// must exist and the .part file must be gone.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", "1")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("Content-Length", "1")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("x"))
+	}))
+	defer server.Close()
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/files/setup.exe"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &rawURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	err := DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	require.NoError(t, err)
+
+	gameDir := filepath.Join(tmp, "mygame", "windows")
+	assert.FileExists(t, filepath.Join(gameDir, "setup.exe"), "final file should exist")
+	assert.NoFileExists(t, filepath.Join(gameDir, "setup.exe.part"), ".part file should be removed after success")
+}
+
+func TestDownloadGameFiles_PartFileRemovedOnError(t *testing.T) {
+	// Server returns 500 after the file has been opened; the .part file must be
+	// cleaned up when resume is not requested.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", "100")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/files/setup.exe"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &rawURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	err := DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	require.Error(t, err)
+
+	gameDir := filepath.Join(tmp, "mygame", "windows")
+	assert.NoFileExists(t, filepath.Join(gameDir, "setup.exe.part"), ".part file should be removed on non-resume error")
 }
 
 func TestDownloadGameFiles_DownloadTaskError(t *testing.T) {
