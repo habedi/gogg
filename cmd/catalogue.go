@@ -226,7 +226,7 @@ func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads 
 	}
 
 	repo := db.NewGameRepository(db.GetDB())
-	err := client.RefreshCatalogue(cmd.Context(), authService, repo, numThreads, progressCb)
+	changes, err := client.RefreshCatalogue(cmd.Context(), authService, repo, numThreads, progressCb)
 	if err != nil {
 		cmd.PrintErrln("Error: Failed to refresh catalogue. Please check the logs for details.")
 		log.Error().Err(err).Msg("Failed to refresh the game catalogue")
@@ -234,6 +234,37 @@ func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads 
 	}
 
 	cmd.Println("Refreshed the game catalogue successfully.")
+
+	if len(changes) == 0 {
+		return
+	}
+	cmd.Printf("\n%d game(s) changed since last refresh:\n", len(changes))
+	table := tablewriter.NewWriter(cmd.OutOrStdout())
+	table.SetHeader([]string{"Game ID", "Title", "Change", "Old Version", "New Version"})
+	table.SetAutoWrapText(false)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
+	for _, c := range changes {
+		var changeType string
+		switch {
+		case c.OldVersion == "" && c.NewVersion != "":
+			changeType = "Added"
+		case c.NewVersion == "" && c.OldVersion != "":
+			changeType = "Removed"
+		default:
+			changeType = "Updated"
+		}
+		oldV := c.OldVersion
+		if oldV == "" {
+			oldV = "—"
+		}
+		newV := c.NewVersion
+		if newV == "" {
+			newV = "—"
+		}
+		table.Append([]string{fmt.Sprintf("%d", c.GameID), c.Title, changeType, oldV, newV})
+	}
+	table.Render()
 }
 
 func searchCmd(repo db.GameRepository) *cobra.Command {

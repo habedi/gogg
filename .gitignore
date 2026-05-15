@@ -89,3 +89,6 @@ coverage.txt
 .env
 *_output.txt
 testdata/
+.codex
+.claude
+.agent/

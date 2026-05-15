@@ -279,27 +279,42 @@ func DownloadGameFiles(
 
 		var file *os.File
 		var startOffset int64
+		partPath := filePath + ".part"
+		usingPartFile := false
 
 		if task.resume {
-			if fileInfo, statErr := os.Stat(filePath); statErr == nil {
+			if fileInfo, statErr := os.Stat(partPath); statErr == nil {
+				// Resume an in-progress download.
 				startOffset = fileInfo.Size()
-				file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+				file, err = os.OpenFile(partPath, os.O_APPEND|os.O_WRONLY, 0644)
 				if err != nil {
 					return err
 				}
-			} else if os.IsNotExist(statErr) {
-				file, err = os.Create(filePath)
-				if err != nil {
-					return err
-				}
+				usingPartFile = true
 			} else {
-				return statErr
+				if fileInfo, statErr := os.Stat(filePath); statErr == nil {
+					// Final file already present (completed or legacy partial).
+					startOffset = fileInfo.Size()
+					file, err = os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+					if err != nil {
+						return err
+					}
+				} else if os.IsNotExist(statErr) {
+					file, err = os.Create(partPath)
+					if err != nil {
+						return err
+					}
+					usingPartFile = true
+				} else {
+					return statErr
+				}
 			}
 		} else {
-			file, err = os.Create(filePath)
+			file, err = os.Create(partPath)
 			if err != nil {
 				return err
 			}
+			usingPartFile = true
 		}
 		defer func() { _ = file.Close() }()
 
@@ -314,6 +329,16 @@ func DownloadGameFiles(
 			return err
 		}
 		_ = headResp.Body.Close()
+		if headResp.StatusCode == http.StatusForbidden {
+			log.Warn().Str("file", fileName).Str("url", url).Msg("Skipping file: server returned HTTP 403; file may be bundled in the main installer")
+			_ = file.Close()
+			if usingPartFile {
+				_ = os.Remove(partPath)
+			} else if !task.resume {
+				_ = os.Remove(filePath)
+			}
+			return nil
+		}
 
 		totalSize := headResp.ContentLength
 		if task.resume && totalSize > 0 && startOffset >= totalSize {
@@ -321,6 +346,10 @@ func DownloadGameFiles(
 			finalUpdate := ProgressUpdate{Type: "file_progress", FileName: fileName, CurrentBytes: startOffset, TotalBytes: totalSize}
 			jsonUpdate, _ := json.Marshal(finalUpdate)
 			_, _ = fmt.Fprintln(sw, string(jsonUpdate))
+			if usingPartFile {
+				_ = file.Close()
+				_ = os.Rename(partPath, filePath)
+			}
 			return nil
 		}
 
@@ -342,6 +371,24 @@ func DownloadGameFiles(
 		defer func() { _ = getResp.Body.Close() }()
 
 		if getResp.StatusCode != http.StatusOK && getResp.StatusCode != http.StatusPartialContent {
+			if getResp.StatusCode == http.StatusForbidden {
+				log.Warn().Str("file", fileName).Str("url", url).Msg("Skipping file: server returned HTTP 403; file may be bundled in the main installer")
+				_ = file.Close()
+				if usingPartFile {
+					_ = os.Remove(partPath)
+				} else if !task.resume {
+					_ = os.Remove(filePath)
+				}
+				return nil
+			}
+			if !task.resume {
+				_ = file.Close()
+				activeFile := filePath
+				if usingPartFile {
+					activeFile = partPath
+				}
+				_ = os.Remove(activeFile)
+			}
 			return fmt.Errorf("failed to download %s: HTTP %d", fileName, getResp.StatusCode)
 		}
 
@@ -350,7 +397,11 @@ func DownloadGameFiles(
 			if err := file.Close(); err != nil {
 				return err
 			}
-			file, err = os.Create(filePath) // truncate
+			truncPath := filePath
+			if usingPartFile {
+				truncPath = partPath
+			}
+			file, err = os.Create(truncPath) // truncate
 			if err != nil {
 				return err
 			}
@@ -377,21 +428,31 @@ func DownloadGameFiles(
 			}
 		}
 		if err != nil {
+			activeFile := filePath
+			if usingPartFile {
+				activeFile = partPath
+			}
 			if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
 				// On cancellation, remove partial file unless resume was requested
 				if !task.resume {
 					_ = file.Close()
-					_ = os.Remove(filePath)
-					log.Warn().Str("file", filePath).Msg("Download cancelled, removed partial file")
+					_ = os.Remove(activeFile)
+					log.Warn().Str("file", activeFile).Msg("Download cancelled, removed partial file")
 				}
 				return ctx.Err()
 			}
 			// On other errors, keep partial if resume, else remove
 			if !task.resume {
 				_ = file.Close()
-				_ = os.Remove(filePath)
+				_ = os.Remove(activeFile)
 			}
 			return fmt.Errorf("failed to save file %s: %w", filePath, err)
+		}
+		if usingPartFile {
+			_ = file.Close()
+			if err := os.Rename(partPath, filePath); err != nil {
+				return fmt.Errorf("failed to finalize %s: %w", fileName, err)
+			}
 		}
 		return nil
 	}

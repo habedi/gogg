@@ -35,7 +35,7 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 		}
 
 		repo := db.NewGameRepository(db.GetDB())
-		err := client.RefreshCatalogue(ctx, authService, repo, 10, progressCb)
+		_, err := client.RefreshCatalogue(ctx, authService, repo, 10, progressCb)
 
 		runOnMain(func() {
 			dlg.Hide()

@@ -2,6 +2,8 @@ name: Run Tests
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 0 * *' # Run every day at midnight (UTC)
   pull_request:
     branches:
       - "main"
@@ -9,6 +11,8 @@ on:
       - '**.md'
       - 'docs/**'
   push:
+    branches:
+      - "develop"
     tags:
       - 'v*'
 

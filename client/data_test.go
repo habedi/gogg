@@ -118,3 +118,25 @@ func TestHandlesEmptyDownloads(t *testing.T) {
 	assert.Empty(t, game.Extras)
 	assert.Empty(t, game.DLCs)
 }
+
+func TestUnmarshalJSON_InvalidJSON(t *testing.T) {
+	var g client.Game
+	err := json.Unmarshal([]byte("not json"), &g)
+	assert.Error(t, err)
+}
+
+func TestParseRawDownloads_NonStringLanguage(t *testing.T) {
+	// First element is an integer, not a string — type assertion to string fails → entry skipped.
+	jsonData := `{"title":"G","downloads":[[123,{"windows":[]}]],"extras":[],"dlcs":[]}`
+	var g client.Game
+	require.NoError(t, json.Unmarshal([]byte(jsonData), &g))
+	assert.Empty(t, g.Downloads)
+}
+
+func TestParseRawDownloads_BadPlatformData(t *testing.T) {
+	// Second element is a string, not an object — json.Unmarshal into Platform fails → entry skipped.
+	jsonData := `{"title":"G","downloads":[["en","not-an-object"]],"extras":[],"dlcs":[]}`
+	var g client.Game
+	require.NoError(t, json.Unmarshal([]byte(jsonData), &g))
+	assert.Empty(t, g.Downloads)
+}
