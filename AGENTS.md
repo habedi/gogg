@@ -36,12 +36,12 @@ Priorities, in order:
 - `main.go`: Entry point; initializes the database and delegates to `cmd.Execute`.
 - `cmd/`: Cobra command definitions (`cli.go`, `download.go`, `catalogue.go`, `login.go`, `version.go`, `file.go`,
   `gui.go`). Each command wires flags and calls into `client/` or `db/`.
-- `client/`: GOG API client — `login.go` (OAuth via chromedp), `games.go` (owned-game listing),
+- `client/`: GOG API client; contains `login.go` (OAuth via chromedp), `games.go` (owned-game listing),
   `catalogue.go` (sync), `download.go` (file downloads with progress), `data.go` (data parsing),
-  `rate_limiter.go` (request throttling).
+  and `rate_limiter.go` (request throttling).
 - `auth/`: Authentication service and interfaces wrapping GOG OAuth token lifecycle.
-- `db/`: GORM/SQLite persistence — `db.go` (connection setup), `game.go` (game model), `token.go` (token model),
-  `repository.go` (data access layer).
+- `db/`: GORM/SQLite persistence; contains `db.go` (connection setup), `game.go` (game model), `token.go` (token model),
+  and `repository.go` (data access layer).
 - `gui/`: Fyne desktop GUI — `window.go` (main window), `widgets.go` (custom widgets), `theme.go`, `sound.go`,
   `shared.go`.
 - `scripts/`: Shell scripts for integration testing and Docker entrypoint.
@@ -54,10 +54,10 @@ Priorities, in order:
 
 Gogg is organized into four layers that should not have upward dependencies:
 
-1. `db/` — persistence only; no knowledge of the API or CLI.
-2. `client/` — GOG API calls and file I/O; depends on `auth/` and `db/` but not on `cmd/` or `gui/`.
-3. `cmd/` — Cobra command handlers; orchestrates `client/` and `db/` calls, formats output.
-4. `gui/` — Fyne desktop interface; calls into `client/` and `db/` the same way `cmd/` does.
+1. `db/`: persistence only; no knowledge of the API or CLI.
+2. `client/`: GOG API calls and file I/O; depends on `auth/` and `db/` but not on `cmd/` or `gui/`.
+3. `cmd/`: Cobra command handlers; orchestrates `client/` and `db/` calls, formats output.
+4. `gui/`: Fyne desktop interface; calls into `client/` and `db/` the same way `cmd/` does.
 
 ### Authentication Flow
 

@@ -256,11 +256,11 @@ func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads 
 		}
 		oldV := c.OldVersion
 		if oldV == "" {
-			oldV = "—"
+			oldV = "N/A"
 		}
 		newV := c.NewVersion
 		if newV == "" {
-			newV = "—"
+			newV = "N/A"
 		}
 		table.Append([]string{fmt.Sprintf("%d", c.GameID), c.Title, changeType, oldV, newV})
 	}
