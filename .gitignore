@@ -90,5 +90,6 @@ coverage.txt
 *_output.txt
 testdata/
 .codex
-.claude
-.agent/
+.claude/
+.agents/
+.antygravitycli/
