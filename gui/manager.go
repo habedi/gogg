@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -381,8 +383,45 @@ func (dm *DownloadManager) activeCount() int {
 	return c
 }
 
+const (
+	prefMaxConcurrent    = "download.maxConcurrent"
+	defaultMaxConcurrent = 2
+)
+
+// maxConcurrentDownloads reads the configured limit. Older versions stored it
+// as a string, so that form is still accepted.
+func maxConcurrentDownloads(prefs fyne.Preferences) int {
+	if v := prefs.IntWithFallback(prefMaxConcurrent, 0); v > 0 {
+		return v
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(prefs.String(prefMaxConcurrent))); err == nil && v > 0 {
+		return v
+	}
+	return defaultMaxConcurrent
+}
+
 func (dm *DownloadManager) maxConcurrent() int {
-	return fyne.CurrentApp().Preferences().IntWithFallback("download.maxConcurrent", 2)
+	return maxConcurrentDownloads(fyne.CurrentApp().Preferences())
+}
+
+// cancelQueued drops a download that has not started yet from the queue.
+func (dm *DownloadManager) cancelQueued(task *DownloadTask) {
+	dm.mu.Lock()
+	kept := make([]queuedDownload, 0, len(dm.queue))
+	removed := false
+	for _, q := range dm.queue {
+		if !removed && q.game.ID == task.ID {
+			removed = true
+			continue
+		}
+		kept = append(kept, q)
+	}
+	dm.queue = kept
+	dm.mu.Unlock()
+
+	task.SetState(StateCancelled)
+	_ = task.Status.Set("Cancelled")
+	dm.PersistHistory()
 }
 
 func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
@@ -415,6 +454,9 @@ func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
 	}
 	placeholder.SetState(StatePreparing)
 	_ = placeholder.Status.Set("Queued")
+	// The Downloads tab offers a Cancel button for this task, so it needs a way
+	// to take the download back out of the queue.
+	placeholder.CancelFunc = func() { dm.cancelQueued(placeholder) }
 	_ = dm.Tasks.Append(placeholder)
 	dm.mu.Unlock()
 	return nil

@@ -261,29 +261,45 @@ func clearPersistedUpdateStatus() {
 	persistUpdateStatusCache()
 }
 
-// Size cache
-var sizeCache = make(map[int]int64)
+// sizeCacheKey identifies an estimate together with the settings it was
+// computed under, so changing any of them yields a fresh estimate.
+type sizeCacheKey struct {
+	id             int
+	lang, platform string
+	extras, dlcs   bool
+}
+
+var sizeCache = make(map[sizeCacheKey]int64)
 
 func estimateGameSize(game db.Game) int64 {
-	if v, ok := sizeCache[game.ID]; ok {
+	prefs := fyne.CurrentApp().Preferences()
+	key := sizeCacheKey{
+		id:       game.ID,
+		lang:     prefs.StringWithFallback("downloadForm.language", "en"),
+		platform: prefs.StringWithFallback("downloadForm.platform", "windows"),
+		extras:   prefs.BoolWithFallback("downloadForm.extras", true),
+		dlcs:     prefs.BoolWithFallback("downloadForm.dlcs", true),
+	}
+	if v, ok := sizeCache[key]; ok {
 		return v
 	}
-	prefs := fyne.CurrentApp().Preferences()
-	lang := prefs.StringWithFallback("downloadForm.language", "en")
-	platform := prefs.StringWithFallback("downloadForm.platform", "windows")
-	extras := prefs.BoolWithFallback("downloadForm.extras", true)
-	dlcs := prefs.BoolWithFallback("downloadForm.dlcs", true)
 	parsed, err := client.ParseGameData(game.Data)
 	if err != nil {
-		sizeCache[game.ID] = 0
+		sizeCache[key] = 0
 		return 0
 	}
-	sz, err := parsed.EstimateStorageSize(lang, platform, extras, dlcs)
+	// The stored game data names languages in full, not by code.
+	langFullName, ok := client.GameLanguages[key.lang]
+	if !ok {
+		sizeCache[key] = 0
+		return 0
+	}
+	sz, err := parsed.EstimateStorageSize(langFullName, key.platform, key.extras, key.dlcs)
 	if err != nil {
-		sizeCache[game.ID] = 0
+		sizeCache[key] = 0
 		return 0
 	}
-	sizeCache[game.ID] = sz
+	sizeCache[key] = sz
 	return sz
 }
 
@@ -415,48 +431,45 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	clearSearchBtn.Hide()
 
 	var gameListWidget *widget.List
+	// updateDisplayedGames decides which games are listed. Searching, sorting
+	// and filtering do not change a game's status, so this does no I/O.
 	updateDisplayedGames := func() {
 		searchTerm := strings.ToLower(searchEntry.Text)
-		displayGames := make([]db.Game, len(allGames))
-		copy(displayGames, allGames)
-
-		if isSortAscending {
-			sort.Slice(displayGames, func(i, j int) bool {
-				return strings.ToLower(displayGames[i].Title) < strings.ToLower(displayGames[j].Title)
-			})
-		} else {
-			sort.Slice(displayGames, func(i, j int) bool {
-				return strings.ToLower(displayGames[i].Title) > strings.ToLower(displayGames[j].Title)
-			})
-		}
-
-		if searchTerm != "" {
-			filtered := make([]db.Game, 0)
-			for _, game := range displayGames {
-				if strings.Contains(strings.ToLower(game.Title), searchTerm) {
-					filtered = append(filtered, game)
-				}
+		displayGames := make([]db.Game, 0, len(allGames))
+		for _, game := range allGames {
+			if searchTerm != "" && !strings.Contains(strings.ToLower(game.Title), searchTerm) {
+				continue
 			}
-			displayGames = filtered
+			if !passesFilters(game) {
+				continue
+			}
+			displayGames = append(displayGames, game)
 		}
+
+		sort.Slice(displayGames, func(i, j int) bool {
+			left := strings.ToLower(displayGames[i].Title)
+			right := strings.ToLower(displayGames[j].Title)
+			if isSortAscending {
+				return left < right
+			}
+			return left > right
+		})
 
 		_ = gamesListBinding.Set(untypedSlice(displayGames))
-		// Recompute cache only for displayed games for efficiency
-		computeUpdateStatus(dm, displayGames)
-		// Apply post-filter pass
-		filtered := []db.Game{}
-		for _, g := range displayGames {
-			if passesFilters(g) {
-				filtered = append(filtered, g)
-			}
-		}
-		_ = gamesListBinding.Set(untypedSlice(filtered))
-		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(filtered)))
+		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(displayGames)))
 		if searchTerm == "" {
 			clearSearchBtn.Hide()
 		} else {
 			clearSearchBtn.Show()
 		}
+	}
+
+	// recomputeStatuses refreshes the cached download and update status for the
+	// whole library. It reads the filesystem and reparses every stored game, so
+	// it runs only when something that can change a status happened.
+	recomputeStatuses := func() {
+		computeUpdateStatus(dm, allGames)
+		updateDisplayedGames()
 	}
 
 	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
@@ -534,7 +547,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	var refreshBtn *widget.Button
 	onFinishRefresh := func() {
 		allGames, _ = db.GetCatalogue()
-		updateDisplayedGames()
+		recomputeStatuses()
 		refreshBtn.Enable()
 		listContent.Objects = []fyne.CanvasObject{gameListWidget}
 		listContent.Refresh()
@@ -553,7 +566,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	} else {
 		listContent.Add(gameListWidget)
 	}
-	updateDisplayedGames()
+	// Load any status cached by an earlier session before recomputing, so stale
+	// entries cannot overwrite fresh ones.
+	initUpdateStatusPersistence()
+	recomputeStatuses()
 
 	refreshBtn = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
 		searchEntry.SetText("")
@@ -584,7 +600,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	// Preferences toggles for update detection scope (replaced by compact settings button)
 	prefs := fyne.CurrentApp().Preferences()
-	settingsBtn := newUpdateSettingsButton(prefs, dm, updateDisplayedGames)
+	settingsBtn := newUpdateSettingsButton(prefs, dm, recomputeStatuses)
 	filtersBtn := newFiltersButton(updateDisplayedGames)
 	// Compact toolbar now
 	toolbar := container.NewHBox(refreshBtn, exportBtn, sortBtn, settingsBtn, filtersBtn, layout.NewSpacer(), gameCountLabel)
@@ -616,11 +632,17 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator()}
 		topBox.Refresh()
 	}))
-	// Initialize persistence caches once UI is set up
-	initUpdateStatusPersistence()
+	// AddListener invokes the listener once on registration, and the status
+	// worked out above is still valid at that point.
+	catalogueJustRegistered := true
 	catalogueUpdated.AddListener(binding.NewDataListener(func() {
+		if catalogueJustRegistered {
+			catalogueJustRegistered = false
+			return
+		}
 		clearPersistedUpdateStatus()
-		sizeCache = make(map[int]int64)
+		sizeCache = make(map[sizeCacheKey]int64)
+		recomputeStatuses()
 	}))
 	return &libraryTab{content: container.NewHSplit(leftPane, rightPane), searchEntry: searchEntry}
 }

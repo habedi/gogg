@@ -569,6 +569,12 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 		estimateAllFilteredBtn.Disable()
 		progressBar.Show()
 
+		// Everything the run needs is read here, on the UI thread, because the
+		// list and the form keep changing while it works.
+		titles, ids := snapshotEstimationInputs(selectedTitles, gameMap)
+		language, platform := langSelect.Selected, platformSelect.Selected
+		extras, dlcs, unit := extrasCheck.Checked, dlcsCheck.Checked, unitSelect.Selected
+
 		go func() {
 			defer runOnMain(func() {
 				estimateSelectedBtn.Enable()
@@ -578,16 +584,8 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 			})
 
 			estimateMultipleGamesUI(
-				selectedTitles,
-				gameMap,
-				langSelect.Selected,
-				platformSelect.Selected,
-				extrasCheck.Checked,
-				dlcsCheck.Checked,
-				unitSelect.Selected,
-				resultsData,
-				progressBar,
-				statusLabel,
+				titles, ids, language, platform, extras, dlcs, unit,
+				resultsData, progressBar, statusLabel,
 			)
 		}()
 	}
@@ -608,6 +606,10 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 			estimateAllFilteredBtn.Disable()
 			progressBar.Show()
 
+			titles, ids := snapshotEstimationInputs(filteredGameTitles, gameMap)
+			language, platform := langSelect.Selected, platformSelect.Selected
+			extras, dlcs, unit := extrasCheck.Checked, dlcsCheck.Checked, unitSelect.Selected
+
 			go func() {
 				defer runOnMain(func() {
 					estimateSelectedBtn.Enable()
@@ -617,16 +619,8 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 				})
 
 				estimateMultipleGamesUI(
-					filteredGameTitles,
-					gameMap,
-					langSelect.Selected,
-					platformSelect.Selected,
-					extrasCheck.Checked,
-					dlcsCheck.Checked,
-					unitSelect.Selected,
-					resultsData,
-					progressBar,
-					statusLabel,
+					titles, ids, language, platform, extras, dlcs, unit,
+					resultsData, progressBar, statusLabel,
 				)
 			}()
 		}, win)
@@ -678,6 +672,18 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 	)
 
 	return container.NewBorder(topContent, bottomBar, nil, nil, resultsSection)
+}
+
+// snapshotEstimationInputs copies the inputs an estimation run needs, so the
+// long-running goroutine never reads state the UI keeps mutating.
+func snapshotEstimationInputs(titles []string, ids map[string]int) ([]string, map[string]int) {
+	titlesCopy := make([]string, len(titles))
+	copy(titlesCopy, titles)
+	idsCopy := make(map[string]int, len(ids))
+	for title, id := range ids {
+		idsCopy[title] = id
+	}
+	return titlesCopy, idsCopy
 }
 
 func estimateMultipleGamesUI(

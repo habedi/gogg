@@ -509,7 +509,16 @@ func DownloadGameFiles(
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
-		metadataPath := filepath.Join(downloadPath, SanitizePath(game.Title), "metadata.json")
+		// The metadata belongs with the files it describes. Under the RomM
+		// layout those live in <root>/<platform>/<game>; with "all" they are
+		// spread across platforms, so it stays at the top level.
+		metadataDir := filepath.Join(downloadPath, SanitizePath(game.Title))
+		if rommLayout {
+			if plat := strings.ToLower(strings.TrimSpace(platformName)); plat != "" && plat != "all" {
+				metadataDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
+			}
+		}
+		metadataPath := filepath.Join(metadataDir, "metadata.json")
 		metadata, err := json.MarshalIndent(game, "", "  ")
 		if err == nil {
 			if ensureDirExists(filepath.Dir(metadataPath)) == nil {

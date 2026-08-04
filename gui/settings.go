@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/habedi/gogg/client"
@@ -129,32 +130,33 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 
 	// --- Download Limits ---
 	maxConcSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) {
-		prefs.SetString("download.maxConcurrent", s)
+		if v, err := strconv.Atoi(s); err == nil {
+			prefs.SetInt(prefMaxConcurrent, v)
+		}
 	})
-	maxConcSelect.SetSelected(fmt.Sprintf("%d", prefs.IntWithFallback("download.maxConcurrent", 2)))
+	maxConcSelect.SetSelected(fmt.Sprintf("%d", maxConcurrentDownloads(prefs)))
 
 	speedEntry := widget.NewEntry()
 	speedEntry.SetPlaceHolder("Speed limit KB/s (0=unlimited)")
-	if v := prefs.IntWithFallback("download.maxSpeedKBps", 0); v > 0 {
+	if v := prefs.IntWithFallback(prefMaxSpeedKBps, 0); v > 0 {
 		speedEntry.SetText(fmt.Sprintf("%d", v))
 	}
+	// SetText above runs before OnChanged is assigned, so the stored limit has
+	// to be put into force explicitly.
+	applySavedSpeedLimit(prefs)
 	speedEntry.OnChanged = func(s string) {
+		s = strings.TrimSpace(s)
 		if s == "" {
-			prefs.SetInt("download.maxSpeedKBps", 0)
-			client.SetGlobalDownloadRateLimit(0)
+			prefs.SetInt(prefMaxSpeedKBps, 0)
+			applySpeedLimit(0)
 			return
 		}
-		var val int
-		_, err := fmt.Sscanf(strings.TrimSpace(s), "%d", &val)
-		if err != nil {
+		val, err := strconv.Atoi(s)
+		if err != nil || val < 0 {
 			return
 		}
-		prefs.SetInt("download.maxSpeedKBps", val)
-		if val <= 0 {
-			client.SetGlobalDownloadRateLimit(0)
-		} else {
-			client.SetGlobalDownloadRateLimit(int64(val) * 1024)
-		}
+		prefs.SetInt(prefMaxSpeedKBps, val)
+		applySpeedLimit(val)
 	}
 	limitsBox := container.NewVBox(widget.NewLabel("Download Limits"), widget.NewForm(
 		widget.NewFormItem("Max Concurrent", maxConcSelect),
@@ -174,4 +176,21 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	))
 
 	return container.NewCenter(mainCard)
+}
+
+const prefMaxSpeedKBps = "download.maxSpeedKBps"
+
+// applySavedSpeedLimit puts the stored download speed limit into force.
+func applySavedSpeedLimit(prefs fyne.Preferences) {
+	applySpeedLimit(prefs.IntWithFallback(prefMaxSpeedKBps, 0))
+}
+
+// applySpeedLimit throttles downloads to kbps kilobytes per second; anything
+// below one means unlimited.
+func applySpeedLimit(kbps int) {
+	if kbps <= 0 {
+		client.SetGlobalDownloadRateLimit(0)
+		return
+	}
+	client.SetGlobalDownloadRateLimit(int64(kbps) * 1024)
 }

@@ -29,9 +29,37 @@ var (
 	mixer           *beep.Mixer
 	sampleRate      beep.SampleRate
 	currentSound    context.CancelFunc
+	currentSoundID  uint64
+	soundSeq        uint64
 	currentSoundMux sync.Mutex
-	soundPlaying    bool
 )
+
+// beginSound stops any sound that is still playing and registers this one as
+// the current sound. The returned release function retires the registration,
+// doing nothing if a newer sound has taken over in the meantime.
+func beginSound() (context.Context, func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	currentSoundMux.Lock()
+	if currentSound != nil {
+		currentSound()
+	}
+	soundSeq++
+	id := soundSeq
+	currentSound = cancel
+	currentSoundID = id
+	currentSoundMux.Unlock()
+
+	return ctx, func() {
+		currentSoundMux.Lock()
+		if currentSoundID == id {
+			currentSound = nil
+			currentSoundID = 0
+		}
+		currentSoundMux.Unlock()
+		cancel()
+	}
+}
 
 func initSpeaker(sr beep.SampleRate) {
 	speakerOnce.Do(func() {
@@ -88,21 +116,8 @@ func PlayNotificationSound() {
 		return
 	}
 
-	currentSoundMux.Lock()
-	if currentSound != nil && soundPlaying {
-		currentSound()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	currentSound = cancel
-	soundPlaying = true
-	currentSoundMux.Unlock()
-
-	defer func() {
-		currentSoundMux.Lock()
-		soundPlaying = false
-		currentSound = nil
-		currentSoundMux.Unlock()
-	}()
+	ctx, release := beginSound()
+	defer release()
 
 	filePath := a.Preferences().String("soundFilePath")
 	var reader io.ReadCloser
