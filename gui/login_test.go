@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -77,39 +75,6 @@ func TestFillFromClipboard_EmptyClipboardKeepsWhatIsThere(t *testing.T) {
 	fillFromClipboard(entry)
 
 	require.Equal(t, "already typed", entry.Text)
-}
-
-func collectButtons(o fyne.CanvasObject, out *[]*widget.Button) {
-	switch v := o.(type) {
-	case *widget.Button:
-		*out = append(*out, v)
-	case *fyne.Container:
-		for _, c := range v.Objects {
-			collectButtons(c, out)
-		}
-	case *widget.Card:
-		if v.Content != nil {
-			collectButtons(v.Content, out)
-		}
-	case *container.Split:
-		collectButtons(v.Leading, out)
-		collectButtons(v.Trailing, out)
-	case *widget.Accordion:
-		for _, item := range v.Items {
-			collectButtons(item.Detail, out)
-		}
-	}
-}
-
-func buttonWithLabel(o fyne.CanvasObject, label string) *widget.Button {
-	var buttons []*widget.Button
-	collectButtons(o, &buttons)
-	for _, b := range buttons {
-		if b.Text == label {
-			return b
-		}
-	}
-	return nil
 }
 
 // Signing in from a terminal is not something a GUI user should have to do, so

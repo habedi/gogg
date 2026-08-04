@@ -612,8 +612,12 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	settingsBtn := newUpdateSettingsButton(prefs, dm, recomputeStatuses)
 	filtersBtn := newFiltersButton(updateDisplayedGames)
 	// Compact toolbar now
-	toolbar := container.NewHBox(refreshBtn, exportBtn, sortBtn, settingsBtn, filtersBtn, updateAllBtn,
-		layout.NewSpacer(), updatesLabel, gameCountLabel)
+	// The buttons scroll rather than forcing a minimum width on the window; the
+	// counts stay pinned to the right.
+	toolbarButtons := container.NewHScroll(
+		container.NewHBox(refreshBtn, exportBtn, sortBtn, settingsBtn, filtersBtn, updateAllBtn))
+	toolbar := container.NewBorder(nil, nil, nil,
+		container.NewHBox(updatesLabel, gameCountLabel), toolbarButtons)
 	selectionLabel := widget.NewLabel("")
 	// Changing many rows at once needs the list redrawn; a row the user ticked
 	// themselves already shows the right state.
@@ -683,13 +687,16 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	}
 	refreshUpdatesSummary()
 	topBox := container.NewVBox(detailTitle, widget.NewSeparator())
-	rightPane := container.NewBorder(topBox, nil, nil, nil, accordion)
+	// The details and options can be taller than the window, and a window
+	// cannot be smaller than its content, so the pane scrolls instead.
+	rightPane := container.NewBorder(topBox, nil, nil, nil, container.NewVScroll(accordion))
 	accordion.Hide()
 
 	selectedGameBinding.AddListener(binding.NewDataListener(func() {
 		gameRaw, _ := selectedGameBinding.Get()
 		if gameRaw == nil {
 			accordion.Hide()
+			form.narrowTo(db.Game{})
 			detailTitle.SetText("Select a game from the list")
 			topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator()}
 			topBox.Refresh()
@@ -699,6 +706,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		detailTitle.SetText(game.Title)
 		detailsBox.Objects = []fyne.CanvasObject{renderGameDetails(gameDetails(game, dm))}
 		detailsBox.Refresh()
+		form.narrowTo(game)
 		accordion.Show()
 
 		topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator()}
@@ -738,6 +746,9 @@ type downloadForm struct {
 	relabel func()
 	// queue starts downloads for the given games with the options on screen.
 	queue func(games []db.Game) (batchResult, error)
+	// narrowTo restricts the language and platform choices to what a game
+	// offers; a zero game restores the full lists.
+	narrowTo func(game db.Game)
 }
 
 // createDetailsAccordion builds the details pane. detailsBox is filled with the
@@ -781,15 +792,31 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	})
 	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, downloadPathEntry)
 
-	langCodes := make([]string, 0, len(client.GameLanguages))
-	for code := range client.GameLanguages {
-		langCodes = append(langCodes, code)
+	// The selects show language names but store the codes the rest of gogg uses.
+	onLanguagePicked := func(name string) {
+		if code, ok := languageCodes[name]; ok {
+			prefs.SetString("downloadForm.language", code)
+		}
 	}
-	sort.Strings(langCodes)
-	langSelect := widget.NewSelect(langCodes, func(s string) { prefs.SetString("downloadForm.language", s) })
-	langSelect.SetSelected(prefs.StringWithFallback("downloadForm.language", "en"))
-	platformSelect := widget.NewSelect([]string{"windows", "mac", "linux", "all"}, func(s string) { prefs.SetString("downloadForm.platform", s) })
-	platformSelect.SetSelected(prefs.StringWithFallback("downloadForm.platform", "windows"))
+	onPlatformPicked := func(platform string) { prefs.SetString("downloadForm.platform", platform) }
+
+	langSelect := widget.NewSelect(nil, onLanguagePicked)
+	platformSelect := widget.NewSelect(nil, onPlatformPicked)
+
+	// narrowTo restricts the choices to what a game actually offers. A zero
+	// game restores the full lists.
+	narrowTo := func(game db.Game) {
+		var languages, platforms []string
+		if parsed, err := client.ParseGameData(game.Data); err == nil {
+			languages = offeredLanguages(parsed)
+			platforms = offeredPlatforms(parsed)
+		}
+		bindSelect(langSelect, languageChoices(languages),
+			client.GameLanguages[prefs.StringWithFallback("downloadForm.language", "en")], onLanguagePicked)
+		bindSelect(platformSelect, platformChoices(platforms),
+			prefs.StringWithFallback("downloadForm.platform", "windows"), onPlatformPicked)
+	}
+	narrowTo(db.Game{})
 	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) { prefs.SetString("downloadForm.threads", s) })
 	threadsSelect.SetSelected(prefs.StringWithFallback("downloadForm.threads", "5"))
 
@@ -825,11 +852,10 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			return batchResult{}, errors.New("download path cannot be empty")
 		}
 		threads, _ := strconv.Atoi(threadsSelect.Selected)
-		langFull := client.GameLanguages[langSelect.Selected]
 		return queueDownloads(dm, games, func(game db.Game) queuedDownload {
 			return queuedDownload{
 				authService: authService, game: game, downloadPath: downloadPathEntry.Text,
-				language: langFull, platformName: platformSelect.Selected,
+				language: langSelect.Selected, platformName: platformSelect.Selected,
 				extrasFlag: extrasCheck.Checked, dlcFlag: dlcsCheck.Checked,
 				resumeFlag: resumeCheck.Checked, flattenFlag: flattenCheck.Checked,
 				skipPatchesFlag: skipPatchesCheck.Checked, keepLatestFlag: keepLatestCheck.Checked,
@@ -879,9 +905,10 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	}
 
 	return &downloadForm{
-		content: container.NewVBox(form, checkboxes, layout.NewSpacer(), gogdbBtn, downloadBtn),
-		relabel: relabel,
-		queue:   queue,
+		content:  container.NewVBox(form, checkboxes, layout.NewSpacer(), gogdbBtn, downloadBtn),
+		relabel:  relabel,
+		queue:    queue,
+		narrowTo: narrowTo,
 	}
 }
 

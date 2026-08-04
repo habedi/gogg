@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -143,37 +141,32 @@ func TestLibraryTab_SelectingAGameFillsTheDetailsPane(t *testing.T) {
 
 	lt, _ := newLibraryFixture(t, 2)
 
-	var forms []*widget.Form
-	collectForms(lt.content, &forms)
-	before := len(forms)
+	before := len(widgetsOfType[*widget.Form](lt.content))
 
 	// The list drives this binding when a row is clicked.
 	require.NotNil(t, lt.selected)
 	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: richGameData, Version: "2.1"}))
 
-	forms = nil
-	collectForms(lt.content, &forms)
-	require.Greater(t, len(forms), before, "the details pane must gain a form of facts")
+	require.Greater(t, len(widgetsOfType[*widget.Form](lt.content)), before,
+		"the details pane must gain a form of facts")
 }
 
-func collectForms(o fyne.CanvasObject, out *[]*widget.Form) {
-	switch v := o.(type) {
-	case *widget.Form:
-		*out = append(*out, v)
-	case *fyne.Container:
-		for _, c := range v.Objects {
-			collectForms(c, out)
-		}
-	case *widget.Card:
-		if v.Content != nil {
-			collectForms(v.Content, out)
-		}
-	case *container.Split:
-		collectForms(v.Leading, out)
-		collectForms(v.Trailing, out)
-	case *widget.Accordion:
-		for _, item := range v.Items {
-			collectForms(item.Detail, out)
-		}
-	}
+// A window cannot be smaller than its content, so a details pane taller than
+// the default window pushes the download button off the screen.
+func TestLibraryTab_FitsInADefaultWindow(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 3)
+	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Rich Game", Data: richGameData, Version: "2.1"}))
+
+	// The defaults in window.go.
+	const defaultWidth, defaultHeight = 960, 640
+	min := lt.content.MinSize()
+	t.Logf("library minimum size: %.0fx%.0f", min.Width, min.Height)
+
+	require.LessOrEqual(t, min.Height, float32(defaultHeight),
+		"the library must fit in the default window height")
+	require.LessOrEqual(t, min.Width, float32(defaultWidth),
+		"the library must fit in the default window width")
 }

@@ -11,31 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// collectSelects gathers every Select in a widget tree.
-func collectSelects(o fyne.CanvasObject, out *[]*widget.Select) {
-	switch v := o.(type) {
-	case *widget.Select:
-		*out = append(*out, v)
-	case *fyne.Container:
-		for _, c := range v.Objects {
-			collectSelects(c, out)
-		}
-	case *widget.Card:
-		if v.Content != nil {
-			collectSelects(v.Content, out)
-		}
-	case *widget.Form:
-		for _, it := range v.Items {
-			collectSelects(it.Widget, out)
-		}
-	}
-}
-
 func maxConcurrentSelect(t *testing.T, ui fyne.CanvasObject) *widget.Select {
 	t.Helper()
-	var selects []*widget.Select
-	collectSelects(ui, &selects)
-	for _, s := range selects {
+	for _, s := range widgetsOfType[*widget.Select](ui) {
 		if len(s.Options) == 10 && s.Options[0] == "1" && s.Options[9] == "10" {
 			return s
 		}
