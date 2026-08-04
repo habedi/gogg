@@ -9,7 +9,9 @@ import (
 	"github.com/habedi/gogg/auth"
 )
 
-func Run(version string, authService *auth.Service) {
+// Run starts the desktop GUI. loginer performs the GOG login flow when a
+// signed-out user asks to log in.
+func Run(version string, authService *auth.Service, loginer GogLoginer) {
 	myApp := app.NewWithID("com.github.habedi.gogg")
 	myApp.SetIcon(AppLogo)
 
@@ -29,10 +31,23 @@ func Run(version string, authService *auth.Service) {
 		prefs.SetFloat("windowHeight", float64(size.Height))
 	})
 
-	library := LibraryTabUI(myWindow, authService, dm)
+	// The catalogue tab looks different when signed out, so it is rebuilt once
+	// the user logs in.
+	var onLogin func()
+	library := LibraryTabUI(myWindow, authService, dm, func() { onLogin() })
+
+	catalogueTab := container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), library.content)
+	onLogin = func() {
+		ShowLoginDialog(myWindow, loginer, func() {
+			library = LibraryTabUI(myWindow, authService, dm, func() { onLogin() })
+			catalogueTab.Content = library.content
+			catalogueTab.Content.Refresh()
+			myWindow.Canvas().Focus(library.searchEntry)
+		})
+	}
 
 	mainTabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), library.content),
+		catalogueTab,
 		container.NewTabItemWithIcon("Downloads", theme.DownloadIcon(), DownloadsTabUI(dm)),
 		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
 		container.NewTabItemWithIcon("Settings", theme.SettingsIcon(), SettingsTabUI(myWindow)),

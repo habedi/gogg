@@ -404,13 +404,22 @@ func newFiltersButton(refresh func()) *widget.Button {
 }
 
 // LibraryTabUI modifications: remove tag editor and apply initial speed limit.
-func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager) *libraryTab {
+// LibraryTabUI builds the catalogue tab. onLogin is invoked when a signed-out
+// user asks to log in.
+func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager, onLogin func()) *libraryTab {
 	token, _ := db.GetTokenRecord()
 	if token == nil {
+		loginBtn := widget.NewButtonWithIcon("Log In to GOG", theme.LoginIcon(), func() {
+			if onLogin != nil {
+				onLogin()
+			}
+		})
+		loginBtn.Importance = widget.HighImportance
 		content := container.NewCenter(container.NewVBox(
 			widget.NewIcon(theme.WarningIcon()),
 			widget.NewLabelWithStyle("Not logged in.", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-			widget.NewLabel("Please run 'gogg login' from your terminal to authenticate."),
+			widget.NewLabel("Log in to GOG to see the games you own."),
+			loginBtn,
 		))
 		return &libraryTab{content: content, searchEntry: widget.NewEntry()} // Return dummy entry
 	}

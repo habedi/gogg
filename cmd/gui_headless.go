@@ -6,10 +6,11 @@ import (
 	"fmt"
 
 	"github.com/habedi/gogg/auth"
+	"github.com/habedi/gogg/client"
 	"github.com/spf13/cobra"
 )
 
-func guiCmd(authService *auth.Service) *cobra.Command {
+func guiCmd(_ *auth.Service, _ *client.GogClient) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "gui",
 		Short: "Start the Gogg GUI (not available in headless build)",

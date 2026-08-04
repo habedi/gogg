@@ -44,7 +44,7 @@ func newLibraryFixture(t *testing.T, games int) (*libraryTab, string) {
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	return LibraryTabUI(win, nil, dm), root
+	return LibraryTabUI(win, nil, dm, func() {}), root
 }
 
 // Which games are shown depends on the search term; whether a game is

@@ -112,6 +112,23 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 		return err
 	}
 
+	return c.exchangeAndStore(code)
+}
+
+// LoginWithCode signs in with the authorization code GOG issues after a
+// successful login, so no browser has to be driven: the user logs in wherever
+// they like and hands the code back. codeOrURL may be the address the browser
+// was redirected to or just the code out of it.
+func (c *GogClient) LoginWithCode(codeOrURL string) error {
+	code, err := parseAuthCode(codeOrURL)
+	if err != nil {
+		return err
+	}
+	return c.exchangeAndStore(code)
+}
+
+// exchangeAndStore trades an authorization code for tokens and saves them.
+func (c *GogClient) exchangeAndStore(code string) error {
 	token, refreshToken, expiresAt, err := c.exchangeCodeForToken(code)
 	if err != nil {
 		return fmt.Errorf("failed to exchange authorization code for token: %w", err)
@@ -120,6 +137,35 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 	log.Info().Str("expires_at", expiresAt).Msg("Received access and refresh tokens")
 
 	return db.UpsertTokenRecord(&db.Token{AccessToken: token, RefreshToken: refreshToken, ExpiresAt: expiresAt})
+}
+
+// parseAuthCode accepts the address GOG redirects to after a successful login,
+// the query part of that address, or the bare authorization code.
+func parseAuthCode(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", errors.New("no authorization code given")
+	}
+
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		return extractAuthCode(input)
+	}
+
+	if strings.Contains(input, "code=") {
+		values, err := url.ParseQuery(input)
+		if err != nil {
+			return "", fmt.Errorf("failed to read the authorization code: %w", err)
+		}
+		if code := values.Get("code"); code != "" {
+			return code, nil
+		}
+		return "", errors.New("authorization code not found in the pasted address")
+	}
+
+	if strings.ContainsAny(input, " \t\r\n/?&=") {
+		return "", errors.New("that is neither an authorization code nor the address containing one")
+	}
+	return input, nil
 }
 
 func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
