@@ -29,6 +29,8 @@ import (
 type libraryTab struct {
 	content     fyne.CanvasObject
 	searchEntry *widget.Entry
+	// selected is the game shown in the details pane, driven by the list.
+	selected binding.Untyped
 }
 
 // isGameDownloaded checks if a game has been successfully downloaded based on download history
@@ -438,7 +440,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			widget.NewLabel("Log in to GOG to see the games you own."),
 			loginBtn,
 		))
-		return &libraryTab{content: content, searchEntry: widget.NewEntry()} // Return dummy entry
+		return &libraryTab{content: content, searchEntry: widget.NewEntry(), selected: binding.NewUntyped()}
 	}
 
 	allGames, _ := db.GetCatalogue()
@@ -635,8 +637,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	detailTitle.Alignment = fyne.TextAlignCenter
 	detailTitle.TextStyle = fyne.TextStyle{Bold: true}
 
+	detailsBox := container.NewVBox()
 	accordion, form := createDetailsAccordion(win, authService, dm, selectedGameBinding,
-		sel, func() []db.Game { return allGames })
+		sel, func() []db.Game { return allGames }, detailsBox)
 
 	afterSelectionChange = func() {
 		if n := sel.count(); n > 0 {
@@ -694,6 +697,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		}
 		game := gameRaw.(db.Game)
 		detailTitle.SetText(game.Title)
+		detailsBox.Objects = []fyne.CanvasObject{renderGameDetails(gameDetails(game, dm))}
+		detailsBox.Refresh()
 		accordion.Show()
 
 		topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator()}
@@ -711,7 +716,11 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		sizeCache = make(map[sizeCacheKey]int64)
 		recomputeStatuses()
 	}))
-	return &libraryTab{content: container.NewHSplit(leftPane, rightPane), searchEntry: searchEntry}
+	return &libraryTab{
+		content:     container.NewHSplit(leftPane, rightPane),
+		searchEntry: searchEntry,
+		selected:    selectedGameBinding,
+	}
 }
 
 func untypedSlice(games []db.Game) []interface{} {
@@ -731,13 +740,20 @@ type downloadForm struct {
 	queue func(games []db.Game) (batchResult, error)
 }
 
-// createDetailsAccordion builds the details pane.
+// createDetailsAccordion builds the details pane. detailsBox is filled with the
+// selected game's facts by the caller.
 func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *DownloadManager,
 	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
+	detailsBox *fyne.Container,
 ) (*widget.Accordion, *downloadForm) {
 	form := createDownloadForm(win, authService, dm, selectedGame, sel, catalogue)
-	accordion := widget.NewAccordion(widget.NewAccordionItem("Download Options", form.content))
+	accordion := widget.NewAccordion(
+		widget.NewAccordionItem("Game Details", detailsBox),
+		widget.NewAccordionItem("Download Options", form.content),
+	)
+	accordion.MultiOpen = true
 	accordion.Open(0)
+	accordion.Open(1)
 	return accordion, form
 }
 
