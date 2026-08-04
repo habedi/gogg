@@ -30,10 +30,23 @@ const (
 	// bannerRendition is asked for of the artwork GOG lists for owned games:
 	// 392x220 with nothing baked in.
 	bannerRendition = "_392.jpg"
+	// thumbnailRendition is the same artwork at 100x60, about 1.5 KB, which is
+	// all a list row needs.
+	thumbnailRendition = "_prof_game_100x60.jpg"
 	// backgroundRendition is asked for of the picture in the game details, used
 	// only when no banner is on record. GOG fades the bottom of that one to
 	// white for its own pages, so what comes back has to be cropped.
 	backgroundRendition = "_product_card_v2_mobile_slider_639.jpg"
+)
+
+// coverKind is how large a picture the caller needs.
+type coverKind int
+
+const (
+	// coverBanner suits the grid and the details pane.
+	coverBanner coverKind = iota
+	// coverThumbnail suits a list row.
+	coverThumbnail
 )
 
 // coverSource is where a game's artwork comes from, and whether GOG's fade is
@@ -45,9 +58,14 @@ type coverSource struct {
 
 // coverSourceFor prefers the banner recorded for the game. Catalogues refreshed
 // before gogg recorded banners fall back to the faded background picture.
-func coverSourceFor(game db.Game) coverSource {
+func coverSourceFor(game db.Game, kind coverKind) coverSource {
+	rendition := bannerRendition
+	if kind == coverThumbnail {
+		rendition = thumbnailRendition
+	}
+
 	if banner := strings.TrimSpace(game.CoverImage); banner != "" {
-		return coverSource{URL: renditionOf(banner, bannerRendition)}
+		return coverSource{URL: renditionOf(banner, rendition)}
 	}
 
 	parsed, err := client.ParseGameData(game.Data)
@@ -99,8 +117,8 @@ func coverCacheDir() string {
 
 // fetch returns the artwork for a game, reading it from disk when it is already
 // there and downloading it otherwise.
-func (c *coverCache) fetch(game db.Game) ([]byte, coverSource, error) {
-	source := coverSourceFor(game)
+func (c *coverCache) fetch(game db.Game, kind coverKind) ([]byte, coverSource, error) {
+	source := coverSourceFor(game, kind)
 	if source.URL == "" {
 		return nil, source, errors.New("game has no cover")
 	}
@@ -160,9 +178,9 @@ func (c *coverCache) download(url string) ([]byte, error) {
 // load fetches a cover off the UI thread and hands it back on the UI thread.
 // stillWanted is asked whether the answer is still for the game the caller is
 // showing: grid cells are recycled while a fetch is in flight.
-func (c *coverCache) load(game db.Game, stillWanted func(gameID int) bool, deliver func([]byte, coverSource)) {
+func (c *coverCache) load(game db.Game, kind coverKind, stillWanted func(gameID int) bool, deliver func([]byte, coverSource)) {
 	go func() {
-		data, source, err := c.fetch(game)
+		data, source, err := c.fetch(game, kind)
 		if err != nil {
 			log.Debug().Err(err).Str("game", game.Title).Msg("No cover")
 			return

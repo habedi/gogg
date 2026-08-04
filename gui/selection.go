@@ -1,11 +1,16 @@
 package gui
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
@@ -72,20 +77,28 @@ func bindCheck(check *widget.Check, checked bool, onChanged func(bool)) {
 // title can take the width left over by the leading controls.
 type gameRow struct {
 	widget.BaseWidget
+	gameID     int
 	check      *widget.Check
+	thumbnail  *canvas.Image
 	downloaded *widget.Icon
 	updateBtn  *widget.Button
 	title      *widget.Label
 }
 
+// thumbnailSize is the artwork a row shows: small enough to keep rows compact.
+var thumbnailSize = fyne.NewSize(64, 36)
+
 // newGameRow builds an empty row for the library list.
 func newGameRow() fyne.CanvasObject {
 	row := &gameRow{
 		check:      widget.NewCheck("", nil),
+		thumbnail:  canvas.NewImageFromResource(theme.FileImageIcon()),
 		downloaded: widget.NewIcon(theme.ConfirmIcon()),
 		updateBtn:  widget.NewButtonWithIcon("", theme.DownloadIcon(), nil),
 		title:      widget.NewLabel("Game Title"),
 	}
+	row.thumbnail.FillMode = canvas.ImageFillContain
+	row.thumbnail.SetMinSize(thumbnailSize)
 	row.downloaded.Hide()
 	row.updateBtn.Hide()
 	row.updateBtn.Importance = widget.LowImportance
@@ -96,7 +109,7 @@ func newGameRow() fyne.CanvasObject {
 }
 
 func (r *gameRow) CreateRenderer() fyne.WidgetRenderer {
-	leading := container.NewHBox(r.check, r.downloaded, r.updateBtn)
+	leading := container.NewHBox(r.check, r.thumbnail, r.downloaded, r.updateBtn)
 	// The title is the centre of a border layout, so it is given whatever width
 	// the leading controls leave and ellipsises only when it truly runs out.
 	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, leading, nil, r.title))
@@ -104,11 +117,16 @@ func (r *gameRow) CreateRenderer() fyne.WidgetRenderer {
 
 // bindGameRow fills a recycled row with a game. onToggle runs when the row's
 // checkbox is changed by the user.
-func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, onToggle func()) {
+func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, covers *coverCache, onToggle func()) {
 	r, ok := row.(*gameRow)
 	if !ok {
 		return
 	}
+
+	// Rows are rebound on every refresh; only a row pointed at a different game
+	// needs its thumbnail replaced.
+	sameGame := r.gameID == game.ID
+	r.gameID = game.ID
 
 	bindCheck(r.check, sel.has(game.ID), func(checked bool) {
 		sel.set(game.ID, checked)
@@ -118,6 +136,7 @@ func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, onTogg
 	})
 
 	r.title.SetText(game.Title)
+	r.loadThumbnail(game, covers, sameGame)
 
 	if !isGameDownloadedCached(game.ID) {
 		r.downloaded.Hide()
@@ -198,4 +217,32 @@ func joinTitles(titles []string) string {
 		return strings.Join(titles, ", ")
 	}
 	return fmt.Sprintf("%s and %d more", strings.Join(titles[:maxListed], ", "), len(titles)-maxListed)
+}
+
+// loadThumbnail fetches the row's artwork unless it is already on screen.
+func (r *gameRow) loadThumbnail(game db.Game, covers *coverCache, sameGame bool) {
+	if sameGame && r.thumbnail.Image != nil {
+		return
+	}
+
+	r.thumbnail.Resource = theme.FileImageIcon()
+	r.thumbnail.Image = nil
+	r.thumbnail.Refresh()
+
+	if covers == nil {
+		return
+	}
+	covers.load(game, coverThumbnail, func(id int) bool { return r.gameID == id },
+		func(data []byte, source coverSource) {
+			decoded, _, err := image.Decode(bytes.NewReader(data))
+			if err != nil {
+				return
+			}
+			if source.Faded {
+				decoded = cropArtwork(decoded)
+			}
+			r.thumbnail.Resource = nil
+			r.thumbnail.Image = decoded
+			r.thumbnail.Refresh()
+		})
 }

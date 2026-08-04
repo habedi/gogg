@@ -44,7 +44,7 @@ func TestCoverSourceFor_PrefersTheRecordedBanner(t *testing.T) {
 	source := coverSourceFor(db.Game{
 		ID: 1, Title: "One", CoverImage: "//images-1.gog-statics.com/aaa",
 		Data: gameDataWithCover("//images-2.gog-statics.com/bbb"),
-	})
+	}, coverBanner)
 
 	require.Equal(t, "https://images-1.gog-statics.com/aaa"+bannerRendition, source.URL)
 	require.False(t, source.Faded, "the banner needs no cropping")
@@ -54,7 +54,7 @@ func TestCoverSourceFor_PrefersTheRecordedBanner(t *testing.T) {
 func TestCoverSourceFor_FallsBackToTheBackgroundPicture(t *testing.T) {
 	source := coverSourceFor(db.Game{
 		ID: 1, Title: "One", Data: gameDataWithCover("//images-2.gog-statics.com/bbb"),
-	})
+	}, coverBanner)
 
 	require.Equal(t, "https://images-2.gog-statics.com/bbb"+backgroundRendition, source.URL)
 	require.True(t, source.Faded, "GOG fades that one, so it has to be cropped")
@@ -62,13 +62,13 @@ func TestCoverSourceFor_FallsBackToTheBackgroundPicture(t *testing.T) {
 
 // An address that already names a file is left alone.
 func TestCoverSourceFor_LeavesAnExplicitImageAlone(t *testing.T) {
-	source := coverSourceFor(db.Game{ID: 1, CoverImage: "https://images.gog.com/abc_bg.jpg"})
+	source := coverSourceFor(db.Game{ID: 1, CoverImage: "https://images.gog.com/abc_bg.jpg"}, coverBanner)
 	require.Equal(t, "https://images.gog.com/abc_bg.jpg", source.URL)
 }
 
 func TestCoverSourceFor_EmptyWhenThereIsNoArtwork(t *testing.T) {
-	require.Empty(t, coverSourceFor(db.Game{ID: 1, Data: `{"title":"G"}`}).URL)
-	require.Empty(t, coverSourceFor(db.Game{ID: 1, Data: "{not json"}).URL)
+	require.Empty(t, coverSourceFor(db.Game{ID: 1, Data: `{"title":"G"}`}, coverBanner).URL)
+	require.Empty(t, coverSourceFor(db.Game{ID: 1, Data: "{not json"}, coverBanner).URL)
 }
 
 // Covers are fetched once and kept, so scrolling the library does not hammer
@@ -81,11 +81,11 @@ func TestCoverCache_FetchesOnceAndReusesTheFile(t *testing.T) {
 	cache := newCoverCache(t.TempDir())
 	game := db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}
 
-	first, _, err := cache.fetch(game)
+	first, _, err := cache.fetch(game, coverBanner)
 	require.NoError(t, err)
 	require.NotNil(t, first)
 
-	second, _, err := cache.fetch(game)
+	second, _, err := cache.fetch(game, coverBanner)
 	require.NoError(t, err)
 	require.NotNil(t, second)
 
@@ -100,7 +100,7 @@ func TestCoverCache_KeepsCoversOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	game := db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}
 
-	_, _, err := newCoverCache(dir).fetch(game)
+	_, _, err := newCoverCache(dir).fetch(game, coverBanner)
 	require.NoError(t, err)
 
 	entries, err := os.ReadDir(dir)
@@ -108,7 +108,7 @@ func TestCoverCache_KeepsCoversOnDisk(t *testing.T) {
 	require.Len(t, entries, 1, "the cover is written for the next run")
 
 	// A cache built afresh, as after a restart, reuses what is already there.
-	served, _, err := newCoverCache(dir).fetch(game)
+	served, _, err := newCoverCache(dir).fetch(game, coverBanner)
 	require.NoError(t, err)
 	require.NotNil(t, served)
 }
@@ -117,7 +117,7 @@ func TestCoverCache_ReportsGamesWithNoCover(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	_, _, err := newCoverCache(t.TempDir()).fetch(db.Game{ID: 1, Title: "One", Data: "{}"})
+	_, _, err := newCoverCache(t.TempDir()).fetch(db.Game{ID: 1, Title: "One", Data: "{}"}, coverBanner)
 	require.Error(t, err)
 }
 
@@ -130,7 +130,7 @@ func TestCoverCache_ReportsAFailedFetch(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	_, _, err := newCoverCache(dir).fetch(db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")})
+	_, _, err := newCoverCache(dir).fetch(db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}, coverBanner)
 	require.Error(t, err)
 
 	entries, _ := os.ReadDir(dir)
@@ -148,12 +148,12 @@ func TestCoverCache_LoadDeliversToTheCurrentGame(t *testing.T) {
 	game := db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}
 
 	var delivered atomic.Int64
-	cache.load(game, func(int) bool { return true }, func([]byte, coverSource) { delivered.Add(1) })
+	cache.load(game, coverBanner, func(int) bool { return true }, func([]byte, coverSource) { delivered.Add(1) })
 	require.Eventually(t, func() bool { return delivered.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
 
 	// A cell that has moved on refuses the answer.
 	var stale atomic.Int64
-	cache.load(game, func(int) bool { return false }, func([]byte, coverSource) { stale.Add(1) })
+	cache.load(game, coverBanner, func(int) bool { return false }, func([]byte, coverSource) { stale.Add(1) })
 	require.Never(t, func() bool { return stale.Load() > 0 }, 300*time.Millisecond, 20*time.Millisecond)
 }
 
@@ -168,4 +168,14 @@ func TestCoverCacheDir(t *testing.T) {
 	dir := coverCacheDir()
 	require.NotEmpty(t, dir)
 	require.Equal(t, "covers", filepath.Base(dir))
+}
+
+// A list row wants a thumbnail, not a banner: 1.5 KB against 27 KB.
+func TestCoverSourceFor_ThumbnailIsSmallerThanTheBanner(t *testing.T) {
+	game := db.Game{ID: 1, CoverImage: "//images-1.gog-statics.com/aaa"}
+
+	require.Equal(t, "https://images-1.gog-statics.com/aaa"+thumbnailRendition,
+		coverSourceFor(game, coverThumbnail).URL)
+	require.Equal(t, "https://images-1.gog-statics.com/aaa"+bannerRendition,
+		coverSourceFor(game, coverBanner).URL)
 }

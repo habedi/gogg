@@ -1,9 +1,11 @@
 package gui
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"math"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
@@ -36,6 +39,8 @@ type libraryTab struct {
 	split *container.Split
 	// refresh re-syncs the catalogue, the same as the Refresh button.
 	refresh func()
+	// artwork is the picture shown for the selected game.
+	artwork *canvas.Image
 }
 
 // isGameDownloaded checks if a game has been successfully downloaded based on download history
@@ -450,6 +455,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			searchEntry: widget.NewEntry(),
 			selected:    binding.NewUntyped(),
 			refresh:     func() {},
+			artwork:     canvas.NewImageFromResource(nil),
 		}
 	}
 
@@ -478,6 +484,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	updateAllBtn := widget.NewButtonWithIcon("Update All", theme.DownloadIcon(), nil)
 	updateAllBtn.Importance = widget.HighImportance
 	updateAllBtn.Hide()
+
+	covers := newCoverCache(coverCacheDir())
 
 	var gameListWidget *widget.List
 	var gameGridWidget *widget.GridWrap
@@ -539,7 +547,6 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
 
-	covers := newCoverCache(coverCacheDir())
 	displayedForGrid := func() []db.Game { return displayedGames() }
 
 	gameGridWidget = widget.NewGridWrap(
@@ -567,7 +574,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			if !ok {
 				return
 			}
-			bindGameRow(obj, game, sel, func() { afterSelectionChange() })
+			bindGameRow(obj, game, sel, covers, func() { afterSelectionChange() })
 		},
 	)
 	gameGridWidget.OnSelected = func(id widget.GridWrapItemID) {
@@ -707,8 +714,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	detailTitle.TextStyle = fyne.TextStyle{Bold: true}
 
 	detailsBox := container.NewVBox()
-	accordion, form := createDetailsAccordion(win, authService, dm, selectedGameBinding,
+	pane := createDetailsPane(win, authService, dm, selectedGameBinding,
 		sel, func() []db.Game { return allGames }, detailsBox)
+	accordion, form := pane.content, pane.form
 
 	afterSelectionChange = func() {
 		if n := sel.count(); n > 0 {
@@ -752,8 +760,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	}
 	refreshUpdatesSummary()
 	topBox := container.NewVBox(detailTitle, widget.NewSeparator())
-	// The details and options can be taller than the window, and a window
-	// cannot be smaller than its content, so the pane scrolls instead.
+	// The pane can be taller than the window, and a window cannot be smaller
+	// than its content, so it scrolls instead.
 	rightPane := container.NewBorder(topBox, nil, nil, nil, container.NewVScroll(accordion))
 	accordion.Hide()
 
@@ -772,6 +780,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		detailsBox.Objects = []fyne.CanvasObject{renderGameDetails(gameDetails(game, dm))}
 		detailsBox.Refresh()
 		form.narrowTo(game)
+		showArtwork(pane.artwork, game, covers)
 		accordion.Show()
 
 		topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator()}
@@ -798,6 +807,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		selected:    selectedGameBinding,
 		split:       split,
 		refresh:     func() { refreshBtn.OnTapped() },
+		artwork:     pane.artwork,
 	}
 }
 
@@ -821,21 +831,43 @@ type downloadForm struct {
 	narrowTo func(game db.Game)
 }
 
-// createDetailsAccordion builds the details pane. detailsBox is filled with the
-// selected game's facts by the caller.
-func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *DownloadManager,
+// artworkSize is how much room the details pane gives a game's picture.
+var artworkSize = fyne.NewSize(392, 220)
+
+// detailsPane is the right-hand side of the library: the artwork, the facts and
+// the download options, in that order.
+type detailsPane struct {
+	content fyne.CanvasObject
+	form    *downloadForm
+	artwork *canvas.Image
+}
+
+// createDetailsPane builds the pane. detailsBox is filled with the selected
+// game's facts by the caller. The artwork leads, and the facts start collapsed:
+// they are reference material, while the picture tells you at a glance which
+// game you are looking at.
+func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadManager,
 	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
 	detailsBox *fyne.Container,
-) (*widget.Accordion, *downloadForm) {
+) *detailsPane {
 	form := createDownloadForm(win, authService, dm, selectedGame, sel, catalogue)
-	accordion := widget.NewAccordion(
-		widget.NewAccordionItem("Game Details", detailsBox),
-		widget.NewAccordionItem("Download Options", form.content),
-	)
-	accordion.MultiOpen = true
-	accordion.Open(0)
-	accordion.Open(1)
-	return accordion, form
+
+	facts := widget.NewAccordion(widget.NewAccordionItem("Game Details", detailsBox))
+	options := widget.NewAccordion(widget.NewAccordionItem("Download Options", form.content))
+	options.Open(0)
+
+	// The banner is served at 392x220, so it is shown at its own size rather
+	// than upscaled.
+	artwork := canvas.NewImageFromResource(nil)
+	artwork.FillMode = canvas.ImageFillContain
+	artwork.SetMinSize(artworkSize)
+	artwork.Hide()
+
+	return &detailsPane{
+		content: container.NewVBox(container.NewPadded(artwork), facts, options),
+		form:    form,
+		artwork: artwork,
+	}
 }
 
 func createDownloadForm(win fyne.Window, authService *auth.Service, dm *DownloadManager,
@@ -1128,4 +1160,30 @@ func buildVersionMapExtended(g client.Game, language, platform string, includeEx
 		}
 	}
 	return m
+}
+
+// showArtwork puts the selected game's picture in the details pane, hiding the
+// space it takes when the game has none.
+func showArtwork(artwork *canvas.Image, game db.Game, covers *coverCache) {
+	artwork.Image = nil
+	artwork.Resource = nil
+	artwork.Hide()
+
+	if covers == nil {
+		return
+	}
+	wanted := game.ID
+	covers.load(game, coverBanner, func(id int) bool { return id == wanted },
+		func(data []byte, source coverSource) {
+			decoded, _, err := image.Decode(bytes.NewReader(data))
+			if err != nil {
+				return
+			}
+			if source.Faded {
+				decoded = cropArtwork(decoded)
+			}
+			artwork.Image = decoded
+			artwork.Show()
+			artwork.Refresh()
+		})
 }

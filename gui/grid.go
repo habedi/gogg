@@ -117,7 +117,7 @@ func bindGameCell(cell *gameCell, game db.Game, sel *gameSelection, covers *cove
 	if covers == nil {
 		return
 	}
-	covers.load(game, cell.showing, func(data []byte, source coverSource) {
+	covers.load(game, coverBanner, cell.showing, func(data []byte, source coverSource) {
 		decoded, _, err := image.Decode(bytes.NewReader(data))
 		if err != nil {
 			return

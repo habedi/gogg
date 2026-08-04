@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -169,4 +171,60 @@ func TestLibraryTab_FitsInADefaultWindow(t *testing.T) {
 		"the library must fit in the default window height")
 	require.LessOrEqual(t, min.Width, float32(defaultWidth),
 		"the library must fit in the default window width")
+}
+
+func accordionWithItem(t *testing.T, root fyne.CanvasObject, title string) *widget.AccordionItem {
+	t.Helper()
+	for _, accordion := range widgetsOfType[*widget.Accordion](root) {
+		for _, item := range accordion.Items {
+			if item.Title == title {
+				return item
+			}
+		}
+	}
+	t.Fatalf("no accordion section titled %q", title)
+	return nil
+}
+
+// The facts are reference material; the pane should lead with the artwork and
+// the thing you came to do.
+func TestLibraryTab_GameDetailsStartCollapsed(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 2)
+
+	require.False(t, accordionWithItem(t, lt.content, "Game Details").Open)
+	require.True(t, accordionWithItem(t, lt.content, "Download Options").Open)
+}
+
+// Artwork leads the pane, above the facts and the download options.
+func TestLibraryTab_ShowsArtworkAboveTheSections(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 2)
+	require.NotNil(t, lt.artwork, "the details pane carries a place for artwork")
+
+	order := paneOrder(t, lt)
+	require.Equal(t, []string{"artwork", "Game Details", "Download Options"}, order)
+}
+
+// paneOrder names the details-pane sections from top to bottom.
+func paneOrder(t *testing.T, lt *libraryTab) []string {
+	t.Helper()
+	var order []string
+	walkWidgets(lt.content, func(o fyne.CanvasObject) {
+		switch v := o.(type) {
+		case *widget.Accordion:
+			for _, item := range v.Items {
+				order = append(order, item.Title)
+			}
+		case *canvas.Image:
+			if v == lt.artwork {
+				order = append(order, "artwork")
+			}
+		}
+	})
+	return order
 }
