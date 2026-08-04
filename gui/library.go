@@ -2,6 +2,7 @@ package gui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -147,7 +148,12 @@ func computeUpdateStatus(dm *DownloadManager, games []db.Game) {
 			current, err3 := client.ParseGameData(game.Data)
 			if err3 == nil && oldMeta != nil {
 				infoLang, infoPlatform := readDownloadInfo(dir)
-				lang := langPref
+				// The stored game data names languages in full, while the
+				// preference holds a code such as "en".
+				lang := client.GameLanguages[langPref]
+				if lang == "" {
+					lang = langPref
+				}
 				platform := platformPref
 				if infoLang != "" {
 					lang = infoLang
@@ -184,6 +190,18 @@ func hasGameUpdateCached(gameID int) (bool, []string) {
 		return false, nil
 	}
 	return st.HasUpdate, st.Diff
+}
+
+// gamesWithUpdates returns the games whose cached status says an update is
+// waiting for them.
+func gamesWithUpdates(games []db.Game) []db.Game {
+	pending := make([]db.Game, 0)
+	for _, game := range games {
+		if hasUpdate, _ := hasGameUpdateCached(game.ID); hasUpdate {
+			pending = append(pending, game)
+		}
+	}
+	return pending
 }
 
 // isGameDownloadedCached uses cache
@@ -439,8 +457,14 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	clearSearchBtn.Hide()
 
 	sel := newGameSelection()
-	// afterSelectionChange is assigned once every widget it touches exists.
+	// These are assigned once every widget they touch exists.
 	var afterSelectionChange func()
+	var refreshUpdatesSummary func()
+
+	updatesLabel := widget.NewLabel("")
+	updateAllBtn := widget.NewButtonWithIcon("Update All", theme.DownloadIcon(), nil)
+	updateAllBtn.Importance = widget.HighImportance
+	updateAllBtn.Hide()
 
 	var gameListWidget *widget.List
 	displayedGames := func() []db.Game {
@@ -491,6 +515,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	recomputeStatuses := func() {
 		computeUpdateStatus(dm, allGames)
 		updateDisplayedGames()
+		if refreshUpdatesSummary != nil {
+			refreshUpdatesSummary()
+		}
 	}
 
 	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
@@ -518,6 +545,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// Refresh icons when download tasks change
 	dm.Tasks.AddListener(binding.NewDataListener(func() {
 		computeUpdateStatus(dm, displayedGames()) // recalc for current displayed games
+		if refreshUpdatesSummary != nil {
+			refreshUpdatesSummary()
+		}
 		gameListWidget.Refresh()
 	}))
 
@@ -580,7 +610,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	settingsBtn := newUpdateSettingsButton(prefs, dm, recomputeStatuses)
 	filtersBtn := newFiltersButton(updateDisplayedGames)
 	// Compact toolbar now
-	toolbar := container.NewHBox(refreshBtn, exportBtn, sortBtn, settingsBtn, filtersBtn, layout.NewSpacer(), gameCountLabel)
+	toolbar := container.NewHBox(refreshBtn, exportBtn, sortBtn, settingsBtn, filtersBtn, updateAllBtn,
+		layout.NewSpacer(), updatesLabel, gameCountLabel)
 	selectionLabel := widget.NewLabel("")
 	// Changing many rows at once needs the list redrawn; a row the user ticked
 	// themselves already shows the right state.
@@ -604,7 +635,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	detailTitle.Alignment = fyne.TextAlignCenter
 	detailTitle.TextStyle = fyne.TextStyle{Bold: true}
 
-	accordion, refreshDownloadButton := createDetailsAccordion(win, authService, dm, selectedGameBinding,
+	accordion, form := createDetailsAccordion(win, authService, dm, selectedGameBinding,
 		sel, func() []db.Game { return allGames })
 
 	afterSelectionChange = func() {
@@ -613,9 +644,41 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		} else {
 			selectionLabel.SetText("")
 		}
-		refreshDownloadButton()
+		form.relabel()
 	}
 	afterSelectionChange()
+
+	refreshUpdatesSummary = func() {
+		pending := gamesWithUpdates(allGames)
+		if len(pending) == 0 {
+			updatesLabel.SetText("")
+			updateAllBtn.Hide()
+			return
+		}
+		updatesLabel.SetText(fmt.Sprintf("%d %s with updates", len(pending), gamesWord(len(pending))))
+		updateAllBtn.SetText(fmt.Sprintf("Update All (%d)", len(pending)))
+		updateAllBtn.Show()
+	}
+	updateAllBtn.OnTapped = func() {
+		pending := gamesWithUpdates(allGames)
+		if len(pending) == 0 {
+			return
+		}
+		dialog.ShowConfirm("Update All",
+			fmt.Sprintf("Download updates for %d %s?", len(pending), gamesWord(len(pending))),
+			func(confirmed bool) {
+				if !confirmed {
+					return
+				}
+				result, err := form.queue(pending)
+				if err != nil {
+					showErrorDialog(win, "Cannot start downloads", err)
+					return
+				}
+				dialog.ShowInformation("Downloads", result.summary(), win)
+			}, win)
+	}
+	refreshUpdatesSummary()
 	topBox := container.NewVBox(detailTitle, widget.NewSeparator())
 	rightPane := container.NewBorder(topBox, nil, nil, nil, accordion)
 	accordion.Hide()
@@ -659,21 +722,28 @@ func untypedSlice(games []db.Game) []interface{} {
 	return out
 }
 
-// createDetailsAccordion builds the details pane. It returns the accordion and
-// a function that brings the download button's label back in line with the
-// current selection.
+// downloadForm exposes what the rest of the library needs from the options pane.
+type downloadForm struct {
+	content fyne.CanvasObject
+	// relabel brings the download button in line with the current selection.
+	relabel func()
+	// queue starts downloads for the given games with the options on screen.
+	queue func(games []db.Game) (batchResult, error)
+}
+
+// createDetailsAccordion builds the details pane.
 func createDetailsAccordion(win fyne.Window, authService *auth.Service, dm *DownloadManager,
 	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
-) (*widget.Accordion, func()) {
-	downloadForm, refreshDownloadButton := createDownloadForm(win, authService, dm, selectedGame, sel, catalogue)
-	accordion := widget.NewAccordion(widget.NewAccordionItem("Download Options", downloadForm))
+) (*widget.Accordion, *downloadForm) {
+	form := createDownloadForm(win, authService, dm, selectedGame, sel, catalogue)
+	accordion := widget.NewAccordion(widget.NewAccordionItem("Download Options", form.content))
 	accordion.Open(0)
-	return accordion, refreshDownloadButton
+	return accordion, form
 }
 
 func createDownloadForm(win fyne.Window, authService *auth.Service, dm *DownloadManager,
 	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
-) (fyne.CanvasObject, func()) {
+) *downloadForm {
 	prefs := fyne.CurrentApp().Preferences()
 	downloadPathEntry := widget.NewEntry()
 	lastUsedPath := prefs.String("lastUsedDownloadPath")
@@ -732,12 +802,27 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		_ = fyne.CurrentApp().OpenURL(parseURL(url))
 	})
 
-	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), func() {
+	// queue turns "these games" plus whatever the form currently says into
+	// queued downloads. Both the download button and Update All go through it.
+	queue := func(games []db.Game) (batchResult, error) {
 		if downloadPathEntry.Text == "" {
-			showErrorDialog(win, "Download path cannot be empty.", nil)
-			return
+			return batchResult{}, errors.New("download path cannot be empty")
 		}
+		threads, _ := strconv.Atoi(threadsSelect.Selected)
+		langFull := client.GameLanguages[langSelect.Selected]
+		return queueDownloads(dm, games, func(game db.Game) queuedDownload {
+			return queuedDownload{
+				authService: authService, game: game, downloadPath: downloadPathEntry.Text,
+				language: langFull, platformName: platformSelect.Selected,
+				extrasFlag: extrasCheck.Checked, dlcFlag: dlcsCheck.Checked,
+				resumeFlag: resumeCheck.Checked, flattenFlag: flattenCheck.Checked,
+				skipPatchesFlag: skipPatchesCheck.Checked, keepLatestFlag: keepLatestCheck.Checked,
+				rommLayoutFlag: rommCheck.Checked, numThreads: threads,
+			}
+		}), nil
+	}
 
+	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), func() {
 		// Ticked games win; otherwise the download applies to the highlighted one.
 		games := sel.gamesIn(catalogue())
 		if len(games) == 0 {
@@ -748,19 +833,11 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			games = []db.Game{gameRaw.(db.Game)}
 		}
 
-		threads, _ := strconv.Atoi(threadsSelect.Selected)
-		langFull := client.GameLanguages[langSelect.Selected]
-		result := queueDownloads(dm, games, func(game db.Game) queuedDownload {
-			return queuedDownload{
-				authService: authService, game: game, downloadPath: downloadPathEntry.Text,
-				language: langFull, platformName: platformSelect.Selected,
-				extrasFlag: extrasCheck.Checked, dlcFlag: dlcsCheck.Checked,
-				resumeFlag: resumeCheck.Checked, flattenFlag: flattenCheck.Checked,
-				skipPatchesFlag: skipPatchesCheck.Checked, keepLatestFlag: keepLatestCheck.Checked,
-				rommLayoutFlag: rommCheck.Checked, numThreads: threads,
-			}
-		})
-
+		result, err := queue(games)
+		if err != nil {
+			showErrorDialog(win, "Cannot start download", err)
+			return
+		}
 		if len(games) == 1 && result.Queued == 1 {
 			dialog.ShowInformation("Started", fmt.Sprintf("Download for '%s' has started.", games[0].Title), win)
 			return
@@ -777,7 +854,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	)
 	checkboxes := container.New(layout.NewGridLayout(2), extrasCheck, dlcsCheck, resumeCheck, flattenCheck, skipPatchesCheck, keepLatestCheck, rommCheck)
 
-	refreshDownloadButton := func() {
+	relabel := func() {
 		if n := sel.count(); n > 0 {
 			downloadBtn.SetText(fmt.Sprintf("Download Selected (%d)", n))
 			return
@@ -785,7 +862,11 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		downloadBtn.SetText("Download Game")
 	}
 
-	return container.NewVBox(form, checkboxes, layout.NewSpacer(), gogdbBtn, downloadBtn), refreshDownloadButton
+	return &downloadForm{
+		content: container.NewVBox(form, checkboxes, layout.NewSpacer(), gogdbBtn, downloadBtn),
+		relabel: relabel,
+		queue:   queue,
+	}
 }
 
 func newUpdateSettingsButton(prefs fyne.Preferences, dm *DownloadManager, refresh func()) *widget.Button {
