@@ -41,6 +41,11 @@ func (sw *syncWriter) Write(p []byte) (int, error) {
 	return sw.w.Write(p)
 }
 
+// progressInterval is how often a transfer reports its progress. Reporting
+// every read would mean over a million updates for a large game, each one
+// marshalled, serialised through a mutex and decoded by the reader.
+var progressInterval = 200 * time.Millisecond
+
 // progressReader wraps an io.Reader to send progress updates through an io.Writer.
 type progressReader struct {
 	reader     io.Reader
@@ -48,6 +53,8 @@ type progressReader struct {
 	fileName   string
 	totalSize  int64
 	bytesRead  int64
+	reported   int64
+	lastReport time.Time
 	updateLock sync.Mutex
 }
 
@@ -62,23 +69,49 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	if n > 0 {
 		pr.updateLock.Lock()
 		pr.bytesRead += int64(n)
-		currentBytes := pr.bytesRead
 		pr.updateLock.Unlock()
+	}
 
-		update := ProgressUpdate{
-			Type:         "file_progress",
-			FileName:     pr.fileName,
-			CurrentBytes: currentBytes,
-			TotalBytes:   pr.totalSize,
-		}
-		jsonUpdate, jsonErr := json.Marshal(update)
-		if jsonErr != nil {
-			log.Error().Err(jsonErr).Msg("Failed to marshal progress update")
-		} else {
-			pr.writeProgress(append(jsonUpdate, '\n'))
-		}
+	// The end of the transfer is always reported, so a throttled update can
+	// never leave a file looking unfinished.
+	if n > 0 || err != nil {
+		pr.report(err != nil)
 	}
 	return n, err
+}
+
+// report sends the current progress unless it was sent too recently. A final
+// report is always sent, provided there is something new to say.
+func (pr *progressReader) report(final bool) {
+	pr.updateLock.Lock()
+	now := time.Now()
+	switch {
+	case final:
+		if pr.reported == pr.bytesRead {
+			pr.updateLock.Unlock()
+			return
+		}
+	case !pr.lastReport.IsZero() && now.Sub(pr.lastReport) < progressInterval:
+		pr.updateLock.Unlock()
+		return
+	}
+	pr.lastReport = now
+	pr.reported = pr.bytesRead
+	currentBytes := pr.bytesRead
+	pr.updateLock.Unlock()
+
+	update := ProgressUpdate{
+		Type:         "file_progress",
+		FileName:     pr.fileName,
+		CurrentBytes: currentBytes,
+		TotalBytes:   pr.totalSize,
+	}
+	jsonUpdate, jsonErr := json.Marshal(update)
+	if jsonErr != nil {
+		log.Error().Err(jsonErr).Msg("Failed to marshal progress update")
+		return
+	}
+	pr.writeProgress(append(jsonUpdate, '\n'))
 }
 
 func ParseGameData(data string) (Game, error) {

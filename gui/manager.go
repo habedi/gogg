@@ -49,6 +49,24 @@ type DownloadTask struct {
 	// state is written by the download goroutine and read by the UI, so it is
 	// only reachable through State and SetState.
 	state atomic.Int32
+
+	// Byte counters for the aggregate header, written by the download
+	// goroutine and read by the UI.
+	downloadedBytes atomic.Int64
+	totalBytes      atomic.Int64
+	speedBytes      atomic.Int64
+}
+
+// SetProgressBytes records how far along this download is. Safe for concurrent use.
+func (t *DownloadTask) SetProgressBytes(downloaded, total, speed int64) {
+	t.downloadedBytes.Store(downloaded)
+	t.totalBytes.Store(total)
+	t.speedBytes.Store(speed)
+}
+
+// ProgressBytes reports how far along this download is. Safe for concurrent use.
+func (t *DownloadTask) ProgressBytes() (downloaded, total, speed int64) {
+	return t.downloadedBytes.Load(), t.totalBytes.Load(), t.speedBytes.Load()
 }
 
 // State returns the current state of the task. Safe for concurrent use.
@@ -68,10 +86,12 @@ type PersistentDownloadTask struct {
 }
 
 type DownloadManager struct {
-	mu          sync.RWMutex
-	Tasks       binding.UntypedList
-	historyPath fyne.URI
-	queue       []queuedDownload
+	mu            sync.RWMutex
+	Tasks         binding.UntypedList
+	historyPath   fyne.URI
+	queue         []queuedDownload
+	totalsOnce    sync.Once
+	totalsBinding binding.String
 }
 
 type queuedDownload struct {
@@ -384,6 +404,11 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 		},
 	)
 
+	totalsLabel := widget.NewLabelWithData(dm.totals())
+	totalsLabel.TextStyle = fyne.TextStyle{Bold: true}
+	header := container.NewPadded(totalsLabel)
+	dm.refreshTotals()
+
 	clearAllBtn := widget.NewButton("Clear All Finished", func() {
 		dm.mu.Lock()
 		currentTasks, _ := dm.Tasks.Get()
@@ -397,10 +422,11 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 		_ = dm.Tasks.Set(keptTasks)
 		dm.mu.Unlock()
 		dm.PersistHistory()
+		dm.refreshTotals()
 	})
 	bottomBar := container.NewHBox(layout.NewSpacer(), clearAllBtn)
 
-	return container.NewBorder(nil, bottomBar, nil, nil, list)
+	return container.NewBorder(header, bottomBar, nil, nil, list)
 }
 
 func (dm *DownloadManager) activeCount() int {

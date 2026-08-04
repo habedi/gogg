@@ -43,6 +43,7 @@ func formatBytes(b int64) string {
 
 type progressUpdater struct {
 	task              *DownloadTask
+	dm                *DownloadManager
 	totalBytes        int64
 	downloadedBytes   int64
 	fileBytes         map[string]int64
@@ -89,6 +90,7 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 				_ = pu.task.Status.Set("Downloading files...")
 			}
 			pu.updateSpeedAndETA()
+			pu.publishTotals()
 
 			pu.fileProgress[update.FileName] = struct{ current, total int64 }{update.CurrentBytes, update.TotalBytes}
 			if update.CurrentBytes >= update.TotalBytes && update.TotalBytes > 0 {
@@ -99,6 +101,27 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 	}
 
 	return len(p), nil
+}
+
+// publishTotals mirrors this download's progress onto the task and refreshes
+// the aggregate line above the download list.
+func (pu *progressUpdater) publishTotals() {
+	pu.task.SetProgressBytes(pu.downloadedBytes, pu.totalBytes, int64(pu.averageSpeed()))
+	if pu.dm != nil {
+		pu.dm.refreshTotals()
+	}
+}
+
+// averageSpeed is the smoothed transfer rate in bytes per second.
+func (pu *progressUpdater) averageSpeed() float64 {
+	if len(pu.speeds) == 0 {
+		return 0
+	}
+	var total float64
+	for _, speed := range pu.speeds {
+		total += speed
+	}
+	return total / float64(len(pu.speeds))
 }
 
 func (pu *progressUpdater) updateSpeedAndETA() {
@@ -120,11 +143,7 @@ func (pu *progressUpdater) updateSpeedAndETA() {
 		pu.speeds = pu.speeds[1:]
 	}
 
-	var totalSpeed float64
-	for _, s := range pu.speeds {
-		totalSpeed += s
-	}
-	avgSpeed := totalSpeed / float64(len(pu.speeds))
+	avgSpeed := pu.averageSpeed()
 
 	pu.lastUpdateTime = now
 	pu.lastBytes = pu.downloadedBytes
@@ -255,6 +274,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 
 		updater := &progressUpdater{
 			task:         task,
+			dm:           dm,
 			fileBytes:    make(map[string]int64),
 			fileProgress: make(map[string]struct{ current, total int64 }),
 		}
