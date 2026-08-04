@@ -84,6 +84,12 @@ func RefreshCatalogue(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch owned game IDs: %w", err)
 	}
+	// Artwork is decoration: a refresh must not fail because it is unavailable.
+	coverImages, coverErr := FetchOwnedProductImages(ctx, token.AccessToken)
+	if coverErr != nil {
+		log.Warn().Err(coverErr).Msg("Could not list game artwork; covers fall back to the background image")
+	}
+
 	// Snapshot the current catalogue so we can detect version changes.
 	oldGames, listErr := repo.List(ctx)
 	oldVersions := make(map[int]struct{ title, version string }, len(oldGames))
@@ -139,7 +145,8 @@ func RefreshCatalogue(
 		}
 
 		version := extractVersion(details)
-		if putErr := repo.Put(ctx, db.Game{ID: id, Title: details.Title, Data: raw, Version: version}); putErr != nil {
+		game := db.Game{ID: id, Title: details.Title, Data: raw, Version: version, CoverImage: coverImages[id]}
+		if putErr := repo.Put(ctx, game); putErr != nil {
 			failedCount.Add(1)
 			log.Error().Err(putErr).Int("gameID", id).Msg("Failed to store game details")
 			return nil

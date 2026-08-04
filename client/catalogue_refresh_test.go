@@ -206,3 +206,47 @@ func TestRefreshCatalogue_CancellationLeavesCatalogueIntact(t *testing.T) {
 	require.NoError(t, listErr)
 	require.Len(t, all, 3, "a cancelled refresh must not drop games")
 }
+
+// The catalogue records where each game's artwork lives, so the GUI does not
+// have to ask GOG again every time it draws the library.
+func TestRefreshCatalogue_RecordsArtwork(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user/data/games":
+			_, _ = w.Write([]byte(`{"owned":[1]}`))
+		case "/account/getFilteredProducts":
+			_, _ = w.Write([]byte(`{"totalPages":1,"products":[{"id":1,"image":"//images-1.gog-statics.com/aaa"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"title":"One","downloads":[],"extras":[],"dlcs":[]}`))
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("GOGG_EMBED_BASE", srv.URL)
+
+	repo := newRealRepo()
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	require.NoError(t, err)
+
+	require.Equal(t, "//images-1.gog-statics.com/aaa", repo.get(t, 1).CoverImage)
+}
+
+// Artwork is decoration: failing to fetch it must not fail a refresh.
+func TestRefreshCatalogue_SurvivesMissingArtwork(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user/data/games":
+			_, _ = w.Write([]byte(`{"owned":[1]}`))
+		case "/account/getFilteredProducts":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			_, _ = w.Write([]byte(`{"title":"One","downloads":[],"extras":[],"dlcs":[]}`))
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("GOGG_EMBED_BASE", srv.URL)
+
+	repo := newRealRepo()
+	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
+	require.NoError(t, err, "a refresh must not fail because artwork could not be listed")
+	require.Equal(t, "One", repo.get(t, 1).Title)
+}

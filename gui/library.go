@@ -468,6 +468,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	searchEntry.ActionItem = clearSearchBtn
 	clearSearchBtn.Hide()
 
+	prefs := fyne.CurrentApp().Preferences()
 	sel := newGameSelection()
 	// These are assigned once every widget they touch exists.
 	var afterSelectionChange func()
@@ -479,6 +480,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	updateAllBtn.Hide()
 
 	var gameListWidget *widget.List
+	var gameGridWidget *widget.GridWrap
 	displayedGames := func() []db.Game {
 		items, _ := gamesListBinding.Get()
 		games := make([]db.Game, 0, len(items))
@@ -513,6 +515,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		})
 
 		_ = gamesListBinding.Set(untypedSlice(displayGames))
+		if gameGridWidget != nil {
+			gameGridWidget.Refresh()
+		}
 		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(displayGames)))
 		if searchTerm == "" {
 			clearSearchBtn.Hide()
@@ -534,6 +539,25 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
 
+	covers := newCoverCache(coverCacheDir())
+	displayedForGrid := func() []db.Game { return displayedGames() }
+
+	gameGridWidget = widget.NewGridWrap(
+		func() int { return len(displayedForGrid()) },
+		newGameCell,
+		func(id widget.GridWrapItemID, obj fyne.CanvasObject) {
+			games := displayedForGrid()
+			if id >= len(games) {
+				return
+			}
+			cell, ok := obj.(*gameCell)
+			if !ok {
+				return
+			}
+			bindGameCell(cell, games[id], sel, covers, func() { afterSelectionChange() })
+		},
+	)
+
 	listContent := container.NewStack()
 	gameListWidget = widget.NewListWithData(gamesListBinding,
 		newGameRow,
@@ -546,6 +570,17 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			bindGameRow(obj, game, sel, func() { afterSelectionChange() })
 		},
 	)
+	gameGridWidget.OnSelected = func(id widget.GridWrapItemID) {
+		games := displayedForGrid()
+		if id >= len(games) {
+			return
+		}
+		_ = selectedGameBinding.Set(games[id])
+	}
+	gameGridWidget.OnUnselected = func(widget.GridWrapItemID) {
+		_ = selectedGameBinding.Set(nil)
+	}
+
 	gameListWidget.OnSelected = func(id widget.ListItemID) {
 		gameRaw, _ := gamesListBinding.GetValue(id)
 		_ = selectedGameBinding.Set(gameRaw)
@@ -563,13 +598,33 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		gameListWidget.Refresh()
 	}))
 
+	showingGrid := prefs.Bool(prefGridView)
+	var viewBtn *widget.Button
+	showGames := func() {
+		if len(allGames) == 0 {
+			return
+		}
+		if showingGrid {
+			listContent.Objects = []fyne.CanvasObject{gameGridWidget}
+			viewBtn.SetText("List View")
+		} else {
+			listContent.Objects = []fyne.CanvasObject{gameListWidget}
+			viewBtn.SetText("Grid View")
+		}
+		listContent.Refresh()
+	}
+	viewBtn = widget.NewButtonWithIcon("Grid View", theme.ViewFullScreenIcon(), func() {
+		showingGrid = !showingGrid
+		prefs.SetBool(prefGridView, showingGrid)
+		showGames()
+	})
+
 	var refreshBtn *widget.Button
 	onFinishRefresh := func() {
 		allGames, _ = db.GetCatalogue()
 		recomputeStatuses()
 		refreshBtn.Enable()
-		listContent.Objects = []fyne.CanvasObject{gameListWidget}
-		listContent.Refresh()
+		showGames()
 	}
 
 	if len(allGames) == 0 {
@@ -584,6 +639,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		listContent.Add(placeholder)
 	} else {
 		listContent.Add(gameListWidget)
+		showGames()
 	}
 	// Load any status cached by an earlier session before recomputing, so stale
 	// entries cannot overwrite fresh ones.
@@ -617,15 +673,13 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		gameListWidget.Refresh()
 	})
 
-	// Preferences toggles for update detection scope (replaced by compact settings button)
-	prefs := fyne.CurrentApp().Preferences()
 	settingsBtn := newUpdateSettingsButton(prefs, dm, recomputeStatuses)
 	filtersBtn := newFiltersButton(updateDisplayedGames)
 	// Compact toolbar now
 	// The buttons scroll rather than forcing a minimum width on the window; the
 	// counts stay pinned to the right.
 	toolbarButtons := container.NewHScroll(
-		container.NewHBox(refreshBtn, exportBtn, sortBtn, settingsBtn, filtersBtn, updateAllBtn))
+		container.NewHBox(refreshBtn, exportBtn, viewBtn, sortBtn, settingsBtn, filtersBtn, updateAllBtn))
 	toolbar := container.NewBorder(nil, nil, nil,
 		container.NewHBox(updatesLabel, gameCountLabel), toolbarButtons)
 	selectionLabel := widget.NewLabel("")
@@ -635,6 +689,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		change()
 		afterSelectionChange()
 		gameListWidget.Refresh()
+		gameGridWidget.Refresh()
 	}
 	selectAllBtn := widget.NewButton("Select All Shown", func() {
 		applyBulkSelection(func() { sel.selectAll(displayedGames()) })
