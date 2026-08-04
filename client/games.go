@@ -148,22 +148,24 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 
 	for i := 0; i < maxRetries; i++ {
 		resp, err = client.Do(req)
+		if err == nil && resp.StatusCode < 500 {
+			break
+		}
 		if err != nil {
 			log.Warn().Err(err).Int("attempt", i+1).Int("max_attempts", maxRetries).Msg("Request failed, retrying...")
-			time.Sleep(backoff)
-			backoff *= 2
-			continue
-		}
-
-		if resp.StatusCode >= 500 {
+		} else {
 			log.Warn().Int("status", resp.StatusCode).Int("attempt", i+1).Int("max_attempts", maxRetries).Msg("Server error, retrying...")
 			closeResponseBody(resp)
-			time.Sleep(backoff)
-			backoff *= 2
-			continue
 		}
 
-		break
+		if i == maxRetries-1 {
+			// Nothing left to retry, so there is nothing to wait for.
+			break
+		}
+		if waitErr := waitBeforeRetry(req.Context(), backoff); waitErr != nil {
+			return nil, waitErr
+		}
+		backoff *= 2
 	}
 
 	if err != nil {
@@ -177,6 +179,18 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
 	}
 	return resp, nil
+}
+
+// waitBeforeRetry sleeps for d, returning early if ctx is cancelled first.
+func waitBeforeRetry(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func readResponseBody(resp *http.Response) ([]byte, error) {
@@ -262,22 +276,25 @@ func FetchAllOwnedGameIDs(ctx context.Context, accessToken, startURL string) ([]
 		if err != nil {
 			return nil, err
 		}
-		func() {
+		// A page we cannot read or parse must not be mistaken for the end of
+		// the listing; a short list would look like the user sold their games.
+		if err := func() error {
 			defer func() { _ = resp.Body.Close() }()
 			body, err := readResponseBody(resp)
 			if err != nil {
-				nextURL = ""
-				return
+				return fmt.Errorf("failed to read owned games page %s: %w", nextURL, err)
 			}
 			var or ownedResponse
 			if err := json.Unmarshal(body, &or); err != nil {
-				nextURL = ""
-				return
+				return fmt.Errorf("failed to parse owned games page %s: %w", nextURL, err)
 			}
 			all = append(all, or.Owned...)
 			resolved := resolveNext(nextURL, or.Next)
 			nextURL = canonicalizeURL(resolved)
-		}()
+			return nil
+		}(); err != nil {
+			return nil, err
+		}
 	}
 	return all, nil
 }

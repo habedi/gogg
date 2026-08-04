@@ -43,7 +43,7 @@ func isGameDownloaded(dm *DownloadManager, gameID int) bool {
 
 	for _, taskRaw := range allTasks {
 		task := taskRaw.(*DownloadTask)
-		if task.ID == gameID && task.State == StateCompleted {
+		if task.ID == gameID && task.State() == StateCompleted {
 			return true
 		}
 	}
@@ -68,7 +68,7 @@ func getLastCompletedDownloadDir(dm *DownloadManager, gameID int) (string, bool)
 	var latestUnix int64 = -1
 	for _, taskRaw := range allTasks {
 		task := taskRaw.(*DownloadTask)
-		if task.ID != gameID || task.State != StateCompleted {
+		if task.ID != gameID || task.State() != StateCompleted {
 			continue
 		}
 		if t := task.InstanceID.UnixNano(); t > latestUnix {

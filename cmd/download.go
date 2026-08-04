@@ -292,6 +292,17 @@ func compareVersions(a, b []int) int { // 1 if a>b, -1 if a<b, 0 if eq
 	return 0
 }
 
+// installerGroup identifies files that are versions of the same installer.
+// Files only compete with one another when they sit in the same directory and
+// share both a name prefix and an extension: a Windows installer is not an
+// older version of the Linux one, and neither is a DLC installer that happens
+// to share a name with the base game.
+type installerGroup struct {
+	dir    string
+	prefix string
+	suffix string
+}
+
 func pruneOldVersions(downloadPath, title string) error {
 	root := filepath.Join(downloadPath, client.SanitizePath(title))
 	if _, err := os.Stat(root); err != nil {
@@ -299,11 +310,11 @@ func pruneOldVersions(downloadPath, title string) error {
 	}
 	// Candidate extensions (installer types)
 	extAllowed := map[string]struct{}{".exe": {}, ".bin": {}, ".dmg": {}, ".sh": {}, ".zip": {}, ".tar.gz": {}, ".rar": {}}
-	latestByPrefix := make(map[string]struct {
+	latestByGroup := make(map[installerGroup]struct {
 		file string
 		ver  []int
 	})
-	filesByPrefix := make(map[string][]string)
+	filesByGroup := make(map[installerGroup][]string)
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
@@ -317,14 +328,15 @@ func pruneOldVersions(downloadPath, title string) error {
 		if _, ok := extAllowed[ext]; !ok {
 			return nil
 		}
-		prefix, ver, _, ok := parseVersion(name)
+		prefix, ver, suffix, ok := parseVersion(name)
 		if !ok || len(ver) == 0 {
 			return nil
 		}
-		filesByPrefix[prefix] = append(filesByPrefix[prefix], path)
-		curr, exists := latestByPrefix[prefix]
+		group := installerGroup{dir: filepath.Dir(path), prefix: prefix, suffix: suffix}
+		filesByGroup[group] = append(filesByGroup[group], path)
+		curr, exists := latestByGroup[group]
 		if !exists || compareVersions(ver, curr.ver) == 1 {
-			latestByPrefix[prefix] = struct {
+			latestByGroup[group] = struct {
 				file string
 				ver  []int
 			}{file: path, ver: ver}
@@ -332,8 +344,8 @@ func pruneOldVersions(downloadPath, title string) error {
 		return nil
 	})
 	// Remove older ones
-	for prefix, files := range filesByPrefix {
-		latest := latestByPrefix[prefix].file
+	for group, files := range filesByGroup {
+		latest := latestByGroup[group].file
 		for _, f := range files {
 			if f != latest {
 				if err := os.Remove(f); err != nil {

@@ -51,6 +51,11 @@ func FindFilesToHash(dir string, recursive bool, exclusions []string) ([]string,
 
 // GenerateHashes concurrently generates hashes for a list of files.
 func GenerateHashes(ctx context.Context, files []string, algo string, numThreads int) <-chan HashResult {
+	if numThreads < 1 {
+		// Without at least one worker no file would ever be hashed.
+		numThreads = 1
+	}
+
 	tasks := make(chan string, len(files))
 	results := make(chan HashResult, len(files))
 

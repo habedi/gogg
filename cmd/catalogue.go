@@ -411,7 +411,9 @@ func exportCatalogueToCSV(path string, games []db.Game) error {
 		return err
 	}
 	for _, game := range games {
-		if _, err := fmt.Fprintf(file, "%d,\"%s\"\n", game.ID, game.Title); err != nil {
+		// Double quotes inside a quoted CSV field are escaped by doubling them.
+		title := strings.ReplaceAll(game.Title, `"`, `""`)
+		if _, err := fmt.Fprintf(file, "%d,\"%s\"\n", game.ID, title); err != nil {
 			log.Error().Err(err).Msgf("Failed to write game %d to CSV file", game.ID)
 			return err
 		}

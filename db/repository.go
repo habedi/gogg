@@ -15,6 +15,7 @@ type GameRepository interface {
 	List(ctx context.Context) ([]Game, error)
 	SearchByTitle(ctx context.Context, titleSubstr string) ([]Game, error)
 	Clear(ctx context.Context) error
+	DeleteByIDs(ctx context.Context, ids []int) error
 }
 
 // TokenRepository defines decoupled operations for token persistence.
@@ -71,6 +72,13 @@ func (r *gormGameRepo) SearchByTitle(ctx context.Context, titleSubstr string) ([
 
 func (r *gormGameRepo) Clear(ctx context.Context) error {
 	return r.db.WithContext(ctx).Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(&Game{}).Error
+}
+
+func (r *gormGameRepo) DeleteByIDs(ctx context.Context, ids []int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Unscoped().Delete(&Game{}, "id IN ?", ids).Error
 }
 
 func (r *gormTokenRepo) Get(ctx context.Context) (*Token, error) {

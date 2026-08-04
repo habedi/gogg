@@ -432,7 +432,7 @@ func DownloadGameFiles(
 			if usingPartFile {
 				activeFile = partPath
 			}
-			if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
+			if isCancellation(ctx.Err()) {
 				// On cancellation, remove partial file unless resume was requested
 				if !task.resume {
 					_ = file.Close()
@@ -498,7 +498,7 @@ func DownloadGameFiles(
 
 	if len(downloadErrors) > 0 {
 		for _, err := range downloadErrors {
-			if err != context.Canceled && err != context.DeadlineExceeded {
+			if !isCancellation(err) {
 				log.Error().Err(err).Msg("Worker failed to download file")
 			}
 		}
@@ -520,6 +520,13 @@ func DownloadGameFiles(
 
 	log.Info().Msg("Download process completed.")
 	return nil
+}
+
+// isCancellation reports whether err is, or wraps, a context cancellation or a
+// deadline. Download errors are wrapped before they get here, so a direct
+// comparison against the sentinel values would never match.
+func isCancellation(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func isAbsoluteURL(u string) bool {

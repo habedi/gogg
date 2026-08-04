@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -30,7 +31,6 @@ const (
 type DownloadTask struct {
 	ID           int
 	InstanceID   time.Time // Unique identifier for this specific download
-	State        int
 	Title        string
 	Status       binding.String
 	Details      binding.String
@@ -38,7 +38,17 @@ type DownloadTask struct {
 	CancelFunc   context.CancelFunc
 	FileStatus   binding.String
 	DownloadPath string
+
+	// state is written by the download goroutine and read by the UI, so it is
+	// only reachable through State and SetState.
+	state atomic.Int32
 }
+
+// State returns the current state of the task. Safe for concurrent use.
+func (t *DownloadTask) State() int { return int(t.state.Load()) }
+
+// SetState updates the state of the task. Safe for concurrent use.
+func (t *DownloadTask) SetState(state int) { t.state.Store(int32(state)) }
 
 // PersistentDownloadTask is a serializable representation of a finished task.
 type PersistentDownloadTask struct {
@@ -96,6 +106,10 @@ func (dm *DownloadManager) AddTask(task *DownloadTask) error {
 }
 
 func (dm *DownloadManager) loadHistory() {
+	if dm.historyPath == nil {
+		return
+	}
+
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -127,10 +141,9 @@ func (dm *DownloadManager) loadHistory() {
 			_ = progress.Set(1.0)
 		}
 
-		uiTasks = append(uiTasks, &DownloadTask{
+		task := &DownloadTask{
 			ID:           pTask.ID,
 			InstanceID:   pTask.InstanceID,
-			State:        pTask.State,
 			Title:        pTask.Title,
 			Status:       status,
 			Progress:     progress,
@@ -138,13 +151,19 @@ func (dm *DownloadManager) loadHistory() {
 			Details:      binding.NewString(),
 			FileStatus:   binding.NewString(),
 			CancelFunc:   nil,
-		})
+		}
+		task.SetState(pTask.State)
+		uiTasks = append(uiTasks, task)
 	}
 	_ = dm.Tasks.Set(uiTasks)
 	log.Info().Int("count", len(uiTasks)).Msg("Download history loaded.")
 }
 
 func (dm *DownloadManager) PersistHistory() {
+	if dm.historyPath == nil {
+		return
+	}
+
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -153,12 +172,12 @@ func (dm *DownloadManager) PersistHistory() {
 
 	for _, taskRaw := range allTasks {
 		task := taskRaw.(*DownloadTask)
-		if task.State == StateCompleted || task.State == StateCancelled || task.State == StateError {
+		if state := task.State(); state == StateCompleted || state == StateCancelled || state == StateError {
 			status, _ := task.Status.Get()
 			persistentTasks = append(persistentTasks, PersistentDownloadTask{
 				ID:           task.ID,
 				InstanceID:   task.InstanceID,
-				State:        task.State,
+				State:        state,
 				Title:        task.Title,
 				StatusText:   status,
 				DownloadPath: task.DownloadPath,
@@ -290,7 +309,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 				dm.PersistHistory()
 			}
 
-			switch task.State {
+			switch task.State() {
 			case StateCompleted:
 				actionBtn.SetIcon(theme.FolderOpenIcon())
 				actionBtn.SetText("Open Folder")
@@ -300,7 +319,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			case StateCancelled, StateError:
 				actionBtn.SetIcon(theme.ErrorIcon())
 				actionBtn.SetText("Error")
-				if task.State == StateCancelled {
+				if task.State() == StateCancelled {
 					actionBtn.SetIcon(theme.CancelIcon())
 					actionBtn.SetText("Cancelled")
 				}
@@ -327,7 +346,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 		keptTasks := make([]interface{}, 0)
 		for _, taskRaw := range currentTasks {
 			task := taskRaw.(*DownloadTask)
-			if task.State != StateCompleted && task.State != StateCancelled && task.State != StateError {
+			if state := task.State(); state != StateCompleted && state != StateCancelled && state != StateError {
 				keptTasks = append(keptTasks, task)
 			}
 		}
@@ -347,7 +366,7 @@ func (dm *DownloadManager) activeCount() int {
 	c := 0
 	for _, tRaw := range all {
 		t := tRaw.(*DownloadTask)
-		switch t.State {
+		switch t.State() {
 		case StateDownloading:
 			c++
 		case StatePreparing:
@@ -372,7 +391,7 @@ func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
 	all, _ := dm.Tasks.Get()
 	for _, tRaw := range all {
 		t := tRaw.(*DownloadTask)
-		if t.ID == q.game.ID && (t.State == StatePreparing || t.State == StateDownloading) {
+		if state := t.State(); t.ID == q.game.ID && (state == StatePreparing || state == StateDownloading) {
 			dm.mu.RUnlock()
 			return ErrDownloadInProgress
 		}
@@ -389,12 +408,12 @@ func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
 		ID:         q.game.ID,
 		InstanceID: time.Now(),
 		Title:      q.game.Title,
-		State:      StatePreparing,
 		Status:     binding.NewString(),
 		Details:    binding.NewString(),
 		Progress:   binding.NewFloat(),
 		FileStatus: binding.NewString(),
 	}
+	placeholder.SetState(StatePreparing)
 	_ = placeholder.Status.Set("Queued")
 	_ = dm.Tasks.Append(placeholder)
 	dm.mu.Unlock()
@@ -418,7 +437,7 @@ func (dm *DownloadManager) startNextIfAvailable() {
 		filtered := make([]interface{}, 0, len(all))
 		for _, tRaw := range all {
 			t := tRaw.(*DownloadTask)
-			if t.ID == next.game.ID && t.State == StatePreparing {
+			if t.ID == next.game.ID && t.State() == StatePreparing {
 				status, _ := t.Status.Get()
 				if status == "Queued" {
 					continue

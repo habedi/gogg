@@ -91,13 +91,10 @@ func RefreshCatalogue(
 		return changes, nil
 	}
 
-	if err := repo.Clear(ctx); err != nil {
-		return nil, fmt.Errorf("failed to empty catalogue: %w", err)
-	}
-
 	var (
 		processedCount atomic.Int64
 		totalGames     = float64(len(gameIDs))
+		failedCount    atomic.Int64
 
 		mu          sync.Mutex
 		newVersions = make(map[int]struct{ title, version string }, len(gameIDs))
@@ -114,15 +111,22 @@ func RefreshCatalogue(
 		url := fmt.Sprintf("%s/account/gameDetails/%d.json", embedBase(), id)
 		details, raw, fetchErr := FetchGameData(ctx, token.AccessToken, url)
 		if fetchErr != nil {
-			log.Warn().Err(fetchErr).Int("gameID", id).Msg("Failed to fetch game details")
+			failedCount.Add(1)
+			log.Warn().Err(fetchErr).Int("gameID", id).Msg("Failed to fetch game details; keeping the stored entry")
 			return nil
 		}
 		if details.Title == "" {
+			failedCount.Add(1)
+			log.Warn().Int("gameID", id).Msg("Game details had no title; keeping the stored entry")
 			return nil
 		}
 
 		version := extractVersion(details)
-		_ = repo.Put(ctx, db.Game{ID: id, Title: details.Title, Data: raw, Version: version})
+		if putErr := repo.Put(ctx, db.Game{ID: id, Title: details.Title, Data: raw, Version: version}); putErr != nil {
+			failedCount.Add(1)
+			log.Error().Err(putErr).Int("gameID", id).Msg("Failed to store game details")
+			return nil
+		}
 
 		mu.Lock()
 		newVersions[id] = struct{ title, version string }{details.Title, version}
@@ -156,11 +160,22 @@ func RefreshCatalogue(
 		}
 	}
 
-	// Detect removed games (were in old catalogue, not in new owned set).
+	// Detect removed games (were in old catalogue, not in new owned set) and
+	// drop them. Games that are still owned keep whatever is stored for them,
+	// so a failed fetch never costs the user a catalogue entry.
+	var removedIDs []int
 	for id, ov := range oldVersions {
 		if _, owned := ownedSet[id]; !owned {
 			changes = append(changes, VersionChange{GameID: id, Title: ov.title, OldVersion: ov.version})
+			removedIDs = append(removedIDs, id)
 		}
+	}
+	if err := repo.DeleteByIDs(ctx, removedIDs); err != nil {
+		return nil, fmt.Errorf("failed to remove games no longer owned: %w", err)
+	}
+
+	if n := failedCount.Load(); n > 0 {
+		log.Warn().Int64("count", n).Msg("Some games could not be refreshed; their stored data was left unchanged")
 	}
 
 	return changes, nil

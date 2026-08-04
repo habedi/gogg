@@ -86,8 +86,8 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 				progress := float64(pu.downloadedBytes) / float64(pu.totalBytes)
 				_ = pu.task.Progress.Set(progress)
 			}
-			if pu.task.State == StatePreparing {
-				pu.task.State = StateDownloading
+			if pu.task.State() == StatePreparing {
+				pu.task.SetState(StateDownloading)
 				_ = pu.task.Status.Set("Downloading files...")
 			}
 			pu.updateSpeedAndETA()
@@ -194,57 +194,64 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 	activeDownloads[game.ID] = struct{}{}
 	activeDownloadsMutex.Unlock()
 
+	releaseSlot := func() {
+		activeDownloadsMutex.Lock()
+		delete(activeDownloads, game.ID)
+		activeDownloadsMutex.Unlock()
+	}
+
+	parsedGameData, err := client.ParseGameData(game.Data)
+	if err != nil {
+		releaseSlot()
+		return fmt.Errorf("failed to parse game data for %s: %w", game.Title, err)
+	}
+
+	var targetDir string
+	if rommLayoutFlag {
+		plat := strings.ToLower(platformName)
+		if plat == "all" { // show root for mixed
+			targetDir = downloadPath
+		} else {
+			targetDir = filepath.Join(downloadPath, plat, client.SanitizePath(parsedGameData.Title))
+		}
+	} else {
+		targetDir = filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	task := &DownloadTask{
+		ID:           game.ID,
+		InstanceID:   time.Now(),
+		Title:        game.Title,
+		Status:       binding.NewString(),
+		Details:      binding.NewString(),
+		Progress:     binding.NewFloat(),
+		CancelFunc:   cancel,
+		FileStatus:   binding.NewString(),
+		DownloadPath: targetDir,
+	}
+	task.SetState(StatePreparing)
+	_ = task.Status.Set("Preparing...")
+	_ = task.Details.Set("Speed: N/A | ETA: N/A")
+	// Registered before returning so that the queue counts this download as
+	// active right away instead of once the goroutine below gets scheduled.
+	_ = dm.AddTask(task)
+
 	go func() {
 		defer func() {
-			activeDownloadsMutex.Lock()
-			delete(activeDownloads, game.ID)
-			activeDownloadsMutex.Unlock()
+			cancel()
+			releaseSlot()
 			dm.PersistHistory()
 			// Attempt to start queued downloads if slots free
 			go dm.startNextIfAvailable()
 		}()
 
-		ctx, cancel := context.WithCancel(context.Background())
-
-		parsedGameData, err := client.ParseGameData(game.Data)
-		if err != nil {
-			fmt.Printf("Error parsing game data for %s: %v\n", game.Title, err)
-			cancel()
-			return
-		}
-		var targetDir string
-		if rommLayoutFlag {
-			plat := strings.ToLower(platformName)
-			if plat == "all" { // show root for mixed
-				targetDir = downloadPath
-			} else {
-				targetDir = filepath.Join(downloadPath, plat, client.SanitizePath(parsedGameData.Title))
-			}
-		} else {
-			targetDir = filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
-		}
-
-		task := &DownloadTask{
-			ID:           game.ID,
-			InstanceID:   time.Now(),
-			Title:        game.Title,
-			State:        StatePreparing,
-			Status:       binding.NewString(),
-			Details:      binding.NewString(),
-			Progress:     binding.NewFloat(),
-			CancelFunc:   cancel,
-			FileStatus:   binding.NewString(),
-			DownloadPath: targetDir,
-		}
-		_ = task.Status.Set("Preparing...")
-		_ = task.Details.Set("Speed: N/A | ETA: N/A")
-		_ = dm.AddTask(task)
-
 		fyne.CurrentApp().Preferences().SetString("lastUsedDownloadPath", downloadPath)
 
 		token, err := authService.RefreshTokenCtx(ctx)
 		if err != nil {
-			task.State = StateError
+			task.SetState(StateError)
 			_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
 			return
 		}
@@ -263,10 +270,10 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				task.State = StateCancelled
+				task.SetState(StateCancelled)
 				_ = task.Status.Set("Cancelled")
 			} else {
-				task.State = StateError
+				task.SetState(StateError)
 				_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
 			}
 			_ = task.FileStatus.Set("")
@@ -274,7 +281,7 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 			return
 		}
 
-		task.State = StateCompleted
+		task.SetState(StateCompleted)
 		_ = task.Status.Set(fmt.Sprintf("Download completed. Files are stored in: %s", targetDir))
 		_ = task.Details.Set("")
 		_ = task.Progress.Set(1.0)
@@ -317,21 +324,31 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 
 var guiVersionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
 
-func guiParseVersion(filename string) (prefix string, verSlice []int, ok bool) {
+func guiParseVersion(filename string) (prefix string, verSlice []int, suffix string, ok bool) {
 	m := guiVersionPattern.FindStringSubmatch(filename)
 	if m == nil {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	prefix = m[1]
+	suffix = m[3]
 	parts := strings.Split(m[2], ".")
 	for _, p := range parts {
 		v, err := strconv.Atoi(p)
 		if err != nil {
-			return "", nil, false
+			return "", nil, "", false
 		}
 		verSlice = append(verSlice, v)
 	}
-	return prefix, verSlice, true
+	return prefix, verSlice, suffix, true
+}
+
+// guiInstallerGroup identifies files that are versions of the same installer.
+// See installerGroup in cmd/download.go for why the directory and extension
+// are part of the identity.
+type guiInstallerGroup struct {
+	dir    string
+	prefix string
+	suffix string
 }
 
 func guiCompareVersions(a, b []int) int {
@@ -372,8 +389,7 @@ func guiPruneOldVersions(rootPath, title string, romm bool, platformName string)
 		if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
 			continue
 		}
-		latest := map[string][]int{}
-		filesByPrefix := map[string][]string{}
+		filesByGroup := map[guiInstallerGroup][]string{}
 		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() {
 				return nil
@@ -386,23 +402,21 @@ func guiPruneOldVersions(rootPath, title string, romm bool, platformName string)
 			if _, ok := extAllowed[ext]; !ok {
 				return nil
 			}
-			prefix, ver, ok := guiParseVersion(name)
+			prefix, _, suffix, ok := guiParseVersion(name)
 			if !ok {
 				return nil
 			}
-			filesByPrefix[prefix] = append(filesByPrefix[prefix], path)
-			if cur, ok := latest[prefix]; !ok || guiCompareVersions(ver, cur) == 1 {
-				latest[prefix] = ver
-			}
+			group := guiInstallerGroup{dir: filepath.Dir(path), prefix: prefix, suffix: suffix}
+			filesByGroup[group] = append(filesByGroup[group], path)
 			return nil
 		})
-		for _, paths := range filesByPrefix {
+		for _, paths := range filesByGroup {
 			// find the latest file among paths
 			var best string
 			var bestVer []int
 			for _, p := range paths {
 				name := filepath.Base(p)
-				_, ver, ok := guiParseVersion(name)
+				_, ver, _, ok := guiParseVersion(name)
 				if !ok {
 					continue
 				}

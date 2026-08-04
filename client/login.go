@@ -117,9 +117,7 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 		return fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
 
-	log.Info().Msgf("Access token: %s", token[:10])
-	log.Info().Msgf("Refresh token: %s", refreshToken[:10])
-	log.Info().Msgf("Expires at: %s", expiresAt)
+	log.Info().Str("expires_at", expiresAt).Msg("Received access and refresh tokens")
 
 	return db.UpsertTokenRecord(&db.Token{AccessToken: token, RefreshToken: refreshToken, ExpiresAt: expiresAt})
 }
@@ -228,6 +226,10 @@ func (c *GogClient) exchangeCodeForToken(code string) (string, string, string, e
 		return "", "", "", fmt.Errorf("failed to read token response: %w", err)
 	}
 
+	if resp.StatusCode >= 400 {
+		return "", "", "", fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
 	var result struct {
 		AccessToken  string `json:"access_token"`
 		ExpiresIn    int64  `json:"expires_in"`
@@ -236,6 +238,10 @@ func (c *GogClient) exchangeCodeForToken(code string) (string, string, string, e
 
 	if err := json.Unmarshal(body, &result); err != nil {
 		return "", "", "", fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	if result.AccessToken == "" {
+		return "", "", "", fmt.Errorf("token response did not contain an access token")
 	}
 
 	expiresAt := time.Now().Add(time.Duration(result.ExpiresIn) * time.Second).Format(time.RFC3339)
