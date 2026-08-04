@@ -78,6 +78,11 @@ run: build ## Build and run the binary
 	$(ECHO) "Running the $(BINARY) binary..."
 	@./$(BINARY)
 
+.PHONY: run-gui
+run-gui: build ## Build and run the binary with the GUI
+	$(ECHO) "Running the $(BINARY) binary with the GUI..."
+	@./$(BINARY) gui
+
 .PHONY: clean
 clean: ## Remove artifacts and temporary files
 	$(ECHO) "Cleaning up..."
