@@ -15,19 +15,38 @@ import (
 func loginCmd(gogClient *client.GogClient) *cobra.Command {
 	var gogUsername, gogPassword string
 	var headless bool
+	var authCode string
 
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Login to GOG.com",
-		Long:  "Login to GOG.com using your username and password",
+		Long: "Login to GOG.com using your username and password.\n\n" +
+			"With --code no browser has to be driven, which is the way to log in on a\n" +
+			"machine that has none. Open\n\n" +
+			"  " + client.GOGLoginURL + "\n\n" +
+			"in any browser, log in there, and pass the address you land on (or just the\n" +
+			"code from it) to --code.",
 		Run: func(cmd *cobra.Command, args []string) {
+			if strings.TrimSpace(authCode) != "" {
+				if err := gogClient.LoginWithCode(authCode); err != nil {
+					e := clierr.New(clierr.Internal, "Failed to login to GOG.com", err)
+					cmd.PrintErrln(e.Message)
+					setLastCliErr(e)
+					return
+				}
+				cmd.Println("Login was successful.")
+				return
+			}
+
 			cmd.Println("Please enter your GOG username and password.")
 			gogUsername = promptForInput("GOG username: ")
 			gogPassword = promptForPassword("GOG password: ")
 
 			if validateCredentials(gogUsername, gogPassword) {
 				if err := gogClient.Login(client.GOGLoginURL, gogUsername, gogPassword, headless); err != nil {
-					cmd.PrintErrln(clierr.New(clierr.Internal, "Failed to login to GOG.com", err).Message)
+					e := clierr.New(clierr.Internal, "Failed to login to GOG.com", err)
+					cmd.PrintErrln(e.Message)
+					setLastCliErr(e)
 					if strings.Contains(err.Error(), "executable found in PATH") {
 						cmd.PrintErrln("Hint: Make sure Google Chrome or Chromium is installed and accessible in your system's PATH.")
 					}
@@ -35,11 +54,15 @@ func loginCmd(gogClient *client.GogClient) *cobra.Command {
 					cmd.Println("Login was successful.")
 				}
 			} else {
-				cmd.PrintErrln(clierr.New(clierr.Validation, "Username and password cannot be empty", nil).Message)
+				e := clierr.New(clierr.Validation, "Username and password cannot be empty", nil)
+				cmd.PrintErrln(e.Message)
+				setLastCliErr(e)
 			}
 		},
 	}
 
+	cmd.Flags().StringVarP(&authCode, "code", "c", "",
+		"Authorization code, or the address GOG redirected you to, to log in without driving a browser")
 	cmd.Flags().BoolVarP(&headless, "headless", "n", true, "Login in headless mode without showing the browser window? [true, false]")
 
 	return cmd
