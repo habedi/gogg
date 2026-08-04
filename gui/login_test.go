@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -89,6 +90,13 @@ func collectButtons(o fyne.CanvasObject, out *[]*widget.Button) {
 	case *widget.Card:
 		if v.Content != nil {
 			collectButtons(v.Content, out)
+		}
+	case *container.Split:
+		collectButtons(v.Leading, out)
+		collectButtons(v.Trailing, out)
+	case *widget.Accordion:
+		for _, item := range v.Items {
+			collectButtons(item.Detail, out)
 		}
 	}
 }

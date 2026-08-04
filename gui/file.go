@@ -310,10 +310,10 @@ func SizeUI(win fyne.Window) fyne.CanvasObject {
 			label := hbox.Objects[1].(*widget.Label)
 
 			label.SetText(title)
-			check.SetChecked(selectedGames[title])
-			check.OnChanged = func(checked bool) {
+			// Rows are recycled, so the checkbox is rebound rather than just set.
+			bindCheck(check, selectedGames[title], func(checked bool) {
 				selectedGames[title] = checked
-			}
+			})
 		},
 	)
 
