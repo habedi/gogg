@@ -56,6 +56,11 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	})
 	soundCheck.SetChecked(prefs.BoolWithFallback("soundEnabled", true))
 
+	notifyCheck := widget.NewCheck("Show a notification on download completion", func(checked bool) {
+		prefs.SetBool(prefNotifications, checked)
+	})
+	notifyCheck.SetChecked(prefs.BoolWithFallback(prefNotifications, true))
+
 	soundPathLabel := widget.NewLabel("")
 	soundStatusLabel := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
@@ -170,6 +175,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		fontBox,
 		widget.NewSeparator(),
 		soundCheck,
+		notifyCheck,
 		soundConfigBox,
 		widget.NewSeparator(),
 		limitsBox,

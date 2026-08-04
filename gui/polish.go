@@ -1,0 +1,104 @@
+package gui
+
+import (
+	"fmt"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/driver/desktop"
+)
+
+const (
+	prefNotifications = "notificationsEnabled"
+	prefWindowWidth   = "windowWidth"
+	prefWindowHeight  = "windowHeight"
+	prefSplitOffset   = "library.splitOffset"
+	prefSelectedTab   = "window.selectedTab"
+)
+
+// notify shows a desktop notification. It is a variable so tests can observe
+// what the app would have shown.
+var notify = func(title, content string) {
+	fyne.CurrentApp().SendNotification(fyne.NewNotification(title, content))
+}
+
+// notifyDownloadFinished tells the user a download is done. Downloads outlast
+// the user's attention, so this is how they find out without watching.
+func notifyDownloadFinished(gameTitle string) {
+	if !fyne.CurrentApp().Preferences().BoolWithFallback(prefNotifications, true) {
+		return
+	}
+	notify("Download complete", fmt.Sprintf("%s finished downloading.", gameTitle))
+}
+
+// libraryShortcut is a key combination and what it does.
+type libraryShortcut struct {
+	Shortcut *desktop.CustomShortcut
+	Action   func()
+}
+
+// libraryShortcuts returns the keyboard shortcuts for the main window.
+func libraryShortcuts(focusSearch, refreshCatalogue func()) []libraryShortcut {
+	return []libraryShortcut{
+		{
+			Shortcut: &desktop.CustomShortcut{KeyName: fyne.KeyF, Modifier: fyne.KeyModifierControl},
+			Action:   focusSearch,
+		},
+		{
+			Shortcut: &desktop.CustomShortcut{KeyName: fyne.KeyR, Modifier: fyne.KeyModifierControl},
+			Action:   refreshCatalogue,
+		},
+	}
+}
+
+// registerShortcuts wires the shortcuts onto a canvas.
+func registerShortcuts(canvas fyne.Canvas, shortcuts []libraryShortcut) {
+	for _, shortcut := range shortcuts {
+		action := shortcut.Action
+		canvas.AddShortcut(shortcut.Shortcut, func(fyne.Shortcut) {
+			if action != nil {
+				action()
+			}
+		})
+	}
+}
+
+// windowState is what gogg remembers about the window between runs.
+type windowState struct {
+	Width, Height float64
+	SplitOffset   float64
+	Tab           int
+}
+
+const (
+	defaultWindowWidth  = 960
+	defaultWindowHeight = 640
+	defaultSplitOffset  = 0.5
+	// Neither pane may be squeezed out of sight, or the layout looks broken
+	// with no obvious way back.
+	minSplitOffset = 0.1
+	maxSplitOffset = 0.9
+)
+
+func loadWindowState(prefs fyne.Preferences) windowState {
+	offset := prefs.FloatWithFallback(prefSplitOffset, defaultSplitOffset)
+	switch {
+	case offset < minSplitOffset:
+		offset = minSplitOffset
+	case offset > maxSplitOffset:
+		offset = maxSplitOffset
+	}
+
+	return windowState{
+		Width:       prefs.FloatWithFallback(prefWindowWidth, defaultWindowWidth),
+		Height:      prefs.FloatWithFallback(prefWindowHeight, defaultWindowHeight),
+		SplitOffset: offset,
+		Tab:         prefs.IntWithFallback(prefSelectedTab, 0),
+	}
+}
+
+func saveWindowState(prefs fyne.Preferences, state windowState) {
+	prefs.SetFloat(prefWindowWidth, state.Width)
+	prefs.SetFloat(prefWindowHeight, state.Height)
+	prefs.SetFloat(prefSplitOffset, state.SplitOffset)
+	prefs.SetInt(prefSelectedTab, state.Tab)
+}

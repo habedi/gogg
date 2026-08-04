@@ -31,6 +31,11 @@ type libraryTab struct {
 	searchEntry *widget.Entry
 	// selected is the game shown in the details pane, driven by the list.
 	selected binding.Untyped
+	// split is the divider between the list and the details, remembered
+	// between runs.
+	split *container.Split
+	// refresh re-syncs the catalogue, the same as the Refresh button.
+	refresh func()
 }
 
 // isGameDownloaded checks if a game has been successfully downloaded based on download history
@@ -440,7 +445,12 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			widget.NewLabel("Log in to GOG to see the games you own."),
 			loginBtn,
 		))
-		return &libraryTab{content: content, searchEntry: widget.NewEntry(), selected: binding.NewUntyped()}
+		return &libraryTab{
+			content:     content,
+			searchEntry: widget.NewEntry(),
+			selected:    binding.NewUntyped(),
+			refresh:     func() {},
+		}
 	}
 
 	allGames, _ := db.GetCatalogue()
@@ -724,10 +734,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		sizeCache = make(map[sizeCacheKey]int64)
 		recomputeStatuses()
 	}))
+	split := container.NewHSplit(leftPane, rightPane)
+	split.Offset = loadWindowState(prefs).SplitOffset
+
 	return &libraryTab{
-		content:     container.NewHSplit(leftPane, rightPane),
+		content:     split,
 		searchEntry: searchEntry,
 		selected:    selectedGameBinding,
+		split:       split,
+		refresh:     func() { refreshBtn.OnTapped() },
 	}
 }
 

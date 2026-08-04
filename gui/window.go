@@ -21,15 +21,8 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 	dm := NewDownloadManager()
 	prefs := myApp.Preferences()
 
-	width := prefs.FloatWithFallback("windowWidth", 960)
-	height := prefs.FloatWithFallback("windowHeight", 640)
-	myWindow.Resize(fyne.NewSize(float32(width), float32(height)))
-
-	myWindow.SetOnClosed(func() {
-		size := myWindow.Canvas().Size()
-		prefs.SetFloat("windowWidth", float64(size.Width))
-		prefs.SetFloat("windowHeight", float64(size.Height))
-	})
+	state := loadWindowState(prefs)
+	myWindow.Resize(fyne.NewSize(float32(state.Width), float32(state.Height)))
 
 	// The catalogue tab looks different when signed out, so it is rebuilt once
 	// the user logs in.
@@ -62,8 +55,36 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 
 	mainTabs.SetTabLocation(container.TabLocationTop)
 
+	registerShortcuts(myWindow.Canvas(), libraryShortcuts(
+		func() {
+			mainTabs.SelectIndex(0)
+			myWindow.Canvas().Focus(library.searchEntry)
+		},
+		func() { library.refresh() },
+	))
+
+	// Remember where the user left the window.
+	myWindow.SetOnClosed(func() {
+		size := myWindow.Canvas().Size()
+		saved := windowState{
+			Width:       float64(size.Width),
+			Height:      float64(size.Height),
+			SplitOffset: defaultSplitOffset,
+			Tab:         mainTabs.SelectedIndex(),
+		}
+		if library.split != nil {
+			saved.SplitOffset = library.split.Offset
+		}
+		saveWindowState(prefs, saved)
+	})
+
 	myWindow.SetContent(mainTabs)
-	mainTabs.SelectIndex(0) // Programmatically select the first tab to trigger OnSelected.
+	// Select a tab explicitly so OnSelected runs for it.
+	if state.Tab >= 0 && state.Tab < len(mainTabs.Items) {
+		mainTabs.SelectIndex(state.Tab)
+	} else {
+		mainTabs.SelectIndex(0)
+	}
 
 	myWindow.ShowAndRun()
 }

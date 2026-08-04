@@ -263,95 +263,146 @@ func (dm *DownloadManager) PersistHistory() {
 	}
 }
 
+// downloadRow is a card in the download list. It is a widget rather than a
+// nest of containers so its parts are reached by name: navigating this card by
+// index has broken twice when the layout changed.
+type downloadRow struct {
+	widget.BaseWidget
+
+	title      *widget.Label
+	actionBtn  *widget.Button
+	clearBtn   *widget.Button
+	status     *widget.Label
+	details    *widget.Label
+	progress   *widget.ProgressBar
+	fileStatus *widget.Label
+	fileScroll *container.Scroll
+}
+
+// newDownloadRow builds an empty card for the download list.
+func newDownloadRow() fyne.CanvasObject {
+	row := &downloadRow{
+		title:      widget.NewLabel("Game Title"),
+		actionBtn:  widget.NewButtonWithIcon("Action", theme.CancelIcon(), nil),
+		clearBtn:   widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
+		status:     widget.NewLabel("Status"),
+		details:    widget.NewLabel("Details"),
+		progress:   widget.NewProgressBar(),
+		fileStatus: widget.NewLabel(""),
+	}
+
+	row.title.TextStyle = fyne.TextStyle{Bold: true}
+	row.title.Truncation = fyne.TextTruncateEllipsis
+	row.clearBtn.Importance = widget.LowImportance
+	row.status.Wrapping = fyne.TextWrapWord
+	row.details.TextStyle = fyne.TextStyle{Italic: true}
+	row.details.Wrapping = fyne.TextWrapWord
+	row.fileStatus.TextStyle = fyne.TextStyle{Monospace: true}
+	row.fileStatus.Wrapping = fyne.TextWrapOff
+	row.fileStatus.Truncation = fyne.TextTruncateEllipsis
+
+	// Every row in a list is given the height of this template, so it reserves
+	// room for the longest file list a card can show. Measured rather than hard
+	// coded, so it follows the font size chosen in Settings.
+	probe := widget.NewLabel("Ag")
+	probe.TextStyle = fyne.TextStyle{Monospace: true}
+	row.fileScroll = container.NewVScroll(row.fileStatus)
+	row.fileScroll.SetMinSize(fyne.NewSize(0, probe.MinSize().Height*float32(fileStatusLines+1)))
+
+	row.ExtendBaseWidget(row)
+	return row
+}
+
+func (r *downloadRow) CreateRenderer() fyne.WidgetRenderer {
+	topRow := container.NewBorder(nil, nil, nil,
+		container.NewHBox(r.actionBtn, r.clearBtn), r.title)
+
+	content := container.NewVBox(
+		topRow,
+		widget.NewSeparator(),
+		r.status,
+		r.details,
+		r.progress,
+		r.fileScroll,
+	)
+
+	card := widget.NewCard("", "", container.NewPadded(content))
+	return widget.NewSimpleRenderer(container.NewVBox(card, widget.NewSeparator()))
+}
+
+// rowExpanded reports whether a download still has transfers to show. Finished
+// ones have no file list and no speed, so their card can be much shorter.
+func rowExpanded(task *DownloadTask) bool {
+	switch task.State() {
+	case StatePreparing, StateDownloading:
+		return true
+	default:
+		return false
+	}
+}
+
+// setRowExpanded shows or hides the parts only a running download needs.
+func setRowExpanded(obj fyne.CanvasObject, expanded bool) {
+	row, ok := obj.(*downloadRow)
+	if !ok {
+		return
+	}
+	if expanded {
+		row.details.Show()
+		row.fileScroll.Show()
+	} else {
+		row.details.Hide()
+		row.fileScroll.Hide()
+	}
+	row.Refresh()
+}
+
+// downloadRowHeights measures the two card sizes the list uses.
+func downloadRowHeights() (compact, full float32) {
+	row := newDownloadRow()
+	full = row.MinSize().Height
+	setRowExpanded(row, false)
+	compact = row.MinSize().Height
+	return compact, full
+}
+
 func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
-	list := widget.NewListWithData(
-		dm.Tasks,
-		func() fyne.CanvasObject {
-			title := widget.NewLabel("Game Title")
-			title.TextStyle = fyne.TextStyle{Bold: true}
-			title.Truncation = fyne.TextTruncateEllipsis
+	compactHeight, fullHeight := downloadRowHeights()
 
-			actionBtn := widget.NewButtonWithIcon("Action", theme.CancelIcon(), nil)
-			clearBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
-			clearBtn.Importance = widget.LowImportance
-
-			actionBox := container.NewHBox(actionBtn, clearBtn)
-			topRow := container.NewBorder(nil, nil, nil, actionBox, title)
-
-			status := widget.NewLabel("Status")
-			status.Wrapping = fyne.TextWrapWord
-			details := widget.NewLabel("Details")
-			details.TextStyle = fyne.TextStyle{Italic: true}
-			details.Wrapping = fyne.TextWrapWord
-			progress := widget.NewProgressBar()
-
-			fileStatus := widget.NewLabel("")
-			fileStatus.TextStyle = fyne.TextStyle{Monospace: true}
-			fileStatus.Wrapping = fyne.TextWrapOff
-			fileStatus.Truncation = fyne.TextTruncateClip
-
-			// Wrap fileStatus in a scroll container with fixed max height
-			fileStatusScroll := container.NewVScroll(fileStatus)
-			fileStatusScroll.SetMinSize(fyne.NewSize(0, 60))
-
-			progressBox := container.NewVBox(details, progress)
-			separator := widget.NewSeparator()
-
-			// Add padding between sections
-			paddedFileStatus := container.NewPadded(fileStatusScroll)
-
-			content := container.NewVBox(
-				topRow,
-				widget.NewSeparator(),
-				status,
-				progressBox,
-				paddedFileStatus,
-			)
-
-			// Add padding inside the card
-			paddedContent := container.NewPadded(content)
-			card := widget.NewCard("", "", paddedContent)
-
-			// Add extra padding and separator between cards
-			cardWithSeparator := container.NewVBox(
-				card,
-				separator,
-				layout.NewSpacer(),
-			)
-
-			return cardWithSeparator
+	var list *widget.List
+	list = widget.NewList(
+		func() int {
+			items, _ := dm.Tasks.Get()
+			return len(items)
 		},
-		func(item binding.DataItem, obj fyne.CanvasObject) {
-			taskRaw, err := item.(binding.Untyped).Get()
+		newDownloadRow,
+		func(id widget.ListItemID, obj fyne.CanvasObject) {
+			taskRaw, err := dm.Tasks.GetValue(id)
 			if err != nil {
 				return
 			}
-			task := taskRaw.(*DownloadTask)
+			task, ok := taskRaw.(*DownloadTask)
+			if !ok {
+				return
+			}
 
-			// Navigate: cardWithSeparator -> card -> paddedContent -> content
-			cardWithSeparator := obj.(*fyne.Container)
-			card := cardWithSeparator.Objects[0].(*widget.Card)
-			paddedContent := card.Content.(*fyne.Container)
-			contentVBox := paddedContent.Objects[0].(*fyne.Container)
+			// A finished download needs neither a speed nor a file list, so its
+			// card is given only the room it uses.
+			expanded := rowExpanded(task)
+			setRowExpanded(obj, expanded)
+			if expanded {
+				list.SetItemHeight(id, fullHeight)
+			} else {
+				list.SetItemHeight(id, compactHeight)
+			}
 
-			// Extract elements from new structure
-			topRow := contentVBox.Objects[0].(*fyne.Container)
-			// Objects[1] is separator
-			status := contentVBox.Objects[2].(*widget.Label)
-			progressBox := contentVBox.Objects[3].(*fyne.Container)
-			paddedFileStatus := contentVBox.Objects[4].(*fyne.Container)
-
-			actionBox := topRow.Objects[1].(*fyne.Container)
-			title := topRow.Objects[0].(*widget.Label)
-			actionBtn := actionBox.Objects[0].(*widget.Button)
-			clearBtn := actionBox.Objects[1].(*widget.Button)
-
-			details := progressBox.Objects[0].(*widget.Label)
-			progress := progressBox.Objects[1].(*widget.ProgressBar)
-
-			// Navigate to fileStatus: paddedFileStatus -> scroll -> label
-			fileStatusScroll := paddedFileStatus.Objects[0].(*container.Scroll)
-			fileStatus := fileStatusScroll.Content.(*widget.Label)
+			row, ok := obj.(*downloadRow)
+			if !ok {
+				return
+			}
+			title, status, details := row.title, row.status, row.details
+			progress, fileStatus := row.progress, row.fileStatus
+			actionBtn, clearBtn := row.actionBtn, row.clearBtn
 
 			title.SetText(task.Title)
 			status.Bind(task.Status)
@@ -403,6 +454,8 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			}
 		},
 	)
+
+	dm.Tasks.AddListener(binding.NewDataListener(func() { list.Refresh() }))
 
 	totalsLabel := widget.NewLabelWithData(dm.totals())
 	totalsLabel.TextStyle = fyne.TextStyle{Bold: true}

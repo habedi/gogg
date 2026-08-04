@@ -22,6 +22,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// fileStatusLines is how many transfers a download card lists before it
+// summarises the rest.
+const fileStatusLines = 3
+
 var (
 	ErrDownloadInProgress = errors.New("download already in progress")
 	activeDownloads       = make(map[int]struct{})
@@ -172,12 +176,11 @@ func (pu *progressUpdater) updateFileStatusText() {
 	sort.Strings(files)
 
 	var sb strings.Builder
-	const maxLines = 2
 	const maxFilenameLen = 40
 
 	for i, file := range files {
-		if i >= maxLines {
-			fmt.Fprintf(&sb, "...and %d more files", len(files)-maxLines)
+		if i >= fileStatusLines {
+			fmt.Fprintf(&sb, "...and %d more files", len(files)-fileStatusLines)
 			break
 		}
 
@@ -304,6 +307,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		_ = task.Progress.Set(1.0)
 		_ = task.FileStatus.Set("")
 		go PlayNotificationSound()
+		notifyDownloadFinished(q.game.Title)
 		// Persist download info for future update checks.
 		info := struct {
 			Language    string `json:"language"`
