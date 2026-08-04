@@ -486,6 +486,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	updateAllBtn.Hide()
 
 	covers := newCoverCache(coverCacheDir())
+	metadata := newMetadataCache(metadataCacheDir())
 
 	var gameListWidget *widget.List
 	var gameGridWidget *widget.GridWrap
@@ -777,8 +778,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		}
 		game := gameRaw.(db.Game)
 		detailTitle.SetText(game.Title)
-		detailsBox.Objects = []fyne.CanvasObject{renderGameDetails(gameDetails(game, dm))}
-		detailsBox.Refresh()
+		// The facts gogg already holds show at once; what GOG's store adds
+		// arrives when it arrives.
+		fillDetails(detailsBox, game, dm, nil)
+		metadata.load(game.ID, func(id int) bool {
+			current, _ := selectedGameBinding.Get()
+			shown, ok := current.(db.Game)
+			return ok && shown.ID == id
+		}, func(meta client.GameMetadata) { fillDetails(detailsBox, game, dm, &meta) })
+
 		form.narrowTo(game)
 		showArtwork(pane.artwork, game, covers)
 		accordion.Show()
@@ -1186,4 +1194,17 @@ func showArtwork(artwork *canvas.Image, game db.Game, covers *coverCache) {
 			artwork.Show()
 			artwork.Refresh()
 		})
+}
+
+// fillDetails puts a game's facts in the pane. meta is nil until GOG's store
+// has been looked up, and the pane is filled twice: once without it, once with.
+func fillDetails(detailsBox *fyne.Container, game db.Game, dm *DownloadManager, meta *client.GameMetadata) {
+	summary, storeURL := "", ""
+	if meta != nil {
+		summary, storeURL = meta.Summary, meta.StoreURL
+	}
+	detailsBox.Objects = []fyne.CanvasObject{
+		renderGameFacts(summary, gameDetails(game, dm, meta), storeURL),
+	}
+	detailsBox.Refresh()
 }

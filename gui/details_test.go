@@ -3,10 +3,13 @@ package gui
 import (
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -66,7 +69,7 @@ func TestGameDetails_DescribesTheGame(t *testing.T) {
 	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
 
 	game := db.Game{ID: 42, Title: "Rich Game", Data: richGameData, Version: "2.1"}
-	details := gameDetails(game, &DownloadManager{Tasks: binding.NewUntypedList()})
+	details := gameDetails(game, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
 
 	require.Equal(t, "42", detailValue(t, details, "Game ID"))
 	require.Equal(t, "2.1", detailValue(t, details, "Version"))
@@ -92,7 +95,7 @@ func TestGameDetails_ShowsWhereADownloadedGameLives(t *testing.T) {
 	app.Preferences().SetString("lastUsedDownloadPath", root)
 
 	game := db.Game{ID: 42, Title: "Rich Game", Data: richGameData}
-	details := gameDetails(game, &DownloadManager{Tasks: binding.NewUntypedList()})
+	details := gameDetails(game, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
 
 	require.Equal(t, dir, detailValue(t, details, "Downloaded to"))
 }
@@ -106,8 +109,7 @@ func TestGameDetails_ReportsAWaitingUpdate(t *testing.T) {
 	}
 	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
 
-	details := gameDetails(db.Game{ID: 42, Title: "Rich Game", Data: richGameData},
-		&DownloadManager{Tasks: binding.NewUntypedList()})
+	details := gameDetails(db.Game{ID: 42, Title: "Rich Game", Data: richGameData}, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
 
 	require.Equal(t, "2 changed files", detailValue(t, details, "Update"))
 }
@@ -117,8 +119,7 @@ func TestGameDetails_SurvivesUnreadableGameData(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	details := gameDetails(db.Game{ID: 7, Title: "Broken", Data: "{not json"},
-		&DownloadManager{Tasks: binding.NewUntypedList()})
+	details := gameDetails(db.Game{ID: 7, Title: "Broken", Data: "{not json"}, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
 
 	require.Equal(t, "7", detailValue(t, details, "Game ID"))
 	require.Equal(t, "Unknown", detailValue(t, details, "Version"))
@@ -227,4 +228,106 @@ func paneOrder(t *testing.T, lt *libraryTab) []string {
 		}
 	})
 	return order
+}
+
+// What GOG's store publishes fills in what the local catalogue cannot say.
+func TestGameDetails_IncludesStoreInformation(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	updateStatusCache = make(map[int]updateStatus)
+	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
+
+	meta := &client.GameMetadata{
+		Developers:  []string{"Santa Monica Studio"},
+		Publisher:   "PlayStation PC LLC",
+		ReleaseDate: "2024-03-12",
+		Genres:      []string{"Action", "Adventure"},
+		Features:    []string{"Achievements"},
+		AgeRating:   "Mature 17+",
+		InstalledMB: 40981,
+	}
+	details := gameDetails(db.Game{ID: 42, Title: "Rich Game", Data: richGameData},
+		&DownloadManager{Tasks: binding.NewUntypedList()}, meta)
+
+	require.Equal(t, "Santa Monica Studio", detailValue(t, details, "Developer"))
+	require.Equal(t, "PlayStation PC LLC", detailValue(t, details, "Publisher"))
+	require.Equal(t, "2024-03-12", detailValue(t, details, "Released"))
+	require.Equal(t, "Action, Adventure", detailValue(t, details, "Genres"))
+	require.Equal(t, "Mature 17+", detailValue(t, details, "Age rating"))
+	require.Equal(t, "40.0 GiB", detailValue(t, details, "Installed size"))
+}
+
+// Games delisted from the store keep working; they just say less.
+func TestGameDetails_OmitsStoreFactsThatAreMissing(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	details := gameDetails(db.Game{ID: 42, Title: "Rich Game", Data: richGameData},
+		&DownloadManager{Tasks: binding.NewUntypedList()}, &client.GameMetadata{})
+
+	for _, label := range []string{"Developer", "Publisher", "Released", "Genres", "Age rating", "Installed size"} {
+		for _, detail := range details {
+			require.NotEqual(t, label, detail.Label, "%q has nothing to show", label)
+		}
+	}
+}
+
+func TestRenderGameFacts_ShowsSummaryAndStoreLink(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	rendered := renderGameFacts("A summary of the game.",
+		[]gameDetail{{"Game ID", "42"}}, "https://www.gog.com/game/x")
+
+	var texts []string
+	for _, label := range widgetsOfType[*widget.Label](rendered) {
+		texts = append(texts, label.Text)
+	}
+	require.Contains(t, texts, "A summary of the game.")
+	require.NotNil(t, buttonWithLabel(rendered, "View on GOG"))
+}
+
+func TestRenderGameFacts_WithoutStoreInformation(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	rendered := renderGameFacts("", []gameDetail{{"Game ID", "42"}}, "")
+	require.Nil(t, buttonWithLabel(rendered, "View on GOG"))
+}
+
+// Selecting a game asks GOG's store about it.
+func TestLibraryTab_SelectingAGameLooksUpTheStore(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	var asked atomic.Int64
+	t.Setenv("GOGG_API_BASE", storeStub(t, &asked))
+
+	lt, _ := newLibraryFixture(t, 2)
+	require.NoError(t, lt.selected.Set(db.Game{ID: 7, Title: "Game 7", Data: richGameData, Version: "2.1"}))
+
+	require.Eventually(t, func() bool { return asked.Load() > 0 }, 5*time.Second, 20*time.Millisecond,
+		"the pane must look the game up, not only show what is stored locally")
+}
+
+// The pane is filled twice: once with what gogg holds, once when GOG answers.
+func TestFillDetails_AddsTheStoreFactsWhenTheyArrive(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	box := container.NewVBox()
+	game := db.Game{ID: 7, Title: "Game 7", Data: richGameData, Version: "2.1"}
+	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+
+	fillDetails(box, game, dm, nil)
+	require.Nil(t, buttonWithLabel(box, "View on GOG"), "nothing is known about the store yet")
+
+	fillDetails(box, game, dm, &client.GameMetadata{
+		Summary: "A game about a game.", Publisher: "A Publisher",
+		StoreURL: "https://www.gog.com/game/x",
+	})
+	require.NotNil(t, buttonWithLabel(box, "View on GOG"))
+	require.Equal(t, "A Publisher", detailValue(t, gameDetails(game, dm, &client.GameMetadata{
+		Publisher: "A Publisher",
+	}), "Publisher"))
 }

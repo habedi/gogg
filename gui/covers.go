@@ -108,11 +108,17 @@ func newCoverCache(dir string) *coverCache {
 
 // coverCacheDir is where covers are kept between runs.
 func coverCacheDir() string {
+	return filepath.Join(cacheRoot(), "covers")
+}
+
+// cacheRoot is where gogg keeps what it has downloaded about a game rather than
+// from it. Tests replace it so they never share a directory with a real run.
+var cacheRoot = func() string {
 	root := fyne.CurrentApp().Storage().RootURI()
 	if root != nil && root.Path() != "" {
-		return filepath.Join(root.Path(), "covers")
+		return root.Path()
 	}
-	return filepath.Join(os.TempDir(), "gogg", "covers")
+	return filepath.Join(os.TempDir(), "gogg")
 }
 
 // fetch returns the artwork for a game, reading it from disk when it is already

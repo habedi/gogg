@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
@@ -20,7 +22,7 @@ type gameDetail struct {
 
 // gameDetails describes a game from what is already stored locally, so the
 // pane costs nothing beyond reading the catalogue entry.
-func gameDetails(game db.Game, dm *DownloadManager) []gameDetail {
+func gameDetails(game db.Game, dm *DownloadManager, meta *client.GameMetadata) []gameDetail {
 	details := []gameDetail{{Label: "Game ID", Value: strconv.Itoa(game.ID)}}
 
 	version := game.Version
@@ -28,6 +30,21 @@ func gameDetails(game db.Game, dm *DownloadManager) []gameDetail {
 		version = "Unknown"
 	}
 	details = append(details, gameDetail{Label: "Version", Value: version})
+
+	// What GOG's store says, when it has been looked up.
+	if meta != nil {
+		details = appendIf(details, "Developer", strings.Join(meta.Developers, ", "))
+		details = appendIf(details, "Publisher", meta.Publisher)
+		details = appendIf(details, "Released", meta.ReleaseDate)
+		details = appendIf(details, "Genres", strings.Join(meta.Genres, ", "))
+		details = appendIf(details, "Features", strings.Join(meta.Features, ", "))
+		details = appendIf(details, "Age rating", meta.AgeRating)
+		if meta.InstalledMB > 0 {
+			details = append(details, gameDetail{
+				Label: "Installed size", Value: formatBytes(meta.InstalledMB * 1024 * 1024),
+			})
+		}
+	}
 
 	if parsed, err := client.ParseGameData(game.Data); err == nil {
 		if languages := offeredLanguages(parsed); len(languages) > 0 {
@@ -102,6 +119,37 @@ func offeredPlatforms(game client.Game) []string {
 		}
 	}
 	return platforms
+}
+
+// appendIf adds a fact only when GOG has something to say.
+func appendIf(details []gameDetail, label, value string) []gameDetail {
+	if strings.TrimSpace(value) == "" {
+		return details
+	}
+	return append(details, gameDetail{Label: label, Value: value})
+}
+
+// renderGameFacts lays out the summary, the facts and a link to the store page.
+func renderGameFacts(summary string, details []gameDetail, storeURL string) fyne.CanvasObject {
+	sections := make([]fyne.CanvasObject, 0, 3)
+
+	if summary != "" {
+		text := widget.NewLabel(summary)
+		text.Wrapping = fyne.TextWrapWord
+		sections = append(sections, text, widget.NewSeparator())
+	}
+
+	sections = append(sections, renderGameDetails(details))
+
+	if storeURL != "" {
+		sections = append(sections, widget.NewButtonWithIcon("View on GOG", theme.SearchIcon(), func() {
+			if parsed := parseURL(storeURL); parsed != nil {
+				_ = fyne.CurrentApp().OpenURL(parsed)
+			}
+		}))
+	}
+
+	return container.NewVBox(sections...)
 }
 
 // renderGameDetails lays the facts out as a form of copyable values.
