@@ -121,7 +121,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 			}
 			dirEntry.SetText(uri.Path())
 		}, win)
-		folderDialog.Resize(fyne.NewSize(800, 600))
+		folderDialog.Resize(fyne.NewSize(920, 700))
 		folderDialog.Show()
 	})
 	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, dirEntry)

@@ -117,7 +117,7 @@ func ExportCatalogueAction(win fyne.Window, format string) {
 	}, win)
 	fileDialog.SetFileName(defaultName)
 	fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{"." + format}))
-	fileDialog.Resize(fyne.NewSize(800, 600))
+	fileDialog.Resize(fyne.NewSize(920, 700))
 	fileDialog.Show()
 }
 

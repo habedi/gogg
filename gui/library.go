@@ -802,7 +802,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			}
 			downloadPathEntry.SetText(uri.Path())
 		}, win)
-		fd.Resize(fyne.NewSize(800, 600))
+		fd.Resize(fyne.NewSize(920, 700))
 		fd.Show()
 	})
 	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, downloadPathEntry)
