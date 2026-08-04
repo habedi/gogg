@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -73,10 +74,12 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 		return fmt.Errorf("username and password cannot be empty")
 	}
 
-	ctx, cancel, err := createChromeContext(headless)
+	execPath, err := findBrowser()
 	if err != nil {
 		return err
 	}
+
+	ctx, cancel := createChromeContext(execPath, headless)
 	defer cancel()
 
 	log.Info().Msg("Trying to login to GOG.com.")
@@ -90,20 +93,15 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 			// Cancel the first headless context before creating a new one.
 			cancel()
 
-			var headedCtx context.Context
-			var headedCancel context.CancelFunc
-			headedCtx, headedCancel, err = createChromeContext(false)
-			if err != nil {
-				return fmt.Errorf("failed to create Chrome context: %w", err)
-			}
+			headedCtx, headedCancel := createChromeContext(execPath, false)
 			defer headedCancel() // Defer cancellation of the new headed context.
 
 			finalURL, err = performLogin(headedCtx, loginURL, username, password, false)
 			if err != nil {
-				return fmt.Errorf("failed to login: %w", err)
+				return fmt.Errorf("failed to login using browser %s: %w", execPath, err)
 			}
 		} else {
-			return fmt.Errorf("failed to login: %w", err)
+			return fmt.Errorf("failed to login using browser %s: %w", execPath, err)
 		}
 	}
 
@@ -168,21 +166,40 @@ func parseAuthCode(input string) (string, error) {
 	return input, nil
 }
 
-func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
-	var execPath string
-	// Search for browsers in order of preference
-	browserExecutables := []string{"google-chrome", "Google Chrome", "chromium", "Chromium", "chrome", "msedge", "Microsoft Edge"}
+// browserExecutables lists the Chrome-family browsers to look for, in order of
+// preference. The same browser goes by different names per platform and
+// distribution.
+var browserExecutables = []string{
+	"google-chrome", "google-chrome-stable", "Google Chrome",
+	"chromium", "chromium-browser", "Chromium",
+	"chrome",
+	"msedge", "microsoft-edge", "microsoft-edge-stable", "Microsoft Edge",
+}
+
+// findBrowser returns the browser to drive. GOGG_BROWSER overrides the search,
+// which is how to point gogg at a browser that is not on PATH, or away from one
+// that cannot be driven, such as a snap-confined Chromium. It accepts a bare
+// name or a path.
+func findBrowser() (string, error) {
+	if custom := strings.TrimSpace(os.Getenv("GOGG_BROWSER")); custom != "" {
+		path, err := exec.LookPath(custom)
+		if err != nil {
+			return "", fmt.Errorf("GOGG_BROWSER is set to %q, which is not an executable: %w", custom, err)
+		}
+		return path, nil
+	}
+
 	for _, browser := range browserExecutables {
-		if p, err := exec.LookPath(browser); err == nil {
-			execPath = p
-			break
+		if path, err := exec.LookPath(browser); err == nil {
+			return path, nil
 		}
 	}
 
-	if execPath == "" {
-		return nil, nil, fmt.Errorf("no Chrome, Chromium, or Edge executable found in PATH")
-	}
+	return "", fmt.Errorf("no Chrome, Chromium, or Edge executable found in PATH; " +
+		"set GOGG_BROWSER to the browser to use, or log in with 'gogg login --code'")
+}
 
+func createChromeContext(execPath string, headless bool) (context.Context, context.CancelFunc) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(execPath),
 		chromedp.Flag("headless", headless),
@@ -198,7 +215,7 @@ func createChromeContext(headless bool) (context.Context, context.CancelFunc, er
 	return ctx, func() {
 		cancelContext()
 		cancelAllocator()
-	}, nil
+	}
 }
 
 func performLogin(ctx context.Context, loginURL string, username string, password string,

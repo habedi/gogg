@@ -15,23 +15,9 @@ import (
 // GogLoginer signs in to GOG and stores the resulting tokens.
 // *client.GogClient implements it.
 type GogLoginer interface {
-	// Login drives a browser through the GOG login form.
-	Login(loginURL, username, password string, headless bool) error
 	// LoginWithCode exchanges an authorization code, or the address containing
 	// one, for tokens.
 	LoginWithCode(codeOrURL string) error
-}
-
-// loginToGOG signs in with credentials by driving a browser. The headless
-// attempt comes first; the client falls back to a visible browser window by
-// itself when GOG asks for something a headless browser cannot answer, such as
-// a captcha.
-func loginToGOG(loginer GogLoginer, username, password string) error {
-	username = strings.TrimSpace(username)
-	if username == "" || password == "" {
-		return errors.New("username and password are required")
-	}
-	return loginer.Login(client.GOGLoginURL, username, password, true)
 }
 
 // loginWithPastedCode signs in with the address GOG redirected the user's own
@@ -45,14 +31,25 @@ func loginWithPastedCode(loginer GogLoginer, pasted string) error {
 	return loginer.LoginWithCode(pasted)
 }
 
+// fillFromClipboard puts the clipboard contents into entry, leaving whatever is
+// already there alone when the clipboard holds nothing useful.
+func fillFromClipboard(entry *widget.Entry) {
+	if text := strings.TrimSpace(fyne.CurrentApp().Clipboard().Content()); text != "" {
+		entry.SetText(text)
+	}
+}
+
 // ShowLoginDialog walks the user through logging in with their own browser and
-// pasting back the address they land on. The credential flow, which needs a
-// browser gogg can drive, is offered as an alternative.
+// pasting back the address they land on.
 func ShowLoginDialog(win fyne.Window, loginer GogLoginer, onSuccess func()) {
 	var dlg *dialog.CustomDialog
 
 	address := widget.NewEntry()
 	address.SetPlaceHolder("https://embed.gog.com/on_login_success?...&code=...")
+
+	pasteBtn := widget.NewButtonWithIcon("Paste", theme.ContentPasteIcon(), func() {
+		fillFromClipboard(address)
+	})
 
 	loginURL := NewCopyableLabel(client.GOGLoginURL)
 	loginURL.Wrapping = fyne.TextWrapBreak
@@ -75,12 +72,6 @@ func ShowLoginDialog(win fyne.Window, loginer GogLoginer, onSuccess func()) {
 	})
 	submitBtn.Importance = widget.HighImportance
 
-	credentialsBtn := widget.NewButton("Use username and password instead", func() {
-		dlg.Hide()
-		showCredentialLogin(win, loginer, onSuccess)
-	})
-	credentialsBtn.Importance = widget.LowImportance
-
 	content := container.NewVBox(
 		widget.NewLabelWithStyle("1. Open the GOG login page in your browser",
 			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
@@ -94,43 +85,17 @@ func ShowLoginDialog(win fyne.Window, loginer GogLoginer, onSuccess func()) {
 		widget.NewLabel("You will land on a page that may look blank. That is expected."),
 		widget.NewSeparator(),
 
-		widget.NewLabelWithStyle("3. Paste that page's address here",
+		widget.NewLabelWithStyle("3. Copy that page's address and paste it here",
 			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		address,
+		container.NewBorder(nil, nil, nil, pasteBtn, address),
 		widget.NewSeparator(),
 
-		container.NewBorder(nil, nil, credentialsBtn, submitBtn),
+		container.NewBorder(nil, nil, nil, submitBtn),
 	)
 
 	dlg = dialog.NewCustom("Log In to GOG", "Cancel", content, win)
-	dlg.Resize(fyne.NewSize(620, 560))
+	dlg.Resize(fyne.NewSize(620, 540))
 	dlg.Show()
-}
-
-// showCredentialLogin signs in by driving a browser through the login form.
-// The credentials are used for this one login and never stored; only the tokens
-// GOG returns are saved.
-func showCredentialLogin(win fyne.Window, loginer GogLoginer, onSuccess func()) {
-	username := widget.NewEntry()
-	username.SetPlaceHolder("GOG username or email")
-	password := widget.NewPasswordEntry()
-	password.SetPlaceHolder("GOG password")
-
-	items := []*widget.FormItem{
-		widget.NewFormItem("Username", username),
-		widget.NewFormItem("Password", password),
-	}
-
-	form := dialog.NewForm("Log In with Credentials", "Log In", "Cancel", items, func(confirmed bool) {
-		if !confirmed {
-			return
-		}
-		user, pass := username.Text, password.Text
-		runLoginAttempt(win, "A browser window may open so you can finish signing in.",
-			func() error { return loginToGOG(loginer, user, pass) }, onSuccess)
-	}, win)
-	form.Resize(fyne.NewSize(420, 220))
-	form.Show()
 }
 
 // runLoginAttempt performs a login off the UI thread and reports the outcome.

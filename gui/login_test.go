@@ -9,26 +9,14 @@ import (
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
-	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
 
 type fakeLoginer struct {
-	calls                int
-	loginURL, user, pass string
-	headless             bool
-	err                  error
-
 	codeCalls int
 	code      string
 	codeErr   error
-}
-
-func (f *fakeLoginer) Login(loginURL, username, password string, headless bool) error {
-	f.calls++
-	f.loginURL, f.user, f.pass, f.headless = loginURL, username, password, headless
-	return f.err
 }
 
 func (f *fakeLoginer) LoginWithCode(codeOrURL string) error {
@@ -37,34 +25,57 @@ func (f *fakeLoginer) LoginWithCode(codeOrURL string) error {
 	return f.codeErr
 }
 
-// Starting a browser for empty credentials wastes seconds and ends in a
-// confusing failure, so they are checked first.
-func TestLoginToGOG_RequiresCredentials(t *testing.T) {
+// The GUI logs in by having the user sign in with their own browser and paste
+// the address back, so gogg never handles the password itself.
+func TestLoginWithPastedCode_RequiresSomethingToWorkWith(t *testing.T) {
 	loginer := &fakeLoginer{}
 
-	require.Error(t, loginToGOG(loginer, "", "secret"))
-	require.Error(t, loginToGOG(loginer, "   ", "secret"))
-	require.Error(t, loginToGOG(loginer, "user", ""))
-	require.Zero(t, loginer.calls, "no browser may be started without credentials")
+	require.Error(t, loginWithPastedCode(loginer, ""))
+	require.Error(t, loginWithPastedCode(loginer, "   "))
+	require.Zero(t, loginer.codeCalls)
 }
 
-func TestLoginToGOG_DrivesTheGogLoginFlow(t *testing.T) {
+func TestLoginWithPastedCode_PassesThePastedAddressThrough(t *testing.T) {
 	loginer := &fakeLoginer{}
+	const pasted = "https://embed.gog.com/on_login_success?origin=client&code=abc123"
 
-	require.NoError(t, loginToGOG(loginer, "user", "secret"))
+	require.NoError(t, loginWithPastedCode(loginer, "  "+pasted+"  "))
 
-	require.Equal(t, 1, loginer.calls)
-	require.Equal(t, client.GOGLoginURL, loginer.loginURL)
-	require.Equal(t, "user", loginer.user)
-	require.Equal(t, "secret", loginer.pass)
-	require.True(t, loginer.headless,
-		"the headless attempt comes first; the client falls back to a visible window")
+	require.Equal(t, 1, loginer.codeCalls)
+	require.Equal(t, pasted, loginer.code, "the address is trimmed but otherwise untouched")
 }
 
-func TestLoginToGOG_ReportsFailure(t *testing.T) {
-	loginer := &fakeLoginer{err: errors.New("invalid credentials")}
+func TestLoginWithPastedCode_ReportsFailure(t *testing.T) {
+	loginer := &fakeLoginer{codeErr: errors.New("invalid_grant")}
 
-	require.ErrorContains(t, loginToGOG(loginer, "user", "secret"), "invalid credentials")
+	require.ErrorContains(t, loginWithPastedCode(loginer, "abc123"), "invalid_grant")
+}
+
+// The address is long and always arrives through the clipboard, so pasting it
+// is one button rather than a manual selection.
+func TestFillFromClipboard(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	const pasted = "https://embed.gog.com/on_login_success?origin=client&code=abc123"
+	app.Clipboard().SetContent("  " + pasted + "  ")
+
+	entry := widget.NewEntry()
+	fillFromClipboard(entry)
+
+	require.Equal(t, pasted, entry.Text)
+}
+
+func TestFillFromClipboard_EmptyClipboardKeepsWhatIsThere(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	app.Clipboard().SetContent("   ")
+
+	entry := widget.NewEntry()
+	entry.SetText("already typed")
+	fillFromClipboard(entry)
+
+	require.Equal(t, "already typed", entry.Text)
 }
 
 func collectButtons(o fyne.CanvasObject, out *[]*widget.Button) {
@@ -93,7 +104,7 @@ func buttonWithLabel(o fyne.CanvasObject, label string) *widget.Button {
 	return nil
 }
 
-// Signing out of a terminal is not something a GUI user should have to do, so
+// Signing in from a terminal is not something a GUI user should have to do, so
 // the library offers the login itself.
 func TestLibraryTabUI_OffersLoginWhenSignedOut(t *testing.T) {
 	app := test.NewApp()
@@ -114,31 +125,4 @@ func TestLibraryTabUI_OffersLoginWhenSignedOut(t *testing.T) {
 
 	btn.OnTapped()
 	require.Equal(t, 1, requested)
-}
-
-// The code flow is the one that needs no browser gogg can drive: the user logs
-// in wherever they like and pastes the address back.
-func TestLoginWithPastedCode_RequiresSomethingToWorkWith(t *testing.T) {
-	loginer := &fakeLoginer{}
-
-	require.Error(t, loginWithPastedCode(loginer, ""))
-	require.Error(t, loginWithPastedCode(loginer, "   "))
-	require.Zero(t, loginer.codeCalls)
-}
-
-func TestLoginWithPastedCode_PassesThePastedAddressThrough(t *testing.T) {
-	loginer := &fakeLoginer{}
-	const pasted = "https://embed.gog.com/on_login_success?origin=client&code=abc123"
-
-	require.NoError(t, loginWithPastedCode(loginer, "  "+pasted+"  "))
-
-	require.Equal(t, 1, loginer.codeCalls)
-	require.Equal(t, pasted, loginer.code, "the address is trimmed but otherwise untouched")
-	require.Zero(t, loginer.calls, "no browser may be driven for the code flow")
-}
-
-func TestLoginWithPastedCode_ReportsFailure(t *testing.T) {
-	loginer := &fakeLoginer{codeErr: errors.New("invalid_grant")}
-
-	require.ErrorContains(t, loginWithPastedCode(loginer, "abc123"), "invalid_grant")
 }

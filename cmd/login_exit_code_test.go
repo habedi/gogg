@@ -38,3 +38,19 @@ func TestLoginCmd_SuccessLeavesNoExitError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, getLastCliErr(), "a successful login must exit zero")
 }
+
+// The message alone says nothing useful; the cause is the diagnosis, and for
+// login failures it names the browser or what was wrong with the code.
+func TestLoginCmd_FailurePrintsTheCause(t *testing.T) {
+	cleanDBTables(t)
+	setLastCliErr(nil)
+	t.Cleanup(func() { setLastCliErr(nil) })
+
+	out, err := captureCombinedOutput(loginCmd(&client.GogClient{TokenURL: "http://127.0.0.1:1"}),
+		"--code", "paste the address here")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "Failed to login to GOG.com")
+	assert.Contains(t, out, "neither an authorization code nor the address",
+		"the underlying cause has to reach the user")
+}

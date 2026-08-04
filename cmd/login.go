@@ -29,9 +29,7 @@ func loginCmd(gogClient *client.GogClient) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			if strings.TrimSpace(authCode) != "" {
 				if err := gogClient.LoginWithCode(authCode); err != nil {
-					e := clierr.New(clierr.Internal, "Failed to login to GOG.com", err)
-					cmd.PrintErrln(e.Message)
-					setLastCliErr(e)
+					reportLoginError(cmd, clierr.New(clierr.Internal, "Failed to login to GOG.com", err))
 					return
 				}
 				cmd.Println("Login was successful.")
@@ -44,9 +42,7 @@ func loginCmd(gogClient *client.GogClient) *cobra.Command {
 
 			if validateCredentials(gogUsername, gogPassword) {
 				if err := gogClient.Login(client.GOGLoginURL, gogUsername, gogPassword, headless); err != nil {
-					e := clierr.New(clierr.Internal, "Failed to login to GOG.com", err)
-					cmd.PrintErrln(e.Message)
-					setLastCliErr(e)
+					reportLoginError(cmd, clierr.New(clierr.Internal, "Failed to login to GOG.com", err))
 					if strings.Contains(err.Error(), "executable found in PATH") {
 						cmd.PrintErrln("Hint: Make sure Google Chrome or Chromium is installed and accessible in your system's PATH.")
 					}
@@ -54,9 +50,7 @@ func loginCmd(gogClient *client.GogClient) *cobra.Command {
 					cmd.Println("Login was successful.")
 				}
 			} else {
-				e := clierr.New(clierr.Validation, "Username and password cannot be empty", nil)
-				cmd.PrintErrln(e.Message)
-				setLastCliErr(e)
+				reportLoginError(cmd, clierr.New(clierr.Validation, "Username and password cannot be empty", nil))
 			}
 		},
 	}
@@ -66,6 +60,17 @@ func loginCmd(gogClient *client.GogClient) *cobra.Command {
 	cmd.Flags().BoolVarP(&headless, "headless", "n", true, "Login in headless mode without showing the browser window? [true, false]")
 
 	return cmd
+}
+
+// reportLoginError prints the failure with its cause and records it so the
+// process exits non-zero. The cause is what tells the user what to do next:
+// which browser could not be driven, or what was wrong with the code.
+func reportLoginError(cmd *cobra.Command, e *clierr.Error) {
+	cmd.PrintErrln(e.Message)
+	if e.Err != nil {
+		cmd.PrintErrln("Cause:", e.Err)
+	}
+	setLastCliErr(e)
 }
 
 func promptForInput(prompt string) string {
