@@ -21,10 +21,25 @@ func embedBase() string {
 	return "https://embed.gog.com"
 }
 
-// VersionChange records a version difference detected during catalogue refresh.
+// ChangeKind describes what happened to a game between two catalogue refreshes.
+// It is recorded explicitly because many GOG games carry no version string, so
+// an empty OldVersion or NewVersion does not identify the kind of change.
+type ChangeKind int
+
+const (
+	// ChangeAdded marks a game that was not in the catalogue before.
+	ChangeAdded ChangeKind = iota + 1
+	// ChangeUpdated marks a game whose installer version changed.
+	ChangeUpdated
+	// ChangeRemoved marks a game that is no longer in the GOG account.
+	ChangeRemoved
+)
+
+// VersionChange records a difference detected during catalogue refresh.
 type VersionChange struct {
 	GameID     int
 	Title      string
+	Kind       ChangeKind
 	OldVersion string // empty when the game was not previously in the catalogue
 	NewVersion string // empty when the game was removed from the GOG account
 }
@@ -69,7 +84,7 @@ func RefreshCatalogue(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch owned game IDs: %w", err)
 	}
-	// Snapshot current catalogue before clearing so we can detect version changes.
+	// Snapshot the current catalogue so we can detect version changes.
 	oldGames, listErr := repo.List(ctx)
 	oldVersions := make(map[int]struct{ title, version string }, len(oldGames))
 	if listErr == nil {
@@ -86,7 +101,9 @@ func RefreshCatalogue(
 		// All previously-owned games were removed.
 		var changes []VersionChange
 		for id, ov := range oldVersions {
-			changes = append(changes, VersionChange{GameID: id, Title: ov.title, OldVersion: ov.version})
+			changes = append(changes, VersionChange{
+				GameID: id, Title: ov.title, Kind: ChangeRemoved, OldVersion: ov.version,
+			})
 		}
 		return changes, nil
 	}
@@ -154,9 +171,14 @@ func RefreshCatalogue(
 		ov, existed := oldVersions[id]
 		switch {
 		case !existed:
-			changes = append(changes, VersionChange{GameID: id, Title: nv.title, NewVersion: nv.version})
+			changes = append(changes, VersionChange{
+				GameID: id, Title: nv.title, Kind: ChangeAdded, NewVersion: nv.version,
+			})
 		case ov.version != nv.version:
-			changes = append(changes, VersionChange{GameID: id, Title: nv.title, OldVersion: ov.version, NewVersion: nv.version})
+			changes = append(changes, VersionChange{
+				GameID: id, Title: nv.title, Kind: ChangeUpdated,
+				OldVersion: ov.version, NewVersion: nv.version,
+			})
 		}
 	}
 
@@ -166,7 +188,9 @@ func RefreshCatalogue(
 	var removedIDs []int
 	for id, ov := range oldVersions {
 		if _, owned := ownedSet[id]; !owned {
-			changes = append(changes, VersionChange{GameID: id, Title: ov.title, OldVersion: ov.version})
+			changes = append(changes, VersionChange{
+				GameID: id, Title: ov.title, Kind: ChangeRemoved, OldVersion: ov.version,
+			})
 			removedIDs = append(removedIDs, id)
 		}
 	}

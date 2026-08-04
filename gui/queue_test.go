@@ -80,7 +80,19 @@ func TestStartNextIfAvailable_RespectsMaxConcurrent(t *testing.T) {
 		dm.mu.Unlock()
 		close(release)
 		// Let the in-flight downloads unwind before the server goes away.
-		time.Sleep(200 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			dm.mu.RLock()
+			defer dm.mu.RUnlock()
+			tasks, _ := dm.Tasks.Get()
+			for _, raw := range tasks {
+				switch raw.(*DownloadTask).State() {
+				case StateCompleted, StateCancelled, StateError:
+				default:
+					return false
+				}
+			}
+			return true
+		}, 5*time.Second, 10*time.Millisecond)
 	}()
 
 	dm.startNextIfAvailable()

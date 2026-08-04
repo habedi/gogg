@@ -14,7 +14,12 @@ type GameRepository interface {
 	GetByID(ctx context.Context, id int) (*Game, error)
 	List(ctx context.Context) ([]Game, error)
 	SearchByTitle(ctx context.Context, titleSubstr string) ([]Game, error)
+	// Clear removes every game. It is the context-aware replacement for the
+	// deprecated EmptyCatalogue. Catalogue refresh deliberately does not use
+	// it: emptying the catalogue before the replacement data is known loses
+	// games whenever a refresh fails or is cancelled part way through.
 	Clear(ctx context.Context) error
+	// DeleteByIDs removes the games with the given IDs. Passing no IDs is not an error.
 	DeleteByIDs(ctx context.Context, ids []int) error
 }
 

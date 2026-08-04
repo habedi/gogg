@@ -181,8 +181,9 @@ func sendRequest(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// waitBeforeRetry sleeps for d, returning early if ctx is cancelled first.
-func waitBeforeRetry(ctx context.Context, d time.Duration) error {
+// waitBeforeRetry sleeps for d, returning early if ctx is cancelled first. It
+// is a variable so tests can observe the retry schedule without sleeping.
+var waitBeforeRetry = func(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
