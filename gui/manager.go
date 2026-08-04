@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -40,6 +41,10 @@ type DownloadTask struct {
 	CancelFunc   context.CancelFunc
 	FileStatus   binding.String
 	DownloadPath string
+
+	// request is what this download was started from, kept so it can be retried.
+	// Tasks restored from the history file do not have one.
+	request queuedDownload
 
 	// state is written by the download goroutine and read by the UI, so it is
 	// only reachable through State and SetState.
@@ -105,6 +110,43 @@ func (dm *DownloadManager) AddTask(task *DownloadTask) error {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 	return dm.Tasks.Append(task)
+}
+
+// canRetry reports whether this download can be started again. Tasks restored
+// from the history file carry no request, so there is nothing to repeat.
+func (t *DownloadTask) canRetry() bool {
+	if t.request.game.ID == 0 {
+		return false
+	}
+	state := t.State()
+	return state == StateError || state == StateCancelled
+}
+
+// retry starts a failed or cancelled download again, replacing its entry.
+func (dm *DownloadManager) retry(task *DownloadTask) error {
+	if !task.canRetry() {
+		return errors.New("this download cannot be retried")
+	}
+	if err := dm.QueueOrStart(task.request); err != nil {
+		return err
+	}
+	dm.removeTask(task)
+	return nil
+}
+
+// removeTask drops a task from the list.
+func (dm *DownloadManager) removeTask(task *DownloadTask) {
+	dm.mu.Lock()
+	all, _ := dm.Tasks.Get()
+	kept := make([]interface{}, 0, len(all))
+	for _, raw := range all {
+		if raw.(*DownloadTask).InstanceID != task.InstanceID {
+			kept = append(kept, raw)
+		}
+	}
+	_ = dm.Tasks.Set(kept)
+	dm.mu.Unlock()
+	dm.PersistHistory()
 }
 
 func (dm *DownloadManager) loadHistory() {
@@ -297,19 +339,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 			progress.Bind(task.Progress)
 			fileStatus.Bind(task.FileStatus)
 
-			clearBtn.OnTapped = func() {
-				dm.mu.Lock()
-				currentTasks, _ := dm.Tasks.Get()
-				keptTasks := make([]interface{}, 0)
-				for _, tRaw := range currentTasks {
-					if tRaw.(*DownloadTask).InstanceID != task.InstanceID {
-						keptTasks = append(keptTasks, tRaw)
-					}
-				}
-				_ = dm.Tasks.Set(keptTasks)
-				dm.mu.Unlock()
-				dm.PersistHistory()
-			}
+			clearBtn.OnTapped = func() { dm.removeTask(task) }
 
 			switch task.State() {
 			case StateCompleted:
@@ -319,6 +349,19 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 				actionBtn.Enable()
 				clearBtn.Show()
 			case StateCancelled, StateError:
+				clearBtn.Show()
+				if task.canRetry() {
+					actionBtn.SetIcon(theme.ViewRefreshIcon())
+					actionBtn.SetText("Retry")
+					actionBtn.OnTapped = func() {
+						if err := dm.retry(task); err != nil {
+							log.Error().Err(err).Str("game", task.Title).Msg("Failed to retry download")
+						}
+					}
+					actionBtn.Enable()
+					break
+				}
+				// Nothing to repeat, so the button just states where it ended up.
 				actionBtn.SetIcon(theme.ErrorIcon())
 				actionBtn.SetText("Error")
 				if task.State() == StateCancelled {
@@ -327,7 +370,6 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 				}
 				actionBtn.OnTapped = nil
 				actionBtn.Disable()
-				clearBtn.Show()
 			default: // Preparing, Downloading
 				actionBtn.SetIcon(theme.CancelIcon())
 				actionBtn.SetText("Cancel")
@@ -437,7 +479,7 @@ func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
 	}
 	dm.mu.RUnlock()
 	if dm.activeCount() < dm.maxConcurrent() {
-		return executeDownload(q.authService, dm, q.game, q.downloadPath, q.language, q.platformName, q.extrasFlag, q.dlcFlag, q.resumeFlag, q.flattenFlag, q.skipPatchesFlag, q.keepLatestFlag, q.rommLayoutFlag, q.numThreads)
+		return executeDownload(dm, q)
 	}
 	// Enqueue
 	dm.mu.Lock()
@@ -489,6 +531,6 @@ func (dm *DownloadManager) startNextIfAvailable() {
 		}
 		_ = dm.Tasks.Set(filtered)
 		dm.mu.Unlock()
-		_ = executeDownload(next.authService, dm, next.game, next.downloadPath, next.language, next.platformName, next.extrasFlag, next.dlcFlag, next.resumeFlag, next.flattenFlag, next.skipPatchesFlag, next.keepLatestFlag, next.rommLayoutFlag, next.numThreads)
+		_ = executeDownload(dm, next)
 	}
 }

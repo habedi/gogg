@@ -26,7 +26,6 @@ var defaultDingSound []byte
 
 var (
 	speakerOnce     sync.Once
-	mixer           *beep.Mixer
 	sampleRate      beep.SampleRate
 	currentSound    context.CancelFunc
 	currentSoundID  uint64
@@ -67,10 +66,7 @@ func initSpeaker(sr beep.SampleRate) {
 		bufferSize := sr.N(time.Second / 10)
 		if err := speaker.Init(sampleRate, bufferSize); err != nil {
 			log.Error().Err(err).Msg("Failed to initialize speaker")
-			return
 		}
-		mixer = &beep.Mixer{}
-		speaker.Play(mixer)
 	})
 }
 
@@ -184,7 +180,9 @@ func PlayNotificationSound() {
 	resampled := beep.Resample(4, format.SampleRate, sampleRate, streamer)
 
 	done := make(chan bool, 1)
-	mixer.Add(beep.Seq(resampled, beep.Callback(func() {
+	// speaker.Play mixes under the speaker's own lock; adding to a mixer of our
+	// own would race with the goroutine streaming it.
+	speaker.Play(beep.Seq(resampled, beep.Callback(func() {
 		select {
 		case done <- true:
 		default:

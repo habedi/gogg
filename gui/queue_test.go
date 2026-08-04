@@ -114,8 +114,14 @@ func TestExecuteDownload_ReportsUnparseableGameData(t *testing.T) {
 	defer app.Quit()
 
 	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
-	err := executeDownload(stubAuthService(), dm, db.Game{ID: 1, Title: "Broken", Data: "{not json"},
-		t.TempDir(), "English", "windows", false, false, false, false, false, false, false, 1)
+	err := executeDownload(dm, queuedDownload{
+		authService:  stubAuthService(),
+		game:         db.Game{ID: 1, Title: "Broken", Data: "{not json"},
+		downloadPath: t.TempDir(),
+		language:     "English",
+		platformName: "windows",
+		numThreads:   1,
+	})
 	require.Error(t, err)
 
 	// The slot must be released so the game can be retried.

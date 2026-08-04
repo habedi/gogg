@@ -18,9 +18,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
-	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
 )
 
@@ -181,49 +179,48 @@ func (pu *progressUpdater) updateFileStatusText() {
 	_ = pu.task.FileStatus.Set(strings.TrimSpace(sb.String()))
 }
 
-func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Game,
-	downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag,
-	flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool, numThreads int) error {
-
+// executeDownload starts a download described by q and registers it with dm.
+func executeDownload(dm *DownloadManager, q queuedDownload) error {
 	activeDownloadsMutex.Lock()
-	if _, exists := activeDownloads[game.ID]; exists {
-		log.Warn().Int("gameID", game.ID).Msg("Download is already in progress. Ignoring new request.")
+	if _, exists := activeDownloads[q.game.ID]; exists {
+		log.Warn().Int("gameID", q.game.ID).Msg("Download is already in progress. Ignoring new request.")
 		activeDownloadsMutex.Unlock()
 		return ErrDownloadInProgress
 	}
-	activeDownloads[game.ID] = struct{}{}
+	activeDownloads[q.game.ID] = struct{}{}
 	activeDownloadsMutex.Unlock()
 
 	releaseSlot := func() {
 		activeDownloadsMutex.Lock()
-		delete(activeDownloads, game.ID)
+		delete(activeDownloads, q.game.ID)
 		activeDownloadsMutex.Unlock()
 	}
 
-	parsedGameData, err := client.ParseGameData(game.Data)
+	parsedGameData, err := client.ParseGameData(q.game.Data)
 	if err != nil {
 		releaseSlot()
-		return fmt.Errorf("failed to parse game data for %s: %w", game.Title, err)
+		return fmt.Errorf("failed to parse game data for %s: %w", q.game.Title, err)
 	}
 
 	var targetDir string
-	if rommLayoutFlag {
-		plat := strings.ToLower(platformName)
+	if q.rommLayoutFlag {
+		plat := strings.ToLower(q.platformName)
 		if plat == "all" { // show root for mixed
-			targetDir = downloadPath
+			targetDir = q.downloadPath
 		} else {
-			targetDir = filepath.Join(downloadPath, plat, client.SanitizePath(parsedGameData.Title))
+			targetDir = filepath.Join(q.downloadPath, plat, client.SanitizePath(parsedGameData.Title))
 		}
 	} else {
-		targetDir = filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
+		targetDir = filepath.Join(q.downloadPath, client.SanitizePath(parsedGameData.Title))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	task := &DownloadTask{
-		ID:           game.ID,
+		ID:           q.game.ID,
 		InstanceID:   time.Now(),
-		Title:        game.Title,
+		Title:        q.game.Title,
+		request:      q,
 		Status:       binding.NewString(),
 		Details:      binding.NewString(),
 		Progress:     binding.NewFloat(),
@@ -247,9 +244,9 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 			go dm.startNextIfAvailable()
 		}()
 
-		fyne.CurrentApp().Preferences().SetString("lastUsedDownloadPath", downloadPath)
+		fyne.CurrentApp().Preferences().SetString("lastUsedDownloadPath", q.downloadPath)
 
-		token, err := authService.RefreshTokenCtx(ctx)
+		token, err := q.authService.RefreshTokenCtx(ctx)
 		if err != nil {
 			task.SetState(StateError)
 			_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
@@ -263,9 +260,9 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 		}
 
 		err = client.DownloadGameFiles(
-			ctx, token.AccessToken, parsedGameData, downloadPath, language, platformName,
-			extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, rommLayoutFlag, numThreads,
-			updater,
+			ctx, token.AccessToken, parsedGameData, q.downloadPath, q.language, q.platformName,
+			q.extrasFlag, q.dlcFlag, q.resumeFlag, q.flattenFlag, q.skipPatchesFlag, q.rommLayoutFlag,
+			q.numThreads, updater,
 		)
 
 		if err != nil {
@@ -298,22 +295,22 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 			Resume      bool   `json:"resume"`
 			Threads     int    `json:"threads"`
 		}{
-			Language:    language,
-			Platform:    platformName,
-			Extras:      extrasFlag,
-			DLCs:        dlcFlag,
-			SkipPatches: skipPatchesFlag,
-			Flatten:     flattenFlag,
-			Resume:      resumeFlag,
-			Threads:     numThreads,
+			Language:    q.language,
+			Platform:    q.platformName,
+			Extras:      q.extrasFlag,
+			DLCs:        q.dlcFlag,
+			SkipPatches: q.skipPatchesFlag,
+			Flatten:     q.flattenFlag,
+			Resume:      q.resumeFlag,
+			Threads:     q.numThreads,
 		}
 		if data, mErr := json.MarshalIndent(info, "", "  "); mErr == nil {
 			_ = os.MkdirAll(targetDir, 0755)
 			_ = os.WriteFile(filepath.Join(targetDir, "download_info.json"), data, 0644)
 		}
 
-		if keepLatestFlag {
-			if err := guiPruneOldVersions(downloadPath, parsedGameData.Title, rommLayoutFlag, platformName); err != nil {
+		if q.keepLatestFlag {
+			if err := guiPruneOldVersions(q.downloadPath, parsedGameData.Title, q.rommLayoutFlag, q.platformName); err != nil {
 				log.Warn().Err(err).Msg("Failed to prune old versions (GUI)")
 			}
 		}
