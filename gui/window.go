@@ -89,17 +89,9 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 	myWindow.ShowAndRun()
 }
 
+// FileTabUI is the file tools tab. Storage size estimates moved to the library,
+// where the games are selected.
 func FileTabUI(win fyne.Window) fyne.CanvasObject {
-	head := widget.NewLabelWithStyle("File Operations", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	hashTab := HashUI(win)
-	sizeTab := SizeUI(win)
-	fileTabs := container.NewAppTabs(
-		container.NewTabItemWithIcon("File Hashes", theme.ContentAddIcon(), hashTab),
-		container.NewTabItemWithIcon("Storage Size", theme.ViewFullScreenIcon(), sizeTab),
-	)
-	fileTabs.SetTabLocation(container.TabLocationTop)
-	return container.NewBorder(
-		head, nil, nil, nil,
-		fileTabs,
-	)
+	head := widget.NewLabelWithStyle("File Hashes", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	return container.NewBorder(head, nil, nil, nil, HashUI(win))
 }

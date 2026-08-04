@@ -879,15 +879,32 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		}), nil
 	}
 
-	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), func() {
-		// Ticked games win; otherwise the download applies to the highlighted one.
-		games := sel.gamesIn(catalogue())
+	// targets are the games an action applies to: the ticked ones, or the
+	// highlighted one when nothing is ticked.
+	targets := func() []db.Game {
+		if games := sel.gamesIn(catalogue()); len(games) > 0 {
+			return games
+		}
+		gameRaw, _ := selectedGame.Get()
+		if gameRaw == nil {
+			return nil
+		}
+		return []db.Game{gameRaw.(db.Game)}
+	}
+
+	estimateBtn := widget.NewButtonWithIcon("Estimate Size", theme.InfoIcon(), func() {
+		games := targets()
 		if len(games) == 0 {
-			gameRaw, _ := selectedGame.Get()
-			if gameRaw == nil {
-				return
-			}
-			games = []db.Game{gameRaw.(db.Game)}
+			return
+		}
+		estimates, total := estimateSelection(games)
+		showSizeEstimate(win, estimates, total)
+	})
+
+	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), func() {
+		games := targets()
+		if len(games) == 0 {
+			return
 		}
 
 		result, err := queue(games)
@@ -920,7 +937,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	}
 
 	return &downloadForm{
-		content:  container.NewVBox(form, checkboxes, layout.NewSpacer(), gogdbBtn, downloadBtn),
+		content: container.NewVBox(form, checkboxes, layout.NewSpacer(),
+			container.NewGridWithColumns(2, gogdbBtn, estimateBtn), downloadBtn),
 		relabel:  relabel,
 		queue:    queue,
 		narrowTo: narrowTo,
