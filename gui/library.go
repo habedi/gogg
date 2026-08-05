@@ -1,11 +1,11 @@
 package gui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,6 +23,8 @@ import (
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
+	"github.com/habedi/gogg/pkg/search"
+	"github.com/rs/zerolog/log"
 )
 
 // libraryTab holds all the components of the library tab UI.
@@ -40,6 +42,10 @@ type libraryTab struct {
 	storeHeader *fyne.Container
 	// gallery is the artwork and store pictures of the selected game.
 	gallery *gameGallery
+	// listed is what the search and the filters have left showing, and relist
+	// asks that question again after something they depend on has changed.
+	listed func() []db.Game
+	relist func()
 	// pane is the right-hand side of the library, and dm the downloads it
 	// starts.
 	pane *detailsPane
@@ -335,103 +341,129 @@ func estimateGameSize(game db.Game) int64 {
 	return sz
 }
 
-// Active filters
-var (
-	filterDownloadedOnly bool
-	filterHasUpdateOnly  bool
-	filterSizeMin        int64
-	filterSizeMax        int64
-)
+// gameTags is what the user has marked games with, read once per refresh
+// because a query is asked of every game on every keystroke.
+var gameTags = map[int][]string{}
 
-func resetFilters() {
-	filterDownloadedOnly = false
-	filterHasUpdateOnly = false
-	filterSizeMin = 0
-	filterSizeMax = 0
-}
-
-func passesFilters(game db.Game) bool {
-	st, ok := updateStatusCache[game.ID]
-	if filterDownloadedOnly && (!ok || !st.Downloaded) {
-		return false
-	}
-	if filterHasUpdateOnly && (!ok || !st.HasUpdate) {
-		return false
-	}
-	if filterSizeMin > 0 || filterSizeMax > 0 {
-		sz := estimateGameSize(game)
-		if filterSizeMin > 0 && sz < filterSizeMin {
-			return false
-		}
-		if filterSizeMax > 0 && sz > filterSizeMax {
-			return false
-		}
-	}
-	return true
-}
-
-func parseSizeInput(s string) int64 {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-	// Accept suffix MB/GB
-	lower := strings.ToLower(s)
-	mult := int64(1)
-	if strings.HasSuffix(lower, "mb") {
-		mult = 1024 * 1024
-		s = strings.TrimSpace(lower[:len(lower)-2])
-	}
-	if strings.HasSuffix(lower, "gb") {
-		mult = 1024 * 1024 * 1024
-		s = strings.TrimSpace(lower[:len(lower)-2])
-	}
-	if strings.HasSuffix(lower, "tb") {
-		mult = 1024 * 1024 * 1024 * 1024
-		s = strings.TrimSpace(lower[:len(lower)-2])
-	}
-	v, err := strconv.ParseFloat(s, 64)
+// loadGameTags reads what the user has marked games with. It is read in one go
+// and kept, because a query is asked of every game on every keystroke.
+func loadGameTags() {
+	tags, err := db.AllTags(context.Background())
 	if err != nil {
-		return 0
+		log.Debug().Err(err).Msg("Could not read game tags")
+		return
 	}
-	return int64(math.Round(v * float64(mult)))
+	gameTags = tags
 }
 
-// Create filter dialog button (compact UI) without tag filtering.
-func newFiltersButton(refresh func()) *widget.Button {
+// filterTerms turns what the filter dialog was set to into the terms it writes
+// into the search box.
+func filterTerms(downloaded, hasUpdate bool, minSize, maxSize string) []string {
+	var terms []string
+	if downloaded {
+		terms = append(terms, "downloaded:yes")
+	}
+	if hasUpdate {
+		terms = append(terms, "updates:yes")
+	}
+	if size := strings.ReplaceAll(strings.TrimSpace(minSize), " ", ""); size != "" {
+		terms = append(terms, "size:>="+size)
+	}
+	if size := strings.ReplaceAll(strings.TrimSpace(maxSize), " ", ""); size != "" {
+		terms = append(terms, "size:<="+size)
+	}
+	return terms
+}
+
+// factsFor describes a game to a query. Working out the size or the platforms
+// means parsing the stored data, so it is only done for queries that ask.
+func factsFor(game db.Game, needs search.Needs) search.Facts {
+	facts := search.Facts{Title: game.Title}
+	if status, ok := updateStatusCache[game.ID]; ok {
+		facts.Downloaded = status.Downloaded
+		facts.HasUpdate = status.HasUpdate
+	}
+	if needs.Tags {
+		facts.Tags = gameTags[game.ID]
+	}
+	if needs.Size {
+		facts.SizeBytes = estimateGameSize(game)
+	}
+	if needs.Platforms || needs.Languages {
+		if parsed, err := client.ParseGameData(game.Data); err == nil {
+			if needs.Platforms {
+				for _, platform := range offeredPlatforms(parsed) {
+					facts.Platforms = append(facts.Platforms, strings.ToLower(platform))
+				}
+			}
+			if needs.Languages {
+				facts.Languages = languageNamesAndCodes(offeredLanguages(parsed))
+			}
+		}
+	}
+	return facts
+}
+
+// languageNamesAndCodes lets a game be asked for either way: lang:german and
+// lang:de mean the same thing to someone typing quickly.
+func languageNamesAndCodes(names []string) []string {
+	both := make([]string, 0, len(names)*2)
+	for _, name := range names {
+		both = append(both, name)
+		for code, full := range client.GameLanguages {
+			if strings.EqualFold(full, name) {
+				both = append(both, code)
+				break
+			}
+		}
+	}
+	return both
+}
+
+// newFiltersButton edits the field terms of the search, leaving the words the
+// user typed. The dialog and the search box are then the same filter, one of
+// them just easier to discover.
+func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button {
 	var dlg *dialog.CustomDialog
 	btn := widget.NewButtonWithIcon("Filters", theme.SearchIcon(), func() {
-		// Inputs
-		downloadedChk := widget.NewCheck("Downloaded only", func(b bool) { filterDownloadedOnly = b })
-		downloadedChk.SetChecked(filterDownloadedOnly)
-		updateChk := widget.NewCheck("Has update", func(b bool) { filterHasUpdateOnly = b })
-		updateChk.SetChecked(filterHasUpdateOnly)
+		current, _ := search.Parse(searchEntry.Text)
+
+		downloadedChk := widget.NewCheck("Downloaded only", nil)
+		downloadedChk.SetChecked(current.HasTerm("downloaded", "yes"))
+		updateChk := widget.NewCheck("Has update", nil)
+		updateChk.SetChecked(current.HasTerm("updates", "yes"))
+
 		sizeMinEntry := widget.NewEntry()
-		if filterSizeMin > 0 {
-			sizeMinEntry.SetText(fmt.Sprintf("%.2f GB", float64(filterSizeMin)/1024/1024/1024))
-		}
+		sizeMinEntry.SetPlaceHolder("10 GB")
+		sizeMinEntry.SetText(current.TermValue("size", ">="))
 		sizeMaxEntry := widget.NewEntry()
-		if filterSizeMax > 0 {
-			sizeMaxEntry.SetText(fmt.Sprintf("%.2f GB", float64(filterSizeMax)/1024/1024/1024))
-		}
-		applyBtn := widget.NewButtonWithIcon("Apply", theme.ConfirmIcon(), func() {
-			filterSizeMin = parseSizeInput(sizeMinEntry.Text)
-			filterSizeMax = parseSizeInput(sizeMaxEntry.Text)
+		sizeMaxEntry.SetPlaceHolder("50 GB")
+		sizeMaxEntry.SetText(current.TermValue("size", "<="))
+
+		apply := func(terms ...string) {
+			query := strings.TrimSpace(strings.Join(append([]string{search.Words(searchEntry.Text)}, terms...), " "))
+			searchEntry.SetText(query)
 			refresh()
 			dlg.Hide()
+		}
+
+		applyBtn := widget.NewButtonWithIcon("Apply", theme.ConfirmIcon(), func() {
+			apply(filterTerms(downloadedChk.Checked, updateChk.Checked,
+				sizeMinEntry.Text, sizeMaxEntry.Text)...)
 		})
-		resetBtn := widget.NewButtonWithIcon("Reset", theme.ViewRefreshIcon(), func() { resetFilters(); refresh(); dlg.Hide() })
+		resetBtn := widget.NewButtonWithIcon("Reset", theme.ViewRefreshIcon(), func() { apply() })
+
 		content := container.NewVBox(
 			widget.NewLabelWithStyle("Filters", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewSeparator(),
 			container.NewGridWithColumns(2, widget.NewLabel("Min Size"), sizeMinEntry, widget.NewLabel("Max Size"), sizeMaxEntry),
 			container.NewGridWithColumns(2, downloadedChk, updateChk),
+			widget.NewLabel("These become terms in the search box, where they can also be typed."),
 			container.NewHBox(applyBtn, resetBtn),
 		)
 		dlg = dialog.NewCustom("Library Filters", "Close", content, fyne.CurrentApp().Driver().AllWindows()[0])
-		dlg.Resize(fyne.NewSize(400, 260))
+		dlg.Resize(fyne.NewSize(460, 300))
 		dlg.Show()
 	})
-	btn.Importance = widget.MediumImportance
 	return btn
 }
 
@@ -459,11 +491,14 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			selected:    binding.NewUntyped(),
 			refresh:     func() {},
 			gallery:     newGameGallery(nil, win),
+			listed:      func() []db.Game { return nil },
+			relist:      func() {},
 			dm:          dm,
 		}
 	}
 
 	allGames, _ := db.GetCatalogue()
+	loadGameTags()
 	gamesListBinding := binding.NewUntypedList()
 	selectedGameBinding := binding.NewUntyped()
 	isSortAscending := true
@@ -506,13 +541,17 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// updateDisplayedGames decides which games are listed. Searching, sorting
 	// and filtering do not change a game's status, so this does no I/O.
 	updateDisplayedGames := func() {
-		searchTerm := strings.ToLower(searchEntry.Text)
+		query, err := search.Parse(searchEntry.Text)
+		if err != nil {
+			// Half-typed filters are the normal state of a search box, so what
+			// is there so far is treated as words rather than as a mistake.
+			query, _ = search.Parse(search.Words(searchEntry.Text))
+		}
+		needs := query.Needs()
+
 		displayGames := make([]db.Game, 0, len(allGames))
 		for _, game := range allGames {
-			if searchTerm != "" && !strings.Contains(strings.ToLower(game.Title), searchTerm) {
-				continue
-			}
-			if !passesFilters(game) {
+			if !query.Match(factsFor(game, needs)) {
 				continue
 			}
 			displayGames = append(displayGames, game)
@@ -532,7 +571,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			gameGridWidget.Refresh()
 		}
 		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(displayGames)))
-		if searchTerm == "" {
+		if strings.TrimSpace(searchEntry.Text) == "" {
 			clearSearchBtn.Hide()
 		} else {
 			clearSearchBtn.Show()
@@ -634,6 +673,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	var refreshBtn *widget.Button
 	onFinishRefresh := func() {
 		allGames, _ = db.GetCatalogue()
+		loadGameTags()
 		recomputeStatuses()
 		refreshBtn.Enable()
 		showGames()
@@ -686,7 +726,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	})
 
 	settingsBtn := newUpdateSettingsButton(prefs, dm, recomputeStatuses)
-	filtersBtn := newFiltersButton(updateDisplayedGames)
+	filtersBtn := newFiltersButton(searchEntry, updateDisplayedGames)
 	// Compact toolbar now
 	// The buttons scroll rather than forcing a minimum width on the window; the
 	// counts stay pinned to the right.
@@ -817,6 +857,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		refresh:     func() { refreshBtn.OnTapped() },
 		storeHeader: pane.storeHeader,
 		gallery:     pane.gallery,
+		listed:      displayedGames,
+		relist:      updateDisplayedGames,
 		pane:        pane,
 		dm:          dm,
 	}

@@ -111,6 +111,12 @@ func migrateTables() error {
 		log.Error().Err(err).Msg("Failed to auto-migrate database")
 		return err
 	}
+
+	// Tags are additive: a catalogue from an older gogg simply has none.
+	if err := Db.AutoMigrate(&GameTag{}); err != nil {
+		log.Error().Err(err).Msg("Failed to auto-migrate database")
+		return err
+	}
 	return nil
 }
 
