@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
@@ -168,4 +170,72 @@ func TestLibraryTab_RestoresTheSavedSplit(t *testing.T) {
 	lt, _ := newLibraryFixture(t, 2)
 	require.NotNil(t, lt.split)
 	require.InDelta(t, 0.3, lt.split.Offset, 0.001)
+}
+
+// Closing gogg while signed out has no divider on screen to read, so the offset
+// already stored has to be left alone rather than reset to the middle.
+func TestWindowStateOnClose_KeepsTheStoredSplitWhenThereIsNone(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	prefs := app.Preferences()
+	saveWindowState(prefs, windowState{Width: 1200, Height: 800, SplitOffset: 0.35, Tab: 2})
+
+	state := windowStateOnClose(prefs, fyne.NewSize(1000, 700), 1, nil)
+
+	require.Equal(t, 0.35, state.SplitOffset, "a signed-out session must not move the divider")
+	require.Equal(t, float64(1000), state.Width)
+	require.Equal(t, float64(700), state.Height)
+	require.Equal(t, 1, state.Tab)
+}
+
+// With the library on screen, where the user left the divider is what is kept.
+func TestWindowStateOnClose_ReadsTheSplitOnScreen(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	prefs := app.Preferences()
+	saveWindowState(prefs, windowState{SplitOffset: 0.35})
+	split := container.NewHSplit(widget.NewLabel("list"), widget.NewLabel("details"))
+	split.Offset = 0.7
+
+	state := windowStateOnClose(prefs, fyne.NewSize(1000, 700), 0, split)
+
+	require.InDelta(t, 0.7, state.SplitOffset, 0.001)
+}
+
+// The tabs are built whether or not they are on screen. A shortcut that moves
+// through them has to check first: in the cross interface it would take the
+// focus to a search box the user cannot see.
+func TestShowingTabs(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	tabs := container.NewAppTabs(container.NewTabItem("Catalogue", widget.NewLabel("games")))
+	win := test.NewWindow(tabs)
+	t.Cleanup(win.Close)
+
+	require.True(t, showingTabs(win, tabs))
+
+	win.SetContent(widget.NewLabel("the cross interface"))
+	require.False(t, showingTabs(win, tabs), "the tabs are built, but they are not what is on screen")
+}
+
+// The catalogue is one set of widgets, and an object cannot be in two places at
+// once. The tabs hold it while they are on screen and let go of it when the
+// cross interface takes over.
+func TestHandOverCatalogue(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	catalogue := widget.NewLabel("games")
+	tab := container.NewTabItem("Catalogue", widget.NewLabel("placeholder"))
+
+	handOverCatalogue(tab, catalogue, true)
+	require.Equal(t, catalogue, tab.Content)
+
+	handOverCatalogue(tab, catalogue, false)
+	require.NotEqual(t, catalogue, tab.Content,
+		"the tabs let go before the cross interface shows the same widgets")
+	require.NotNil(t, tab.Content, "and leave something behind rather than a hole")
 }

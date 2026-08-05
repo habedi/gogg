@@ -195,3 +195,139 @@ func TestLibraryTab_FinishedDownloadUpdatesTheCollectionsAndTheList(t *testing.T
 			"a game that has just been downloaded is no longer one that is not")
 	})
 }
+
+// The version map identifies a file by a path through platform, DLC and extras.
+// That is how gogg tells two files apart, not something to show anyone, so what
+// changed is put into words.
+func TestDescribeChange_PutsAFileIntoWords(t *testing.T) {
+	require.Equal(t, "setup_game.exe (Windows): 1.2.2 → 1.2.3",
+		describeChangedFile("windows|setup_game.exe", "1.2.2", "1.2.3"))
+	require.Equal(t, "setup_game.dmg (macOS): new, version 1.0",
+		describeAddedFile("mac|setup_game.dmg", "1.0"))
+	require.Equal(t, "soundtrack (extra): new",
+		describeAddedFile("extras|soundtrack", ""))
+	require.Equal(t, "setup_expansion.exe (Windows, Expansion): 1.0 → 1.1",
+		describeChangedFile("dlc:Expansion|windows|setup_expansion.exe", "1.0", "1.1"))
+	require.Equal(t, "artbook.pdf (Expansion, extra): new",
+		describeAddedFile("dlc_extras:Expansion|artbook.pdf", ""))
+}
+
+// A file that had no version and now has one still reads as a sentence.
+func TestDescribeChange_HandlesAMissingVersion(t *testing.T) {
+	require.Equal(t, "setup_game.exe (Windows): now version 2.0",
+		describeChangedFile("windows|setup_game.exe", "", "2.0"))
+}
+
+// What the update dialog lists is what a person can read.
+func TestComputeUpdateStatus_DescribesTheChangeInWords(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	root := t.TempDir()
+	dir := filepath.Join(root, client.SanitizePath("Some Game"))
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "metadata.json"),
+		[]byte(gameDataWithVersion("Some Game", "1.0")), 0o644))
+
+	prefs := app.Preferences()
+	prefs.SetString("lastUsedDownloadPath", root)
+	prefs.SetString("downloadForm.language", "en")
+	prefs.SetString("downloadForm.platform", "windows")
+	prefs.SetBool("downloadForm.scanDirsForDownloads", true)
+	updateStatusCache = map[int]updateStatus{}
+
+	computeUpdateStatus(&DownloadManager{Tasks: binding.NewUntypedList()},
+		[]db.Game{{ID: 1, Title: "Some Game", Data: gameDataWithVersion("Some Game", "2.0")}})
+
+	_, diff := hasGameUpdateCached(1)
+	require.Equal(t, []string{"setup.exe (Windows): 1.0 → 2.0"}, diff)
+}
+
+// The worker runs on a thread of its own, so it must not touch what the window
+// reads: the cache is written where the window is drawn.
+func TestStatusesFor_LeavesTheCacheToTheUIThread(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	root := t.TempDir()
+	dir := filepath.Join(root, client.SanitizePath("Some Game"))
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "metadata.json"),
+		[]byte(gameDataWithVersion("Some Game", "1.0")), 0o644))
+	app.Preferences().SetString("lastUsedDownloadPath", root)
+	updateStatusCache = map[int]updateStatus{}
+
+	found := statusesFor(&DownloadManager{Tasks: binding.NewUntypedList()},
+		[]db.Game{{ID: 1, Title: "Some Game", Data: gameDataWithVersion("Some Game", "2.0")}})
+
+	require.True(t, found[1].HasUpdate, "the worker still has to do the work")
+	require.Empty(t, updateStatusCache, "and leave the cache to the thread that draws the window")
+}
+
+// heldStatusWork holds the status work so a test can see the library while it
+// is waiting for it.
+type heldStatusWork struct {
+	work  func() gameStatuses
+	apply func(gameStatuses)
+}
+
+func holdStatusWork(t *testing.T) *heldStatusWork {
+	t.Helper()
+	held := &heldStatusWork{}
+	original := statusWorker
+	statusWorker = func(work func() gameStatuses, apply func(gameStatuses)) {
+		held.work, held.apply = work, apply
+	}
+	t.Cleanup(func() { statusWorker = original })
+	return held
+}
+
+func (h *heldStatusWork) run() { h.apply(h.work()) }
+
+// Finding out what has been downloaded reads the filesystem and parses every
+// stored game. The library says it is looking rather than doing that where the
+// window is drawn and showing nothing until it is done.
+func TestLibrary_SaysWhileItIsCheckingDownloads(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		refreshes := captureRefreshes(t)
+		lt, _ := newLibraryFixture(t, 3)
+
+		held := holdStatusWork(t)
+		test.Tap(buttonWithLabel(lt.content, "Refresh"))
+		refreshes.finish()
+
+		require.Contains(t, labelTexts(lt.content), "Checking downloads...")
+		require.NotNil(t, held.work, "the work has to be handed to the worker, not done here")
+
+		held.run()
+		require.NotContains(t, labelTexts(lt.content), "Checking downloads...")
+		require.True(t, isGameDownloadedCached(1), "and what it found is what the library shows")
+	})
+}
+
+// A library that has been replaced, as it is when the user logs in, has to stop
+// listening for catalogue changes. The signal belongs to the whole app, so one
+// left listening goes on working for a window that is not there any more.
+func TestLibraryTab_CloseStopsItFollowingTheCatalogue(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+		held := holdStatusWork(t)
+
+		SignalCatalogueUpdated()
+		require.Contains(t, labelTexts(lt.content), "Checking downloads...",
+			"a library on screen follows the catalogue")
+		held.run()
+
+		lt.close()
+		SignalCatalogueUpdated()
+
+		require.NotContains(t, labelTexts(lt.content), "Checking downloads...",
+			"a library that has been replaced does not")
+	})
+}

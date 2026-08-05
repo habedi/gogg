@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/habedi/gogg/auth"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,5 +39,93 @@ func TestLibraryTab_ExportMenuDropsFromItsButton(t *testing.T) {
 			"the menu has to reach the button it dropped from")
 		require.LessOrEqual(t, menu.Position().Y, button.Y+export.Size().Height,
 			"and must not float below it")
+	})
+}
+
+// refreshRecorder stands in for the catalogue refresh, so a test can press the
+// button without reaching GOG and decide when the refresh finishes.
+type refreshRecorder struct {
+	started  int
+	onFinish func()
+}
+
+func captureRefreshes(t *testing.T) *refreshRecorder {
+	t.Helper()
+	recorder := &refreshRecorder{}
+	original := refreshCatalogue
+	refreshCatalogue = func(_ fyne.Window, _ *auth.Service, onFinish func()) {
+		recorder.started++
+		recorder.onFinish = onFinish
+	}
+	t.Cleanup(func() { refreshCatalogue = original })
+	return recorder
+}
+
+func (r *refreshRecorder) finish() {
+	if r.onFinish != nil {
+		r.onFinish()
+	}
+}
+
+// Refreshing must not throw away what the user was looking for. The search box
+// was emptied, taking the filter, and the chosen collection with it.
+func TestLibraryTab_RefreshKeepsTheSearch(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		refreshes := captureRefreshes(t)
+		lt, _ := newLibraryFixture(t, 3)
+		lt.searchEntry.SetText("Game 1")
+
+		test.Tap(buttonWithLabel(lt.content, "Refresh"))
+		require.Equal(t, "Game 1", lt.searchEntry.Text, "the search has to survive the refresh")
+
+		refreshes.finish()
+		require.Equal(t, "Game 1", lt.searchEntry.Text, "and survive it finishing")
+		require.Len(t, lt.listed(), 1, "the list stays filtered by what is in the box")
+	})
+}
+
+// The empty-library placeholder starts the same refresh as the toolbar button,
+// so pressing it twice must not start two.
+func TestLibraryTab_EmptyLibraryRefreshesOnceAtATime(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		refreshes := captureRefreshes(t)
+		lt, _ := newLibraryFixture(t, 0)
+
+		button := buttonWithLabel(lt.content, "Refresh Catalogue")
+		require.NotNil(t, button, "an empty library has to offer a refresh")
+
+		test.Tap(button)
+		test.Tap(button)
+		require.Equal(t, 1, refreshes.started, "a second press must not start a second refresh")
+		require.True(t, button.Disabled(), "the button has to show a refresh is running")
+
+		refreshes.finish()
+		require.False(t, button.Disabled(), "and be usable again once it is done")
+	})
+}
+
+// The toolbar's two toggles sit side by side, so they have to be written the
+// same way. The view button names what pressing it will do, and the sort button
+// named the order it was already in.
+func TestLibraryTab_TheToolbarTogglesNameWhatTheyDo(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 3)
+
+		sort := buttonWithLabel(lt.content, "Sort Z-A")
+		require.NotNil(t, sort, "sorted A to Z, the button offers Z to A")
+		require.NotNil(t, buttonWithLabel(lt.content, "Grid View"),
+			"showing the list, the button offers the grid")
+
+		test.Tap(sort)
+		require.Equal(t, "Sort A-Z", sort.Text, "and back again")
 	})
 }

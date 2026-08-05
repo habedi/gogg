@@ -17,6 +17,10 @@ import (
 	"github.com/habedi/gogg/db"
 )
 
+// refreshCatalogue is how the library starts a catalogue refresh. It is a
+// variable so tests can press the button without reaching GOG.
+var refreshCatalogue = RefreshCatalogueAction
+
 func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish func()) {
 	progress := widget.NewProgressBar()
 	statusLabel := widget.NewLabel("Preparing to refresh...")

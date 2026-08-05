@@ -7,9 +7,21 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/db"
+)
+
+// appName is what gogg calls itself, wherever it says so.
+const appName = "Gogg"
+
+// The sections of the app, named once so the tabs and the cross interface
+// cannot drift apart.
+const (
+	sectionCatalogue  = "Catalogue"
+	sectionDownloads  = "Downloads"
+	sectionFileHashes = "File Hashes"
+	sectionSettings   = "Settings"
+	sectionAbout      = "About"
 )
 
 // Run starts the desktop GUI. loginer performs the GOG login flow when a
@@ -20,7 +32,7 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 
 	myApp.Settings().SetTheme(CreateThemeFromPreferences())
 
-	myWindow := myApp.NewWindow("GOGG GUI")
+	myWindow := myApp.NewWindow(appName)
 	dm := NewDownloadManager()
 	prefs := myApp.Preferences()
 
@@ -30,28 +42,32 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 	// The catalogue tab looks different when signed out, so it is rebuilt once
 	// the user logs in.
 	var onLogin func()
+	var mainTabs *container.AppTabs
 	library := LibraryTabUI(myWindow, authService, dm, func() { onLogin() })
 
-	catalogueTab := container.NewTabItemWithIcon("Catalogue", theme.ListIcon(), library.content)
+	catalogueTab := container.NewTabItemWithIcon(sectionCatalogue, theme.ListIcon(), library.content)
 	onLogin = func() {
 		ShowLoginDialog(myWindow, loginer, func() {
+			// The signed-out library is replaced, so it stops following the
+			// catalogue on its way out.
+			library.close()
 			library = LibraryTabUI(myWindow, authService, dm, func() { onLogin() })
-			catalogueTab.Content = library.content
+			handOverCatalogue(catalogueTab, library.content, showingTabs(myWindow, mainTabs))
 			catalogueTab.Content.Refresh()
 			myWindow.Canvas().Focus(library.searchEntry)
 		})
 	}
 
-	mainTabs := container.NewAppTabs(
+	mainTabs = container.NewAppTabs(
 		catalogueTab,
-		container.NewTabItemWithIcon("Downloads", theme.DownloadIcon(), DownloadsTabUI(dm)),
-		container.NewTabItemWithIcon("File Ops", theme.DocumentIcon(), FileTabUI(myWindow)),
-		container.NewTabItemWithIcon("Settings", theme.SettingsIcon(), SettingsTabUI(myWindow)),
-		container.NewTabItemWithIcon("About", theme.HelpIcon(), ShowAboutUI(version)),
+		container.NewTabItemWithIcon(sectionDownloads, theme.DownloadIcon(), DownloadsTabUI(dm)),
+		container.NewTabItemWithIcon(sectionFileHashes, theme.DocumentIcon(), FileTabUI(myWindow)),
+		container.NewTabItemWithIcon(sectionSettings, theme.SettingsIcon(), SettingsTabUI(myWindow)),
+		container.NewTabItemWithIcon(sectionAbout, theme.HelpIcon(), ShowAboutUI(version)),
 	)
 
 	mainTabs.OnSelected = func(tab *container.TabItem) {
-		if tab.Text == "Catalogue" {
+		if tab.Text == sectionCatalogue {
 			myWindow.Canvas().Focus(library.searchEntry)
 		}
 	}
@@ -60,6 +76,10 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 
 	registerShortcuts(myWindow.Canvas(), libraryShortcuts(
 		func() {
+			// The cross interface has no search box on screen to focus.
+			if !showingTabs(myWindow, mainTabs) {
+				return
+			}
 			mainTabs.SelectIndex(0)
 			myWindow.Canvas().Focus(library.searchEntry)
 		},
@@ -68,29 +88,22 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 
 	// Remember where the user left the window.
 	myWindow.SetOnClosed(func() {
-		size := myWindow.Canvas().Size()
-		saved := windowState{
-			Width:       float64(size.Width),
-			Height:      float64(size.Height),
-			SplitOffset: defaultSplitOffset,
-			Tab:         mainTabs.SelectedIndex(),
-		}
-		if library.split != nil {
-			saved.SplitOffset = library.split.Offset
-		}
-		saveWindowState(prefs, saved)
+		saveWindowState(prefs, windowStateOnClose(prefs, myWindow.Canvas().Size(),
+			mainTabs.SelectedIndex(), library.split))
 	})
 
 	// The interface can be switched while the app is running, which means
 	// building the one that was asked for from scratch.
 	showInterface := func() {
 		if prefs.BoolWithFallback(prefXMB, false) {
+			handOverCatalogue(catalogueTab, library.content, false)
 			myWindow.SetContent(newXMBShell(appCategories(myWindow, dm, version,
 				func() fyne.CanvasObject { return library.content },
 				func() { library.refresh() })))
 			return
 		}
 
+		handOverCatalogue(catalogueTab, library.content, true)
 		myWindow.SetContent(mainTabs)
 		// Select a tab explicitly so OnSelected runs for it.
 		if state.Tab >= 0 && state.Tab < len(mainTabs.Items) {
@@ -106,10 +119,10 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 }
 
 // FileTabUI is the file tools tab. Storage size estimates moved to the library,
-// where the games are selected.
+// where the games are selected. The tab names the section, so the pane does not
+// repeat it.
 func FileTabUI(win fyne.Window) fyne.CanvasObject {
-	head := widget.NewLabelWithStyle("File Hashes", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	return container.NewBorder(head, nil, nil, nil, HashUI(win))
+	return HashUI(win)
 }
 
 // onInterfaceChanged is set by Run so that choosing the other interface in the
@@ -125,38 +138,38 @@ func appCategories(win fyne.Window, dm *DownloadManager, version string,
 ) []xmbCategory {
 	return []xmbCategory{
 		{
-			Title: "Catalogue", Icon: theme.ListIcon(),
+			Title: sectionCatalogue, Icon: theme.ListIcon(),
 			Items: []xmbItem{
-				{Title: "Browse library", Detail: gameCountDetail, Pane: catalogue},
-				{Title: "Refresh catalogue", Action: refresh},
+				{Title: "Browse Library", Detail: gameCountDetail, Pane: catalogue},
+				{Title: "Refresh Catalogue", Action: refresh},
 			},
 		},
 		{
-			Title: "Downloads", Icon: theme.DownloadIcon(),
+			Title: sectionDownloads, Icon: theme.DownloadIcon(),
 			Items: []xmbItem{{
-				Title:  "Active downloads",
+				Title:  "Active Downloads",
 				Detail: func() string { return downloadCountDetail(dm) },
 				Pane:   func() fyne.CanvasObject { return DownloadsTabUI(dm) },
 			}},
 		},
 		{
-			Title: "File Ops", Icon: theme.DocumentIcon(),
+			Title: sectionFileHashes, Icon: theme.DocumentIcon(),
 			Items: []xmbItem{{
-				Title: "File hashes",
+				Title: "Hash Files",
 				Pane:  func() fyne.CanvasObject { return FileTabUI(win) },
 			}},
 		},
 		{
-			Title: "Settings", Icon: theme.SettingsIcon(),
+			Title: sectionSettings, Icon: theme.SettingsIcon(),
 			Items: []xmbItem{{
 				Title: "Preferences",
 				Pane:  func() fyne.CanvasObject { return SettingsTabUI(win) },
 			}},
 		},
 		{
-			Title: "About", Icon: theme.HelpIcon(),
+			Title: sectionAbout, Icon: theme.HelpIcon(),
 			Items: []xmbItem{{
-				Title: "About gogg",
+				Title: "About " + appName,
 				Pane:  func() fyne.CanvasObject { return ShowAboutUI(version) },
 			}},
 		},

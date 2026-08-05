@@ -221,7 +221,10 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 				progressBar.Hide()
 			})
 			numThreads, _ := strconv.Atoi(threadsSelect.Selected)
-			generateHashFilesUI(dir, algoSelect.Selected, recursiveCheck.Checked, numThreads, resultsData, progressBar)
+			if err := generateHashFilesUI(dir, algoSelect.Selected, recursiveCheck.Checked,
+				numThreads, resultsData, progressBar); err != nil {
+				runOnMain(func() { dialog.ShowError(err, win) })
+			}
 		}()
 	}
 
@@ -229,10 +232,11 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		_ = resultsData.Set(make([]interface{}, 0))
 	})
 
-	copyBtn := widget.NewButtonWithIcon("Copy All Results", theme.ContentCopyIcon(), func() {
+	var copyBtn *widget.Button
+	copyBtn = widget.NewButtonWithIcon("Copy All Results", theme.ContentCopyIcon(), func() {
 		items, _ := resultsData.Get()
 		if len(items) == 0 {
-			fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Nothing to copy."))
+			showCopied(copyBtn, "Nothing to copy")
 			return
 		}
 
@@ -247,7 +251,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		writer.Flush()
 
 		fyne.CurrentApp().Clipboard().SetContent(sb.String())
-		fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Hash results copied to clipboard."))
+		showCopied(copyBtn, "Copied")
 	})
 
 	bottomBar := container.NewHBox(layout.NewSpacer(), clearBtn, copyBtn)
@@ -258,16 +262,18 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	return container.NewBorder(topContent, bottomBar, nil, nil, listContainer)
 }
 
-func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, results binding.UntypedList, progress *widget.ProgressBar) {
+// generateHashFilesUI hashes what is in a directory, appending each result as
+// it arrives. It reports a directory it cannot read or one with nothing in it
+// to hash, which otherwise looked exactly like a job that had finished.
+func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, results binding.UntypedList, progress *widget.ProgressBar) error {
 	filesToProcess, err := operations.FindFilesToHash(dir, recursive, operations.DefaultHashExclusions)
 	if err != nil {
-		log.Error().Err(err).Msg("GUI: Failed to find files to hash")
-		return
+		return fmt.Errorf("could not look through %s: %w", dir, err)
 	}
 
 	totalFiles := len(filesToProcess)
 	if totalFiles == 0 {
-		return
+		return fmt.Errorf("no files to hash in %s", dir)
 	}
 	runOnMain(func() {
 		progress.Max = float64(totalFiles)
@@ -294,4 +300,5 @@ func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, resul
 			progress.SetValue(float64(newCount))
 		})
 	}
+	return nil
 }

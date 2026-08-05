@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
@@ -90,4 +91,86 @@ func TestUpdateFileStatusText_EmptyWhenNothingIsInFlight(t *testing.T) {
 	text, err := task.FileStatus.Get()
 	require.NoError(t, err)
 	require.Empty(t, text)
+}
+
+// The downloads still running are what the tab is for, so they come first. The
+// finished ones follow with the most recent at the top, rather than the whole
+// history sitting above whatever is happening now.
+func TestOrderedTasks_PutsWhatIsRunningFirst(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	start := time.Now()
+	task := func(title string, state int, age time.Duration) *DownloadTask {
+		task := &DownloadTask{Title: title, InstanceID: start.Add(-age), Status: binding.NewString()}
+		task.SetState(state)
+		return task
+	}
+	oldFinished := task("old finished", StateCompleted, 3*time.Hour)
+	newFinished := task("new finished", StateError, time.Hour)
+	running := task("running", StateDownloading, 2*time.Hour)
+	waiting := task("waiting", StatePreparing, time.Minute)
+
+	ordered := orderedTasks([]*DownloadTask{oldFinished, newFinished, running, waiting})
+
+	var titles []string
+	for _, task := range ordered {
+		titles = append(titles, task.Title)
+	}
+	require.Equal(t, []string{"running", "waiting", "new finished", "old finished"}, titles)
+}
+
+// An empty Downloads tab has to say it is empty rather than show a blank page.
+func TestDownloadsTab_SaysWhenThereIsNothingToShow(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+		ui := DownloadsTabUI(dm)
+		require.Contains(t, labelTexts(ui), "No downloads yet")
+
+		queued := &DownloadTask{
+			ID: 1, Title: "One", Status: binding.NewString(), Details: binding.NewString(),
+			Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+		}
+		require.NoError(t, dm.Tasks.Append(queued))
+
+		require.NotContains(t, labelTexts(ui), "No downloads yet",
+			"the list takes over as soon as there is something in it")
+	})
+}
+
+// The history is what gogg remembers between runs, and it only ever grew.
+func TestPersistHistory_KeepsTheMostRecentDownloads(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dm := NewDownloadManager()
+	start := time.Now()
+	for i := 0; i < historyKept+50; i++ {
+		task := &DownloadTask{
+			ID: i, Title: fmt.Sprintf("Game %d", i), InstanceID: start.Add(time.Duration(i) * time.Second),
+			Status: binding.NewString(), Details: binding.NewString(),
+			Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+		}
+		task.SetState(StateCompleted)
+		require.NoError(t, dm.Tasks.Append(task))
+	}
+
+	dm.PersistHistory()
+
+	reopened, err := NewDownloadManager().Tasks.Get()
+	require.NoError(t, err)
+	require.Len(t, reopened, historyKept, "the history has to stop growing at some point")
+	require.Equal(t, fmt.Sprintf("Game %d", historyKept+49), reopened[0].(*DownloadTask).Title,
+		"and keep the most recent downloads")
+}
+
+// The line under a running download and the line above the list say the same
+// things, so they have to say them the same way.
+func TestTransferSummary_ReadsLikeTheHeaderAboveTheList(t *testing.T) {
+	require.Equal(t, "5.0 MiB/s · ETA 2m0s", transferSummary(5<<20, 600<<20))
+	require.Equal(t, "5.0 MiB/s", transferSummary(5<<20, 0), "nothing left to say how long it will take")
+	require.Empty(t, transferSummary(0, 100<<20), "a download that has not moved says nothing yet")
 }

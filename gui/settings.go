@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -152,7 +153,19 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	maxConcSelect.SetSelected(fmt.Sprintf("%d", maxConcurrentDownloads(prefs)))
 
 	speedEntry := widget.NewEntry()
-	speedEntry.SetPlaceHolder("Speed limit KB/s (0=unlimited)")
+	speedEntry.SetPlaceHolder("No limit")
+	// A limit that is not a number is ignored, leaving the last one in force,
+	// so the box has to show that what it says is not what is happening.
+	speedEntry.Validator = func(text string) error {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil
+		}
+		if value, err := strconv.Atoi(text); err != nil || value < 0 {
+			return errors.New("a whole number of kilobytes a second, or nothing for no limit")
+		}
+		return nil
+	}
 	if v := prefs.IntWithFallback(prefMaxSpeedKBps, 0); v > 0 {
 		speedEntry.SetText(fmt.Sprintf("%d", v))
 	}
@@ -175,7 +188,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	}
 	limitsBox := container.NewVBox(widget.NewLabel("Download Limits"), widget.NewForm(
 		widget.NewFormItem("Max Concurrent", maxConcSelect),
-		widget.NewFormItem("Speed Limit", speedEntry),
+		widget.NewFormItem("Speed Limit (KB/s)", speedEntry),
 	))
 
 	// --- Layout ---

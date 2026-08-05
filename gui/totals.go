@@ -67,15 +67,5 @@ func (dm *DownloadManager) totals() binding.String {
 
 // refreshTotals recomputes the aggregate line from the current downloads.
 func (dm *DownloadManager) refreshTotals() {
-	dm.mu.RLock()
-	all, _ := dm.Tasks.Get()
-	tasks := make([]*DownloadTask, 0, len(all))
-	for _, raw := range all {
-		if task, ok := raw.(*DownloadTask); ok {
-			tasks = append(tasks, task)
-		}
-	}
-	dm.mu.RUnlock()
-
-	_ = dm.totals().Set(totalsSummary(downloadTotals(tasks)))
+	_ = dm.totals().Set(totalsSummary(downloadTotals(dm.tasksSnapshot())))
 }

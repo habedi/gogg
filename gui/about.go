@@ -36,9 +36,10 @@ func ShowAboutUI(version string) fyne.CanvasObject {
 		repoLink,
 	)
 
-	author := widget.NewLabel("© 2025 Hassan Abedi")
+	// No year: one written into the binary is wrong the January after it ships.
+	author := widget.NewLabel("© Hassan Abedi")
 
-	titleLbl := widget.NewLabelWithStyle("Gogg", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	titleLbl := widget.NewLabelWithStyle(appName, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	subtitleLbl := widget.NewLabelWithStyle("A Game File Downloader for GOG",
 		fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 

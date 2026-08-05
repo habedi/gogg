@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -243,4 +244,33 @@ func TestGameGallery_ArtworkFollowsThePaneWidth(t *testing.T) {
 	require.Greater(t, wide.Width, narrow.Width, "a wider pane shows larger artwork")
 	require.LessOrEqual(t, wide.Height, float32(maxViewerHeight), "but only up to a point")
 	require.InDelta(t, 16.0/9.0, float64(wide.Width/wide.Height), 0.05, "and it keeps its shape")
+}
+
+// The arrow keys move through the pictures, so the gallery has to show when it
+// is the thing they will move.
+func TestGameGallery_ShowsWhenItHasTheKeyboard(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	gallery := newGameGallery(nil, nil)
+	gallery.show(shotPictures(2), 0)
+	require.Zero(t, gallery.viewer.border.StrokeWidth, "nothing has the keyboard yet")
+
+	gallery.FocusGained()
+	require.Positive(t, gallery.viewer.border.StrokeWidth, "the gallery has to say it has the keyboard")
+
+	gallery.FocusLost()
+	require.Zero(t, gallery.viewer.border.StrokeWidth, "and say when it does not")
+}
+
+// shotPictures is a gallery of plain screenshots.
+func shotPictures(n int) []galleryPicture {
+	pictures := make([]galleryPicture, 0, n)
+	for i := 0; i < n; i++ {
+		pictures = append(pictures, galleryPicture{
+			ThumbnailURL: fmt.Sprintf("http://pics/thumb%d", i),
+			LargeURL:     fmt.Sprintf("http://pics/large%d", i),
+		})
+	}
+	return pictures
 }

@@ -72,17 +72,60 @@ func bindCheck(check *widget.Check, checked bool, onChanged func(bool)) {
 	check.OnChanged = onChanged
 }
 
+// statusBadges are the marks a game carries wherever it is listed: whether it
+// has been downloaded, and how many files an update would change. The list and
+// the grid show the same ones, so they are built and filled in one place.
+type statusBadges struct {
+	downloaded *widget.Icon
+	update     *widget.Button
+}
+
+func newStatusBadges() *statusBadges {
+	badges := &statusBadges{
+		downloaded: widget.NewIcon(theme.ConfirmIcon()),
+		update:     widget.NewButtonWithIcon("", theme.DownloadIcon(), nil),
+	}
+	badges.update.Importance = widget.LowImportance
+	badges.downloaded.Hide()
+	badges.update.Hide()
+	return badges
+}
+
+// show marks a game with what is known about it. Tapping the update badge lists
+// what has changed.
+func (b *statusBadges) show(gameID int) {
+	if !isGameDownloadedCached(gameID) {
+		b.downloaded.Hide()
+		b.update.Hide()
+		return
+	}
+
+	b.downloaded.Show()
+	hasUpdate, diff := hasGameUpdateCached(gameID)
+	if !hasUpdate {
+		b.update.Hide()
+		b.update.SetText("")
+		return
+	}
+
+	b.update.Show()
+	b.update.SetText(fmt.Sprintf("%d", len(diff)))
+	b.update.OnTapped = func() {
+		dialog.ShowCustom("Update details", "Close", updateDetailsBody(diff),
+			fyne.CurrentApp().Driver().AllWindows()[0])
+	}
+}
+
 // gameRow is a row in the library list. It is a widget rather than a bare
 // container so the parts are reached by name instead of by index, and so the
 // title can take the width left over by the leading controls.
 type gameRow struct {
 	widget.BaseWidget
-	gameID     int
-	check      *widget.Check
-	thumbnail  *canvas.Image
-	downloaded *widget.Icon
-	updateBtn  *widget.Button
-	title      *widget.Label
+	gameID    int
+	check     *widget.Check
+	thumbnail *canvas.Image
+	badges    *statusBadges
+	title     *widget.Label
 }
 
 // thumbnailSize is the artwork a row shows: small enough to keep rows compact.
@@ -91,17 +134,13 @@ var thumbnailSize = fyne.NewSize(64, 36)
 // newGameRow builds an empty row for the library list.
 func newGameRow() fyne.CanvasObject {
 	row := &gameRow{
-		check:      widget.NewCheck("", nil),
-		thumbnail:  canvas.NewImageFromResource(theme.FileImageIcon()),
-		downloaded: widget.NewIcon(theme.ConfirmIcon()),
-		updateBtn:  widget.NewButtonWithIcon("", theme.DownloadIcon(), nil),
-		title:      widget.NewLabel("Game Title"),
+		check:     widget.NewCheck("", nil),
+		thumbnail: canvas.NewImageFromResource(theme.FileImageIcon()),
+		badges:    newStatusBadges(),
+		title:     widget.NewLabel("Game Title"),
 	}
 	row.thumbnail.FillMode = canvas.ImageFillContain
 	row.thumbnail.SetMinSize(thumbnailSize)
-	row.downloaded.Hide()
-	row.updateBtn.Hide()
-	row.updateBtn.Importance = widget.LowImportance
 	row.title.Truncation = fyne.TextTruncateEllipsis
 
 	row.ExtendBaseWidget(row)
@@ -109,7 +148,7 @@ func newGameRow() fyne.CanvasObject {
 }
 
 func (r *gameRow) CreateRenderer() fyne.WidgetRenderer {
-	leading := container.NewHBox(r.check, r.thumbnail, r.downloaded, r.updateBtn)
+	leading := container.NewHBox(r.check, r.thumbnail, r.badges.downloaded, r.badges.update)
 	// The title is the centre of a border layout, so it is given whatever width
 	// the leading controls leave and ellipsises only when it truly runs out.
 	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, leading, nil, r.title))
@@ -137,27 +176,7 @@ func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, covers
 
 	r.title.SetText(game.Title)
 	r.loadThumbnail(game, covers, sameGame)
-
-	if !isGameDownloadedCached(game.ID) {
-		r.downloaded.Hide()
-		r.updateBtn.Hide()
-		return
-	}
-
-	r.downloaded.Show()
-	hasUpdate, diff := hasGameUpdateCached(game.ID)
-	if !hasUpdate {
-		r.updateBtn.Hide()
-		r.updateBtn.SetText("")
-		return
-	}
-
-	r.updateBtn.Show()
-	r.updateBtn.SetText(fmt.Sprintf("%d", len(diff)))
-	r.updateBtn.OnTapped = func() {
-		dialog.ShowCustom("Update details", "Close", updateDetailsBody(diff),
-			fyne.CurrentApp().Driver().AllWindows()[0])
-	}
+	r.badges.show(game.ID)
 }
 
 // How much room the list of changes may take before it starts scrolling.

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
@@ -223,7 +224,24 @@ func TestAppCategories_CoverTheWholeApp(t *testing.T) {
 		require.NotEmpty(t, category.Items, "%s has nothing to do", category.Title)
 		require.NotNil(t, category.Icon, "%s has no icon", category.Title)
 	}
-	require.Equal(t, []string{"Catalogue", "Downloads", "File Ops", "Settings", "About"}, titles)
+	require.Equal(t, []string{
+		sectionCatalogue, sectionDownloads, sectionFileHashes, sectionSettings, sectionAbout,
+	}, titles)
+	require.Equal(t, []string{"Catalogue", "Downloads", "File Hashes", "Settings", "About"}, titles,
+		"the sections are named the same in the cross interface as in the tabs")
+
+	// Every item is written the same way, rather than some in title case and
+	// some not.
+	var items []string
+	for _, category := range categories {
+		for _, item := range category.Items {
+			items = append(items, item.Title)
+		}
+	}
+	require.Equal(t, []string{
+		"Browse Library", "Refresh Catalogue", "Active Downloads",
+		"Hash Files", "Preferences", "About Gogg",
+	}, items)
 }
 
 // The catalogue pane is asked for when it is opened, so the one rebuilt at login
@@ -276,4 +294,43 @@ func checkWithLabel(root fyne.CanvasObject, label string) *widget.Check {
 		}
 	}
 	return nil
+}
+
+// A pane opened over the cross interface has to bring its own background. The
+// bar behind it is dark whatever the theme says, so a pane laid straight over
+// it puts light-theme text on a dark gradient.
+func TestXMBShell_AnOpenPaneCoversTheBarBehindIt(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	shell := newXMBShell([]xmbCategory{{
+		Title: "Settings", Items: []xmbItem{{
+			Title: "Preferences",
+			Pane:  func() fyne.CanvasObject { return widget.NewLabel("a setting") },
+		}},
+	}})
+	shell.activate()
+
+	backdrop := backdropOf(t, shell.paneBox)
+	require.Equal(t, theme.Color(theme.ColorNameBackground), backdrop.FillColor,
+		"the pane has to sit on the background the rest of the app uses")
+}
+
+// backdropOf is the rectangle an open pane is laid on.
+func backdropOf(t *testing.T, pane fyne.CanvasObject) *canvas.Rectangle {
+	t.Helper()
+	rectangles := widgetsOfType[*canvas.Rectangle](pane)
+	require.NotEmpty(t, rectangles, "an open pane has nothing behind it")
+	return rectangles[0]
+}
+
+// The tab already names the section, so the pane under it does not repeat it.
+func TestFileTabUI_DoesNotRepeatTheSectionName(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	require.NotContains(t, labelTexts(FileTabUI(win)), sectionFileHashes,
+		"the tab says what this is; the pane does not have to say it again")
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -152,15 +151,23 @@ func (pu *progressUpdater) updateSpeedAndETA() {
 	pu.lastUpdateTime = now
 	pu.lastBytes = pu.downloadedBytes
 
-	detailsStr := fmt.Sprintf("Speed: %s/s", formatBytes(int64(avgSpeed)))
-	remainingBytes := pu.totalBytes - pu.downloadedBytes
-	if avgSpeed > 0 && remainingBytes > 0 {
-		etaSeconds := float64(remainingBytes) / avgSpeed
-		duration, _ := time.ParseDuration(fmt.Sprintf("%fs", math.Round(etaSeconds)))
-		detailsStr += fmt.Sprintf(" | ETA: %s", duration.Truncate(time.Second).String())
+	_ = pu.task.Details.Set(transferSummary(avgSpeed, pu.totalBytes-pu.downloadedBytes))
+}
+
+// transferSummary is the line under a running download: how fast it is going
+// and how long is left. It is worded like the line above the download list, so
+// the same facts do not read as two different things.
+func transferSummary(speed float64, remaining int64) string {
+	if speed <= 0 {
+		return ""
 	}
 
-	_ = pu.task.Details.Set(detailsStr)
+	summary := fmt.Sprintf("%s/s", formatBytes(int64(speed)))
+	if remaining > 0 {
+		eta := time.Duration(float64(remaining)/speed) * time.Second
+		summary += " · ETA " + eta.Truncate(time.Second).String()
+	}
+	return summary
 }
 
 func (pu *progressUpdater) updateFileStatusText() {
@@ -252,7 +259,6 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 	}
 	task.SetState(StatePreparing)
 	_ = task.Status.Set("Preparing...")
-	_ = task.Details.Set("Speed: N/A | ETA: N/A")
 	// Registered before returning so that the queue counts this download as
 	// active right away instead of once the goroutine below gets scheduled.
 	_ = dm.AddTask(task)

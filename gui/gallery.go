@@ -246,8 +246,11 @@ func (g *gameGallery) TypedKey(event *fyne.KeyEvent) {
 }
 
 func (g *gameGallery) TypedRune(_ rune) {}
-func (g *gameGallery) FocusGained()     {}
-func (g *gameGallery) FocusLost()       {}
+
+// The arrow keys move through the pictures, so the gallery outlines what they
+// will move, the same way a thumbnail shows it is the one on view.
+func (g *gameGallery) FocusGained()     { g.viewer.setSelected(true) }
+func (g *gameGallery) FocusLost()       { g.viewer.setSelected(false) }
 func (g *gameGallery) AcceptsTab() bool { return false }
 func (g *gameGallery) Tapped(_ *fyne.PointEvent) {
 	g.takeFocus()

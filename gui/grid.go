@@ -61,13 +61,15 @@ type gameCell struct {
 	check  *widget.Check
 	title  *widget.Label
 	cover  *canvas.Image
+	badges *statusBadges
 }
 
 func newGameCell() fyne.CanvasObject {
 	cell := &gameCell{
-		check: widget.NewCheck("", nil),
-		title: widget.NewLabel("Game Title"),
-		cover: canvas.NewImageFromResource(theme.FileImageIcon()),
+		check:  widget.NewCheck("", nil),
+		title:  widget.NewLabel("Game Title"),
+		cover:  canvas.NewImageFromResource(theme.FileImageIcon()),
+		badges: newStatusBadges(),
 	}
 	cell.title.Truncation = fyne.TextTruncateEllipsis
 	cell.cover.FillMode = canvas.ImageFillContain
@@ -80,7 +82,8 @@ func newGameCell() fyne.CanvasObject {
 }
 
 func (c *gameCell) CreateRenderer() fyne.WidgetRenderer {
-	caption := container.NewBorder(nil, nil, c.check, nil, c.title)
+	caption := container.NewBorder(nil, nil, c.check,
+		container.NewHBox(c.badges.downloaded, c.badges.update), c.title)
 	return widget.NewSimpleRenderer(container.NewBorder(nil, caption, nil, nil, c.cover))
 }
 
@@ -96,6 +99,7 @@ func bindGameCell(cell *gameCell, game db.Game, sel *gameSelection, covers *cove
 	sameGame := cell.gameID == game.ID
 	cell.gameID = game.ID
 	cell.title.SetText(game.Title)
+	cell.badges.show(game.ID)
 
 	bindCheck(cell.check, sel.has(game.ID), func(checked bool) {
 		sel.set(game.ID, checked)

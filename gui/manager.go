@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -223,6 +224,11 @@ func (dm *DownloadManager) loadHistory() {
 	log.Info().Int("count", len(uiTasks)).Msg("Download history loaded.")
 }
 
+// historyKept is how many finished downloads are remembered between runs. The
+// history only ever grew, and a list with a thousand entries in it is a list
+// nobody reads.
+const historyKept = 100
+
 func (dm *DownloadManager) PersistHistory() {
 	if dm.historyPath == nil {
 		return
@@ -247,6 +253,14 @@ func (dm *DownloadManager) PersistHistory() {
 				DownloadPath: task.DownloadPath,
 			})
 		}
+	}
+
+	// Most recent first, so what is dropped is the oldest.
+	sort.Slice(persistentTasks, func(i, j int) bool {
+		return persistentTasks[j].InstanceID.Before(persistentTasks[i].InstanceID)
+	})
+	if len(persistentTasks) > historyKept {
+		persistentTasks = persistentTasks[:historyKept]
 	}
 
 	writer, err := storage.Writer(dm.historyPath)
@@ -330,15 +344,55 @@ func (r *downloadRow) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(container.NewVBox(card, widget.NewSeparator()))
 }
 
-// rowExpanded reports whether a download still has transfers to show. Finished
-// ones have no file list and no speed, so their card can be much shorter.
-func rowExpanded(task *DownloadTask) bool {
+// stillGoing reports whether a download has yet to finish, one way or another.
+func stillGoing(task *DownloadTask) bool {
 	switch task.State() {
 	case StatePreparing, StateDownloading:
 		return true
 	default:
 		return false
 	}
+}
+
+// rowExpanded reports whether a download still has transfers to show. Finished
+// ones have no file list and no speed, so their card can be much shorter.
+func rowExpanded(task *DownloadTask) bool { return stillGoing(task) }
+
+// tasksSnapshot is what the manager is holding, as downloads rather than as
+// anonymous list items.
+func (dm *DownloadManager) tasksSnapshot() []*DownloadTask {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+
+	all, _ := dm.Tasks.Get()
+	tasks := make([]*DownloadTask, 0, len(all))
+	for _, raw := range all {
+		if task, ok := raw.(*DownloadTask); ok {
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks
+}
+
+// orderedTasks puts the downloads in the order they matter: the ones still
+// going first, in the order they started, then the finished ones with the most
+// recent at the top. Listed in the order they were added, a long history sat
+// above whatever was happening now.
+func orderedTasks(tasks []*DownloadTask) []*DownloadTask {
+	ordered := make([]*DownloadTask, len(tasks))
+	copy(ordered, tasks)
+
+	sort.SliceStable(ordered, func(i, j int) bool {
+		left, right := ordered[i], ordered[j]
+		if stillGoing(left) != stillGoing(right) {
+			return stillGoing(left)
+		}
+		if stillGoing(left) {
+			return left.InstanceID.Before(right.InstanceID)
+		}
+		return right.InstanceID.Before(left.InstanceID)
+	})
+	return ordered
 }
 
 // setRowExpanded shows or hides the parts only a running download needs.
@@ -369,22 +423,19 @@ func downloadRowHeights() (compact, full float32) {
 func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 	compactHeight, fullHeight := downloadRowHeights()
 
+	// The list is drawn from a snapshot, because the order downloads matter in
+	// is not the order they were added in.
+	var shown []*DownloadTask
+
 	var list *widget.List
 	list = widget.NewList(
-		func() int {
-			items, _ := dm.Tasks.Get()
-			return len(items)
-		},
+		func() int { return len(shown) },
 		newDownloadRow,
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			taskRaw, err := dm.Tasks.GetValue(id)
-			if err != nil {
+			if id >= len(shown) {
 				return
 			}
-			task, ok := taskRaw.(*DownloadTask)
-			if !ok {
-				return
-			}
+			task := shown[id]
 
 			// A finished download needs neither a speed nor a file list, so its
 			// card is given only the room it uses.
@@ -455,7 +506,27 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 		},
 	)
 
-	dm.Tasks.AddListener(binding.NewDataListener(func() { list.Refresh() }))
+	// Nothing to show is worth saying: a blank page reads as something that has
+	// not loaded.
+	empty := container.NewCenter(container.NewVBox(
+		widget.NewIcon(theme.DownloadIcon()),
+		widget.NewLabelWithStyle("No downloads yet", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabel("What you download from the catalogue shows its progress here."),
+	))
+	body := container.NewStack()
+
+	relist := func() {
+		shown = orderedTasks(dm.tasksSnapshot())
+		if len(shown) == 0 {
+			body.Objects = []fyne.CanvasObject{empty}
+		} else {
+			body.Objects = []fyne.CanvasObject{list}
+		}
+		body.Refresh()
+		list.Refresh()
+	}
+	relist()
+	dm.Tasks.AddListener(binding.NewDataListener(relist))
 
 	totalsLabel := widget.NewLabelWithData(dm.totals())
 	totalsLabel.TextStyle = fyne.TextStyle{Bold: true}
@@ -479,7 +550,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 	})
 	bottomBar := container.NewHBox(layout.NewSpacer(), clearAllBtn)
 
-	return container.NewBorder(header, bottomBar, nil, nil, list)
+	return container.NewBorder(header, bottomBar, nil, nil, body)
 }
 
 func (dm *DownloadManager) activeCount() int {
@@ -572,6 +643,9 @@ func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
 		Details:    binding.NewString(),
 		Progress:   binding.NewFloat(),
 		FileStatus: binding.NewString(),
+		// Kept so a download cancelled while it was still waiting can be
+		// started again, the same as one cancelled after it began.
+		request: q,
 	}
 	placeholder.SetState(StatePreparing)
 	_ = placeholder.Status.Set("Queued")

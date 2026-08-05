@@ -1,10 +1,14 @@
 package gui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,4 +52,37 @@ func TestHashRow_HeaderLinesUpWithTheResults(t *testing.T) {
 		require.Equal(t, header.hash.Position().X, result.hash.Position().X,
 			"the columns have to line up at %.0f points wide", width)
 	}
+}
+
+// A directory with nothing to hash has to say so. The progress bar appeared,
+// filled nothing, and disappeared again with no results and no explanation.
+func TestGenerateHashFiles_SaysWhenThereIsNothingToHash(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		err := generateHashFilesUI(t.TempDir(), "md5", true, 2,
+			binding.NewUntypedList(), widget.NewProgressBar())
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no files")
+	})
+}
+
+// A directory with files in it hashes them and says nothing.
+func TestGenerateHashFiles_HashesWhatIsThere(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "installer.bin"), []byte("hello"), 0o644))
+		results := binding.NewUntypedList()
+
+		require.NoError(t, generateHashFilesUI(dir, "md5", true, 2, results, widget.NewProgressBar()))
+
+		items, err := results.Get()
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+	})
 }

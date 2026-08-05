@@ -71,9 +71,10 @@ func showSizeEstimate(win fyne.Window, estimates []gameSizeEstimate, total int64
 		len(estimates), gamesWord(len(estimates)), formatBytes(total)))
 	summary.TextStyle = fyne.TextStyle{Bold: true}
 
-	copyBtn := widget.NewButtonWithIcon("Copy as CSV", theme.ContentCopyIcon(), func() {
+	var copyBtn *widget.Button
+	copyBtn = widget.NewButtonWithIcon("Copy as CSV", theme.ContentCopyIcon(), func() {
 		fyne.CurrentApp().Clipboard().SetContent(sizeEstimateCSV(estimates, total))
-		fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Size estimate copied to clipboard."))
+		showCopied(copyBtn, "Copied")
 	})
 
 	content := container.NewBorder(summary, copyBtn, nil, nil, list)

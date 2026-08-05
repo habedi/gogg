@@ -267,7 +267,7 @@ func TestGameRow_UpdateDetailsOpenLargeEnoughToRead(t *testing.T) {
 
 	row := newGameRow().(*gameRow)
 	bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil)
-	test.Tap(row.updateBtn)
+	test.Tap(row.badges.update)
 
 	overlay := topOverlay(t)
 	require.NotNil(t, overlay, "the update badge has to open the details")

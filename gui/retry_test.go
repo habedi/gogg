@@ -116,3 +116,46 @@ func TestExecuteDownload_RemembersTheRequest(t *testing.T) {
 	require.Equal(t, request.game.ID, tasks[0].(*DownloadTask).request.game.ID)
 	require.Equal(t, request.downloadPath, tasks[0].(*DownloadTask).request.downloadPath)
 }
+
+// A download cancelled while it was still waiting in the queue has to be
+// restartable too. The queued entry carried nothing to repeat, so the row
+// offered a dead "Cancelled" button where a started download offers Retry.
+func TestRetry_RestartsADownloadCancelledInTheQueue(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	dm := queueingFixture(t) // already at the limit, so this download waits
+
+	request := queuedDownload{
+		authService: stubAuthService(), game: db.Game{ID: 7, Title: "Seven", Data: "{}"},
+		downloadPath: t.TempDir(), language: "English", platformName: "windows", numThreads: 1,
+	}
+	require.NoError(t, dm.QueueOrStart(request))
+
+	waiting := taskForGame(t, dm, 7)
+	status, _ := waiting.Status.Get()
+	require.Equal(t, "Queued", status)
+
+	waiting.CancelFunc() // the Cancel button on a queued row
+	require.Equal(t, StateCancelled, waiting.State())
+	require.True(t, waiting.canRetry(), "a cancelled download has to be restartable, queued or not")
+
+	require.NoError(t, dm.retry(waiting))
+	dm.mu.RLock()
+	queued := len(dm.queue)
+	dm.mu.RUnlock()
+	require.Equal(t, 1, queued, "retrying has to put the download back in the queue")
+}
+
+// taskForGame is the download the manager is holding for a game.
+func taskForGame(t *testing.T, dm *DownloadManager, gameID int) *DownloadTask {
+	t.Helper()
+	all, err := dm.Tasks.Get()
+	require.NoError(t, err)
+	for _, raw := range all {
+		if task, ok := raw.(*DownloadTask); ok && task.ID == gameID {
+			return task
+		}
+	}
+	t.Fatalf("no download for game %d", gameID)
+	return nil
+}

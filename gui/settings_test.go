@@ -124,3 +124,53 @@ func TestSettings_ScrollSoEveryOptionCanBeReached(t *testing.T) {
 	require.LessOrEqual(t, bottom, win.Canvas().Size().Height,
 		"the last setting has to come into view once scrolled to")
 }
+
+// A speed limit that is not a number was ignored in silence, leaving the last
+// one in force while the box showed something else.
+func TestSettings_MarksASpeedLimitItCannotRead(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	defer win.Close()
+
+	ui := SettingsTabUI(win)
+	speed := speedLimitEntry(t, ui)
+
+	speed.SetText("as fast as it goes")
+	require.Error(t, speed.Validate(), "a limit that is not a number has to be marked")
+
+	speed.SetText("500")
+	require.NoError(t, speed.Validate())
+
+	speed.SetText("")
+	require.NoError(t, speed.Validate(), "an empty box means no limit, which is not a mistake")
+}
+
+// The unit belongs on the field, not only in the placeholder that disappears as
+// soon as a number is typed.
+func TestSettings_SpeedLimitSaysItsUnit(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	defer win.Close()
+
+	require.Contains(t, formItemLabels(SettingsTabUI(win)), "Speed Limit (KB/s)")
+}
+
+func speedLimitEntry(t *testing.T, ui fyne.CanvasObject) *widget.Entry {
+	t.Helper()
+	entries := widgetsOfType[*widget.Entry](ui)
+	require.Len(t, entries, 1, "the settings have one box to type in, the speed limit")
+	return entries[0]
+}
+
+// formItemLabels is what the forms in a tree call their fields.
+func formItemLabels(root fyne.CanvasObject) []string {
+	var texts []string
+	for _, form := range widgetsOfType[*widget.Form](root) {
+		for _, item := range form.Items {
+			texts = append(texts, item.Text)
+		}
+	}
+	return texts
+}

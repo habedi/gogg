@@ -54,6 +54,10 @@ type libraryTab struct {
 	// starts.
 	pane *detailsPane
 	dm   *DownloadManager
+	// close detaches what the library listens to. The catalogue signal belongs
+	// to the whole app, so a library that has been replaced has to stop
+	// following it or it goes on working for a window that is gone.
+	close func()
 }
 
 // isGameDownloaded checks if a game has been successfully downloaded based on download history
@@ -132,8 +136,39 @@ type updateStatus struct {
 	Diff       []string // human-readable changes
 }
 
-// computeUpdateStatus recomputes and caches status for provided games.
+// gameStatuses is what was found out about a set of games.
+type gameStatuses = map[int]updateStatus
+
+// statusWorker runs the work of finding out what has been downloaded and then
+// hands what it found back to be recorded. Working it out reads the filesystem
+// and parses every stored game, which is not work for the thread that draws the
+// window, so by default the two halves run on different ones. It is a variable
+// so tests can run both where they can watch them.
+var statusWorker = func(work func() gameStatuses, apply func(gameStatuses)) {
+	go func() {
+		found := work()
+		runOnMain(func() { apply(found) })
+	}()
+}
+
+// computeUpdateStatus works the statuses out and records them, for callers that
+// need the answer before they go on.
 func computeUpdateStatus(dm *DownloadManager, games []db.Game) {
+	applyStatuses(statusesFor(dm, games))
+}
+
+// applyStatuses records what was found. The window reads these, so they are
+// only ever written on the thread that draws it.
+func applyStatuses(found gameStatuses) {
+	for id, status := range found {
+		updateStatusCache[id] = status
+	}
+	persistUpdateStatusCache()
+}
+
+// statusesFor works out what has been downloaded and what has changed since.
+// It touches nothing the window reads, so it can run on a thread of its own.
+func statusesFor(dm *DownloadManager, games []db.Game) gameStatuses {
 	prefs := fyne.CurrentApp().Preferences()
 	includeExtrasUpdates := prefs.BoolWithFallback("downloadForm.includeExtrasUpdates", false)
 	includeDLCUpdates := prefs.BoolWithFallback("downloadForm.includeDLCUpdates", false)
@@ -141,6 +176,8 @@ func computeUpdateStatus(dm *DownloadManager, games []db.Game) {
 	includePatchUpdates := prefs.BoolWithFallback("downloadForm.includePatchUpdates", false)
 	langPref := prefs.StringWithFallback("downloadForm.language", "en")
 	platformPref := prefs.StringWithFallback("downloadForm.platform", "windows")
+
+	found := make(gameStatuses, len(games))
 	for _, game := range games {
 		// Downloaded determination
 		downloaded := isGameDownloaded(dm, game.ID)
@@ -192,20 +229,23 @@ func computeUpdateStatus(dm *DownloadManager, games []db.Game) {
 				for k, newVer := range newMap {
 					oldVer, ok := oldMap[k]
 					if !ok {
-						diff = append(diff, "NEW: "+k+" version="+newVer)
+						diff = append(diff, describeAddedFile(k, newVer))
 					} else if newVer != oldVer {
-						diff = append(diff, "CHANGED: "+k+" "+oldVer+" -> "+newVer)
+						diff = append(diff, describeChangedFile(k, oldVer, newVer))
 					}
 				}
+				// Map order is not an order, and a list that shuffles itself
+				// every time it is worked out cannot be compared with itself.
+				sort.Strings(diff)
 				if len(diff) > 0 {
 					status.HasUpdate = true
 					status.Diff = diff
 				}
 			}
 		}
-		updateStatusCache[game.ID] = status
+		found[game.ID] = status
 	}
-	persistUpdateStatusCache()
+	return found
 }
 
 // hasGameUpdateCached now reads cache
@@ -327,6 +367,46 @@ func clearPersistedUpdateStatus() {
 	persistUpdateStatusCache()
 }
 
+// parseGameData reads a game's stored data. It is a variable so tests can count
+// how often the catalogue is read.
+var parseGameData = client.ParseGameData
+
+// gameFacts is what a query asks about a game that costs something to answer:
+// reading its stored data.
+type gameFacts struct {
+	platforms []string
+	languages []string
+}
+
+// parsedFacts keeps what each game's data said. A query is asked of every game
+// on every keystroke, and reading the whole catalogue for each letter typed is
+// what made searching a large library crawl.
+var parsedFacts = map[int]gameFacts{}
+
+// factsOf reads a game's stored data, or remembers what it said last time.
+func factsOf(game db.Game) gameFacts {
+	if facts, ok := parsedFacts[game.ID]; ok {
+		return facts
+	}
+
+	var facts gameFacts
+	if parsed, err := parseGameData(game.Data); err == nil {
+		for _, platform := range offeredPlatforms(parsed) {
+			facts.platforms = append(facts.platforms, strings.ToLower(platform))
+		}
+		facts.languages = languageNamesAndCodes(offeredLanguages(parsed))
+	}
+	parsedFacts[game.ID] = facts
+	return facts
+}
+
+// forgetParsedGames drops what was read of the catalogue, because it is no
+// longer the same catalogue.
+func forgetParsedGames() {
+	parsedFacts = make(map[int]gameFacts)
+	sizeCache = make(map[sizeCacheKey]int64)
+}
+
 // sizeCacheKey identifies an estimate together with the settings it was
 // computed under, so changing any of them yields a fresh estimate.
 type sizeCacheKey struct {
@@ -349,7 +429,7 @@ func estimateGameSize(game db.Game) int64 {
 	if v, ok := sizeCache[key]; ok {
 		return v
 	}
-	parsed, err := client.ParseGameData(game.Data)
+	parsed, err := parseGameData(game.Data)
 	if err != nil {
 		sizeCache[key] = 0
 		return 0
@@ -418,15 +498,12 @@ func factsFor(game db.Game, needs search.Needs) search.Facts {
 		facts.SizeBytes = estimateGameSize(game)
 	}
 	if needs.Platforms || needs.Languages {
-		if parsed, err := client.ParseGameData(game.Data); err == nil {
-			if needs.Platforms {
-				for _, platform := range offeredPlatforms(parsed) {
-					facts.Platforms = append(facts.Platforms, strings.ToLower(platform))
-				}
-			}
-			if needs.Languages {
-				facts.Languages = languageNamesAndCodes(offeredLanguages(parsed))
-			}
+		read := factsOf(game)
+		if needs.Platforms {
+			facts.Platforms = read.platforms
+		}
+		if needs.Languages {
+			facts.Languages = read.languages
 		}
 	}
 	return facts
@@ -522,6 +599,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			listed:      func() []db.Game { return nil },
 			relist:      func() {},
 			dm:          dm,
+			close:       func() {},
 		}
 	}
 
@@ -535,7 +613,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	gameCountLabel := widget.NewLabel("")
 
 	searchEntry := widget.NewEntry()
-	searchEntry.SetPlaceHolder("Type game title to search...")
+	// The box takes the same filters the collections are made of, and nothing
+	// else on screen says so.
+	searchEntry.SetPlaceHolder("Search titles, or filter: downloaded:no platform:linux")
+	// A filter that cannot be read is dropped and the words alone are searched
+	// for, so the box has to show that it is not doing what it says.
+	searchEntry.Validator = func(text string) error {
+		_, err := search.Parse(text)
+		return err
+	}
 	clearSearchBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
 		searchEntry.SetText("")
 	})
@@ -614,14 +700,20 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// whole library. It reads the filesystem and reparses every stored game, so
 	// it runs only when something that can change a status happened.
 	recomputeStatuses := func() {
-		computeUpdateStatus(dm, allGames)
-		if sidebar != nil && sidebar.content.Visible() {
-			sidebar.refresh(allGames)
-		}
-		updateDisplayedGames()
-		if refreshUpdatesSummary != nil {
-			refreshUpdatesSummary()
-		}
+		games := allGames
+		updatesLabel.SetText("Checking downloads...")
+		statusWorker(
+			func() gameStatuses { return statusesFor(dm, games) },
+			func(found gameStatuses) {
+				applyStatuses(found)
+				if sidebar != nil && sidebar.content.Visible() {
+					sidebar.refresh(allGames)
+				}
+				updateDisplayedGames()
+				if refreshUpdatesSummary != nil {
+					refreshUpdatesSummary()
+				}
+			})
 	}
 
 	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
@@ -711,23 +803,41 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		showGames()
 	})
 
-	var refreshBtn *widget.Button
+	// Both the toolbar and the empty-library placeholder offer a refresh, and
+	// they start the same job, so pressing either has to close both while it
+	// runs. Only one of them exists at a time, hence the checks for nil.
+	var refreshBtn, refreshNowBtn *widget.Button
+	setRefreshEnabled := func(enabled bool) {
+		for _, button := range []*widget.Button{refreshBtn, refreshNowBtn} {
+			if button == nil {
+				continue
+			}
+			if enabled {
+				button.Enable()
+				continue
+			}
+			button.Disable()
+		}
+	}
 	onFinishRefresh := func() {
 		allGames, _ = db.GetCatalogue()
 		loadGameTags()
+		forgetParsedGames()
 		recomputeStatuses()
-		refreshBtn.Enable()
+		setRefreshEnabled(true)
 		showGames()
+	}
+	startRefresh := func() {
+		setRefreshEnabled(false)
+		refreshCatalogue(win, authService, onFinishRefresh)
 	}
 
 	if len(allGames) == 0 {
+		refreshNowBtn = widget.NewButton("Refresh Catalogue", startRefresh)
 		placeholder := container.NewCenter(container.NewVBox(
 			widget.NewIcon(theme.InfoIcon()),
 			widget.NewLabel("Your library is empty or hasn't been synced."),
-			widget.NewButton("Refresh Catalogue Now", func() {
-				refreshBtn.Disable()
-				RefreshCatalogueAction(win, authService, onFinishRefresh)
-			}),
+			refreshNowBtn,
 		))
 		listContent.Add(placeholder)
 	} else {
@@ -739,11 +849,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	initUpdateStatusPersistence()
 	recomputeStatuses()
 
-	refreshBtn = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
-		searchEntry.SetText("")
-		refreshBtn.Disable()
-		RefreshCatalogueAction(win, authService, onFinishRefresh)
-	})
+	// The search box is left as it is: emptying it threw away the filter, or the
+	// collection, the user was looking at.
+	refreshBtn = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), startRefresh)
 
 	var exportBtn *widget.Button
 	exportBtn = widget.NewButtonWithIcon("Export", theme.DocumentSaveIcon(), func() {
@@ -757,14 +865,19 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		popup.ShowAtRelativePosition(fyne.NewPos(0, exportBtn.Size().Height), exportBtn)
 	})
 
+	// Named for what pressing it does, like the view button beside it: one
+	// button naming the state and its neighbour naming the action reads as a
+	// contradiction.
 	var sortBtn *widget.Button
-	sortBtn = widget.NewButton("Sort A-Z", func() {
-		isSortAscending = !isSortAscending
+	sortLabel := func() string {
 		if isSortAscending {
-			sortBtn.SetText("Sort A-Z")
-		} else {
-			sortBtn.SetText("Sort Z-A")
+			return "Sort Z-A"
 		}
+		return "Sort A-Z"
+	}
+	sortBtn = widget.NewButton(sortLabel(), func() {
+		isSortAscending = !isSortAscending
+		sortBtn.SetText(sortLabel())
 		updateDisplayedGames()
 		gameListWidget.Refresh()
 	})
@@ -912,15 +1025,16 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// AddListener invokes the listener once on registration, and the status
 	// worked out above is still valid at that point.
 	catalogueJustRegistered := true
-	catalogueUpdated.AddListener(binding.NewDataListener(func() {
+	catalogueListener := binding.NewDataListener(func() {
 		if catalogueJustRegistered {
 			catalogueJustRegistered = false
 			return
 		}
 		clearPersistedUpdateStatus()
-		sizeCache = make(map[sizeCacheKey]int64)
+		forgetParsedGames()
 		recomputeStatuses()
-	}))
+	})
+	catalogueUpdated.AddListener(catalogueListener)
 	split := container.NewHSplit(leftPane, rightPane)
 	split.Offset = loadWindowState(prefs).SplitOffset
 
@@ -938,6 +1052,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		relist:          updateDisplayedGames,
 		pane:            pane,
 		dm:              dm,
+		close:           func() { catalogueUpdated.RemoveListener(catalogueListener) },
 	}
 }
 
@@ -1053,11 +1168,14 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 ) *downloadForm {
 	prefs := fyne.CurrentApp().Preferences()
 	downloadPathEntry := widget.NewEntry()
-	lastUsedPath := prefs.String("lastUsedDownloadPath")
-	if lastUsedPath == "" {
-		lastUsedPath = prefs.StringWithFallback("downloadForm.path", "")
+	// What the user last typed comes first: it is the box they typed it into.
+	// A catalogue from a version that only recorded where downloads went still
+	// opens on that.
+	path := prefs.String("downloadForm.path")
+	if path == "" {
+		path = prefs.StringWithFallback("lastUsedDownloadPath", "")
 	}
-	downloadPathEntry.SetText(lastUsedPath)
+	downloadPathEntry.SetText(path)
 	downloadPathEntry.OnChanged = func(s string) { prefs.SetString("downloadForm.path", s) }
 	downloadPathEntry.SetPlaceHolder("Enter download path")
 	browseBtn := widget.NewButton("Browse...", func() {
@@ -1366,6 +1484,73 @@ func buildVersionMapExtended(g client.Game, language, platform string, includeEx
 		}
 	}
 	return m
+}
+
+// describeAddedFile says a file was not there the last time the game was
+// fetched.
+func describeAddedFile(key, version string) string {
+	if version == "" {
+		return fileInWords(key) + ": new"
+	}
+	return fmt.Sprintf("%s: new, version %s", fileInWords(key), version)
+}
+
+// describeChangedFile says a file has moved on since it was fetched.
+func describeChangedFile(key, from, to string) string {
+	switch {
+	case from == "":
+		return fmt.Sprintf("%s: now version %s", fileInWords(key), to)
+	case to == "":
+		return fmt.Sprintf("%s: no longer has a version", fileInWords(key))
+	default:
+		return fmt.Sprintf("%s: %s → %s", fileInWords(key), from, to)
+	}
+}
+
+// fileInWords turns the key the version map uses into the file it stands for.
+// The key is a path through the platform, the DLC and the extras a file belongs
+// to, which is how gogg tells two files apart rather than something to read.
+func fileInWords(key string) string {
+	parts := strings.Split(key, "|")
+	var about []string
+	switch {
+	case strings.HasPrefix(parts[0], "dlc:"):
+		about = append(about, strings.TrimPrefix(parts[0], "dlc:"))
+		parts = parts[1:]
+	case strings.HasPrefix(parts[0], "dlc_extras:"):
+		about = append(about, strings.TrimPrefix(parts[0], "dlc_extras:"), "extra")
+		parts = parts[1:]
+	case parts[0] == "extras":
+		about = append(about, "extra")
+		parts = parts[1:]
+	}
+	if len(parts) == 0 {
+		return key
+	}
+
+	name := parts[len(parts)-1]
+	// What is left in front of the name is the platform, which extras have none
+	// of.
+	if len(parts) > 1 {
+		about = append([]string{platformInWords(parts[0])}, about...)
+	}
+	if len(about) == 0 {
+		return name
+	}
+	return fmt.Sprintf("%s (%s)", name, strings.Join(about, ", "))
+}
+
+// platformInWords names a platform the way the rest of the app does.
+func platformInWords(platform string) string {
+	switch platform {
+	case "windows":
+		return "Windows"
+	case "mac":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	}
+	return platform
 }
 
 // showGallery puts everything there is to see of a game in the gallery: its own

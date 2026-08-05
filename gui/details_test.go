@@ -553,3 +553,74 @@ func TestFixedSize_KeepsTheSizeItWasGiven(t *testing.T) {
 
 	require.Equal(t, paneButtonSize, boxed.MinSize())
 }
+
+// The download path the user types is what they see next time. It was written
+// to one preference and read back from another, so a path that was typed but
+// never downloaded to was forgotten.
+func TestDownloadForm_RemembersTheTypedPath(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	prefs := app.Preferences()
+	prefs.SetString("downloadForm.path", "/typed/by/hand")
+	prefs.SetString("lastUsedDownloadPath", "/where/the/last/download/went")
+
+	form := newDownloadFormForTest(t)
+
+	require.Equal(t, "/typed/by/hand", downloadPathEntry(t, form.options).Text)
+}
+
+// A catalogue from a version that only ever stored the last download path still
+// opens on it.
+func TestDownloadForm_FallsBackToTheLastDownloadPath(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	prefs := app.Preferences()
+	prefs.RemoveValue("downloadForm.path")
+	prefs.SetString("lastUsedDownloadPath", "/where/the/last/download/went")
+
+	form := newDownloadFormForTest(t)
+
+	require.Equal(t, "/where/the/last/download/went", downloadPathEntry(t, form.options).Text)
+}
+
+// newDownloadFormForTest builds the download options on their own, away from a
+// library fixture that has a download path of its own.
+func newDownloadFormForTest(t *testing.T) *downloadForm {
+	t.Helper()
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+	return createDownloadForm(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()},
+		binding.NewUntyped(), newGameSelection(), func() []db.Game { return nil })
+}
+
+// downloadPathEntry is the box the download path is typed into.
+func downloadPathEntry(t *testing.T, root fyne.CanvasObject) *widget.Entry {
+	t.Helper()
+	for _, entry := range widgetsOfType[*widget.Entry](root) {
+		if entry.PlaceHolder == "Enter download path" {
+			return entry
+		}
+	}
+	t.Fatal("no download path box")
+	return nil
+}
+
+// A filter that cannot be read has to say so. It was dropped in silence,
+// leaving a search box full of terms that were doing nothing.
+func TestLibraryTab_MarksASearchItCannotRead(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 2)
+
+	lt.searchEntry.SetText("size:>=abc")
+	require.Error(t, lt.searchEntry.Validate(), "a size that is not a size has to be marked")
+
+	lt.searchEntry.SetText("size:>=10gb")
+	require.NoError(t, lt.searchEntry.Validate(), "a filter that reads has to be left alone")
+
+	lt.searchEntry.SetText("god of war")
+	require.NoError(t, lt.searchEntry.Validate(), "plain words are not a mistake")
+}

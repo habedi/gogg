@@ -182,7 +182,13 @@ func (s *xmbShell) openPane(title string, pane fyne.CanvasObject) {
 	heading := widget.NewLabelWithStyle(title, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	head := container.NewBorder(nil, nil, back, nil, heading)
 
-	s.paneBox.Objects = []fyne.CanvasObject{container.NewBorder(head, nil, nil, nil, pane)}
+	// The bar behind is dark whatever theme is set, so the pane brings the
+	// background the rest of the app uses: laid straight over the bar, a light
+	// theme puts dark text on a dark gradient.
+	backdrop := canvas.NewRectangle(theme.Color(theme.ColorNameBackground))
+	s.paneBox.Objects = []fyne.CanvasObject{
+		container.NewStack(backdrop, container.NewBorder(head, nil, nil, nil, pane)),
+	}
 	s.paneBox.Show()
 	s.paneOpen = true
 	s.browse.Hide()

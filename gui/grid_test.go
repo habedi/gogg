@@ -183,3 +183,26 @@ func TestBindGameCell_KeepsArtworkWhenTheGameHasNotChanged(t *testing.T) {
 	require.Nil(t, cell.cover.Image, "a different game starts from the placeholder")
 	require.NotNil(t, cell.cover.Resource)
 }
+
+// A game in the grid says as much about itself as one in the list: whether it
+// has been downloaded, and whether an update is waiting for it.
+func TestBindGameCell_CarriesTheSameBadgesAsARow(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	updateStatusCache = map[int]updateStatus{
+		1: {Downloaded: true, HasUpdate: true, Diff: []string{"one", "two"}},
+		2: {Downloaded: false},
+	}
+	t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
+
+	cell := newGameCell().(*gameCell)
+	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil)
+	require.True(t, cell.badges.downloaded.Visible(), "a downloaded game is marked in the grid too")
+	require.True(t, cell.badges.update.Visible())
+	require.Equal(t, "2", cell.badges.update.Text)
+
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, newGameSelection(), nil, nil)
+	require.False(t, cell.badges.downloaded.Visible(), "and one that is not, is not")
+	require.False(t, cell.badges.update.Visible())
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 )
 
@@ -101,4 +102,39 @@ func saveWindowState(prefs fyne.Preferences, state windowState) {
 	prefs.SetFloat(prefWindowHeight, state.Height)
 	prefs.SetFloat(prefSplitOffset, state.SplitOffset)
 	prefs.SetInt(prefSelectedTab, state.Tab)
+}
+
+// windowStateOnClose is what to remember about the window. A session that never
+// showed the library has no divider on screen to read, so the offset already
+// stored is kept rather than replaced with the default.
+func windowStateOnClose(prefs fyne.Preferences, size fyne.Size, tab int, split *container.Split) windowState {
+	state := windowState{
+		Width:       float64(size.Width),
+		Height:      float64(size.Height),
+		SplitOffset: loadWindowState(prefs).SplitOffset,
+		Tab:         tab,
+	}
+	if split != nil {
+		state.SplitOffset = split.Offset
+	}
+	return state
+}
+
+// showingTabs reports whether the tab interface is what the window is showing.
+// The tabs are built either way, so a shortcut that moves through them has to
+// ask first: in the cross interface it would take the focus to a box that is
+// not on screen.
+func showingTabs(win fyne.Window, tabs fyne.CanvasObject) bool {
+	return win != nil && win.Content() == tabs
+}
+
+// handOverCatalogue gives the catalogue widgets to the interface that is about
+// to show them. The tabs are built whether or not they are on screen, and the
+// same widgets cannot hang in two places at once.
+func handOverCatalogue(tab *container.TabItem, catalogue fyne.CanvasObject, toTabs bool) {
+	if toTabs {
+		tab.Content = catalogue
+		return
+	}
+	tab.Content = container.NewStack()
 }

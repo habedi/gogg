@@ -113,10 +113,15 @@ func TestDownloadsTabUI_ShowsRetryOnlyWhenItCanRepeatTheDownload(t *testing.T) {
 
 	list := widgetsOfType[*widget.List](DownloadsTabUI(dm))[0]
 
+	// Which row is which is up to the order the tab shows them in, so the rows
+	// are read by the download they are for.
+	offered := map[string]string{}
 	row := list.CreateItem()
-	list.UpdateItem(0, row)
-	require.Equal(t, "Retry", row.(*downloadRow).actionBtn.Text)
+	for id := 0; id < list.Length(); id++ {
+		list.UpdateItem(id, row)
+		offered[row.(*downloadRow).title.Text] = row.(*downloadRow).actionBtn.Text
+	}
 
-	list.UpdateItem(1, row)
-	require.Equal(t, "Error", row.(*downloadRow).actionBtn.Text)
+	require.Equal(t, "Retry", offered["Retryable"])
+	require.Equal(t, "Error", offered["Restored"])
 }

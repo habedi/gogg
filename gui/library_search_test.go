@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,4 +105,69 @@ func storeStub(t *testing.T, asked *pathLog) string {
 	}))
 	t.Cleanup(srv.Close)
 	return srv.URL
+}
+
+// countParses counts how often the stored game data is read.
+func countParses(t *testing.T) *atomic.Int64 {
+	t.Helper()
+	var parses atomic.Int64
+	original := parseGameData
+	parseGameData = func(data string) (client.Game, error) {
+		parses.Add(1)
+		return original(data)
+	}
+	t.Cleanup(func() { parseGameData = original })
+	return &parses
+}
+
+// A query is asked of every game on every keystroke, and answering "which
+// platforms does this offer" means reading the game's stored data. Reading it
+// again for every letter made typing crawl in a large library.
+func TestLibrary_SearchDoesNotReparseTheCatalogue(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 5)
+	parses := countParses(t)
+
+	lt.searchEntry.SetText("platform:windows")
+	first := parses.Load()
+	require.Positive(t, first, "the first search has to read the catalogue")
+
+	for _, typed := range []string{"platform:windows g", "platform:windows ga", "platform:windows gam"} {
+		lt.searchEntry.SetText(typed)
+	}
+
+	require.Equal(t, first, parses.Load(), "typing must not read the catalogue again")
+}
+
+// A catalogue that has been refreshed is a different catalogue, so what was
+// read of the old one has to go.
+func TestLibrary_RefreshReadsTheCatalogueAgain(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		refreshes := captureRefreshes(t)
+		lt, _ := newLibraryFixture(t, 3)
+		lt.searchEntry.SetText("platform:windows")
+
+		parses := countParses(t)
+		test.Tap(buttonWithLabel(lt.content, "Refresh"))
+		refreshes.finish()
+		lt.searchEntry.SetText("platform:windows ")
+
+		require.Positive(t, parses.Load(), "a refreshed catalogue has to be read again")
+	})
+}
+
+// The box takes filters as well as titles, and nothing on screen said so.
+func TestLibraryTab_SearchBoxSaysItTakesFilters(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 1)
+
+	require.Contains(t, lt.searchEntry.PlaceHolder, "platform:",
+		"the search box has to hint at what else it takes")
 }
