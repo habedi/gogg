@@ -91,11 +91,30 @@ func collectionCounts(games []db.Game, rows []sidebarRow) map[string]int {
 	return counts
 }
 
+// sidebarGroup is a heading and the collections listed under it. A heading with
+// everything under it hidden describes a group that is not there, so it is
+// hidden with them.
+type sidebarGroup struct {
+	heading *widget.Label
+	rows    []string
+}
+
+// anyVisible reports whether the group still has a collection to head.
+func (g sidebarGroup) anyVisible(buttons map[string]*sidebarButton) bool {
+	for _, title := range g.rows {
+		if button, ok := buttons[title]; ok && button.Visible() {
+			return true
+		}
+	}
+	return false
+}
+
 // librarySidebar lists the collections down the side of the library.
 type librarySidebar struct {
 	content *fyne.Container
 	rows    []sidebarRow
 	buttons map[string]*sidebarButton
+	groups  []sidebarGroup
 	// refresh recounts the collections and hides the empty ones.
 	refresh func(games []db.Game)
 	// syncTo marks the row that matches what the search box says, or none.
@@ -113,12 +132,16 @@ func newLibrarySidebar(rows []sidebarRow, onPick func(query string)) *librarySid
 			heading := widget.NewLabel(strings.ToUpper(row.Title))
 			heading.TextStyle = fyne.TextStyle{Bold: true}
 			items = append(items, heading)
+			sidebar.groups = append(sidebar.groups, sidebarGroup{heading: heading})
 			continue
 		}
 
 		picked := row
 		button := newSidebarButton(row, func() { onPick(picked.Query) })
 		sidebar.buttons[row.Title] = button
+		if last := len(sidebar.groups) - 1; last >= 0 {
+			sidebar.groups[last].rows = append(sidebar.groups[last].rows, row.Title)
+		}
 		items = append(items, button)
 	}
 
@@ -142,6 +165,14 @@ func newLibrarySidebar(rows []sidebarRow, onPick func(query string)) *librarySid
 				continue
 			}
 			button.Show()
+		}
+
+		for _, group := range sidebar.groups {
+			if group.anyVisible(sidebar.buttons) {
+				group.heading.Show()
+				continue
+			}
+			group.heading.Hide()
 		}
 	}
 

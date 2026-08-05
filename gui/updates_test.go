@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
@@ -126,4 +127,71 @@ func TestLibraryTab_HidesUpdateAllWhenNothingIsWaiting(t *testing.T) {
 	for _, label := range []string{"Update All (1)", "Update All (2)"} {
 		require.Nil(t, buttonWithLabel(lt.content, label))
 	}
+}
+
+// newUndownloadedLibrary builds a library of games that have never been
+// fetched, so what a finished download changes is visible.
+func newUndownloadedLibrary(t *testing.T, games int) (*libraryTab, *DownloadManager) {
+	t.Helper()
+
+	db.Path = filepath.Join(t.TempDir(), "games.db")
+	require.NoError(t, db.InitDB())
+	t.Cleanup(func() { _ = db.CloseDB() })
+	require.NoError(t, db.UpsertTokenRecord(&db.Token{
+		AccessToken: "a", RefreshToken: "r", ExpiresAt: "2999-01-01T00:00:00Z",
+	}))
+	for id := 1; id <= games; id++ {
+		title := fmt.Sprintf("Game %d", id)
+		require.NoError(t, db.PutInGame(id, title, gameDataWithVersion(title, "1.0")))
+	}
+
+	prefs := fyne.CurrentApp().Preferences()
+	prefs.SetString("lastUsedDownloadPath", t.TempDir()) // nothing has been downloaded there
+	prefs.SetString("downloadForm.language", "en")
+	prefs.SetString("downloadForm.platform", "windows")
+
+	cache := t.TempDir()
+	original := cacheRoot
+	cacheRoot = func() string { return cache }
+	t.Cleanup(func() { cacheRoot = original })
+	if os.Getenv("GOGG_API_BASE") == "" {
+		t.Setenv("GOGG_API_BASE", storeStub(t, nil))
+	}
+
+	updateStatusCache = make(map[int]updateStatus)
+	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	return LibraryTabUI(win, nil, dm, func() {}), dm
+}
+
+// A download finishing changes what a game is, so the collections beside the
+// list and whatever the list is filtered to both have to follow it.
+func TestLibraryTab_FinishedDownloadUpdatesTheCollectionsAndTheList(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, dm := newUndownloadedLibrary(t, 2)
+		test.Tap(lt.showCollections)
+
+		require.Equal(t, "0", lt.sidebar.buttons["Downloaded"].count.Text)
+		lt.searchEntry.SetText("downloaded:no")
+		require.Len(t, lt.listed(), 2, "neither game has been fetched yet")
+
+		finished := &DownloadTask{
+			ID: 1, InstanceID: time.Now(), Title: "Game 1",
+			Status: binding.NewString(), Details: binding.NewString(),
+			Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+		}
+		finished.SetState(StateCompleted)
+		require.NoError(t, dm.Tasks.Append(finished))
+
+		require.Equal(t, "1", lt.sidebar.buttons["Downloaded"].count.Text,
+			"the collections have to count the finished download")
+		require.Equal(t, "1", lt.sidebar.buttons["Not downloaded"].count.Text)
+		require.Len(t, lt.listed(), 1,
+			"a game that has just been downloaded is no longer one that is not")
+	})
 }

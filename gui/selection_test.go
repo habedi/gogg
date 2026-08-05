@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -246,4 +247,48 @@ func TestBindGameRow_KeepsTheThumbnailForTheSameGame(t *testing.T) {
 
 	bindGameRow(row, db.Game{ID: 2, Title: "Two"}, sel, nil, nil)
 	require.Nil(t, row.thumbnail.Image, "a different game starts from the placeholder")
+}
+
+// The changes waiting for a game are listed in a dialog. Left to its own
+// minimum, the scroll holding them opened one line tall whatever the list said.
+func TestGameRow_UpdateDetailsOpenLargeEnoughToRead(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
+
+	updateStatusCache = map[int]updateStatus{1: {Downloaded: true, HasUpdate: true, Diff: []string{
+		"CHANGED: windows|setup_the_game_1.2.3.exe 1.2.2 -> 1.2.3",
+		"NEW: windows|setup_the_game_dlc_1.0.exe version=1.0",
+	}}}
+	t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
+
+	row := newGameRow().(*gameRow)
+	bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil)
+	test.Tap(row.updateBtn)
+
+	overlay := topOverlay(t)
+	require.NotNil(t, overlay, "the update badge has to open the details")
+
+	scrolls := widgetsOfType[*container.Scroll](overlay)
+	require.NotEmpty(t, scrolls, "the changes are listed in a scroll")
+	body := scrolls[0]
+	require.GreaterOrEqual(t, body.MinSize().Height, body.Content.MinSize().Height,
+		"a short list of changes has to be readable without scrolling")
+	require.GreaterOrEqual(t, body.MinSize().Width, body.Content.MinSize().Width,
+		"and without scrolling sideways either")
+}
+
+// topOverlay is whatever dialog or menu is on screen, on whichever window the
+// app put it.
+func topOverlay(t *testing.T) fyne.CanvasObject {
+	t.Helper()
+	for _, win := range fyne.CurrentApp().Driver().AllWindows() {
+		if overlay := win.Canvas().Overlays().Top(); overlay != nil {
+			return overlay
+		}
+	}
+	return nil
 }

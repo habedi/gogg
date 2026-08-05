@@ -155,13 +155,31 @@ func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, covers
 	r.updateBtn.Show()
 	r.updateBtn.SetText(fmt.Sprintf("%d", len(diff)))
 	r.updateBtn.OnTapped = func() {
-		content := container.NewVBox()
-		for _, line := range diff {
-			content.Add(widget.NewLabel(line))
-		}
-		dialog.ShowCustom("Update details", "Close", container.NewVScroll(content),
+		dialog.ShowCustom("Update details", "Close", updateDetailsBody(diff),
 			fyne.CurrentApp().Driver().AllWindows()[0])
 	}
+}
+
+// How much room the list of changes may take before it starts scrolling.
+const (
+	updateDetailsMaxWidth  float32 = 620
+	updateDetailsMaxHeight float32 = 320
+)
+
+// updateDetailsBody lists what has changed, at a size that shows it. A scroll
+// left to its own minimum opens one line tall whatever the list says, so the
+// list is measured and the dialog given that much, up to a limit.
+func updateDetailsBody(diff []string) *container.Scroll {
+	changes := container.NewVBox()
+	for _, line := range diff {
+		changes.Add(widget.NewLabel(line))
+	}
+
+	body := container.NewVScroll(changes)
+	wanted := changes.MinSize()
+	body.SetMinSize(fyne.NewSize(
+		min(wanted.Width, updateDetailsMaxWidth), min(wanted.Height, updateDetailsMaxHeight)))
+	return body
 }
 
 // batchResult summarises what a batch of downloads did.

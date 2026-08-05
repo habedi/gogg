@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -94,4 +95,32 @@ func TestSettings_NoSavedSpeedLimitLeavesDownloadsUnthrottled(t *testing.T) {
 	_ = SettingsTabUI(win)
 
 	require.Nil(t, client.GlobalDownloadRateLimiter)
+}
+
+// The settings are taller than the window gogg opens at. Centred and fixed in
+// place, the download limits sat below the bottom edge with no way to reach
+// them, so the tab has to scroll.
+func TestSettings_ScrollSoEveryOptionCanBeReached(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	defer win.Close()
+
+	ui := SettingsTabUI(win)
+	win.SetContent(ui)
+	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
+
+	scrolls := widgetsOfType[*container.Scroll](ui)
+	require.NotEmpty(t, scrolls, "settings taller than the window have to scroll")
+
+	body := scrolls[0]
+	require.Greater(t, body.Content.MinSize().Height, win.Canvas().Size().Height,
+		"this test only says something while the settings are taller than the window")
+
+	body.ScrollToBottom()
+	limit := maxConcurrentSelect(t, ui)
+	bottom := fyne.CurrentApp().Driver().AbsolutePositionForObject(limit).Y + limit.Size().Height
+	require.Greater(t, bottom, float32(0), "the last setting has to be laid out")
+	require.LessOrEqual(t, bottom, win.Canvas().Size().Height,
+		"the last setting has to come into view once scrolled to")
 }

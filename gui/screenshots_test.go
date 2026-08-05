@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -28,18 +29,26 @@ func pictureServer(t *testing.T) (string, *pathLog) {
 
 type pathLog struct {
 	count atomic.Int64
-	paths atomic.Value // []string, replaced whole so readers never see a partial slice
+	// Pictures are fetched several at a time, so the paths need a lock of their
+	// own: appending to a slice held in an atomic loses whichever of two
+	// concurrent writers stored first.
+	mu    sync.Mutex
+	paths []string
 }
 
 func (l *pathLog) add(path string) {
-	previous, _ := l.paths.Load().([]string)
-	l.paths.Store(append(append([]string{}, previous...), path))
+	l.mu.Lock()
+	l.paths = append(l.paths, path)
+	l.mu.Unlock()
+	// Counted last, so a count that has reached its target means every path
+	// behind it has been recorded.
 	l.count.Add(1)
 }
 
 func (l *pathLog) contains(substring string) bool {
-	paths, _ := l.paths.Load().([]string)
-	for _, path := range paths {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, path := range l.paths {
 		if strings.Contains(path, substring) {
 			return true
 		}

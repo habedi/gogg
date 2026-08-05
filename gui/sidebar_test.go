@@ -2,12 +2,14 @@ package gui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
@@ -256,4 +258,38 @@ func TestLibraryTab_CollectionsFoldAndUnfoldTheLeftPane(t *testing.T) {
 		require.Equal(t, float32(0), listPane.Position().X, "and take the room back")
 		require.Equal(t, folded, listPane.Size().Width)
 	})
+}
+
+// A heading with nothing under it describes a group that is not there. When
+// every collection in a group is empty they are all hidden, and the heading has
+// to go with them.
+func TestSidebar_HidesAHeadingWithNothingUnderIt(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	updateStatusCache = map[int]updateStatus{}
+	gameTags = map[int][]string{}
+	sidebar := newLibrarySidebar(libraryCollections(), func(string) {})
+
+	sidebar.refresh(nil)
+	require.False(t, headingLabel(t, sidebar, "Platform").Visible(),
+		"no game offers a platform, so the heading has nothing under it")
+	require.True(t, headingLabel(t, sidebar, "Library").Visible(),
+		"the library collections are always offered")
+
+	sidebar.refresh([]db.Game{{ID: 1, Title: "One", Data: richGameData}})
+	require.True(t, headingLabel(t, sidebar, "Platform").Visible(),
+		"a game with installers brings the platforms back")
+}
+
+// headingLabel is the label that starts a group of collections.
+func headingLabel(t *testing.T, sidebar *librarySidebar, title string) *widget.Label {
+	t.Helper()
+	for _, label := range widgetsOfType[*widget.Label](sidebar.content) {
+		if label.Text == strings.ToUpper(title) {
+			return label
+		}
+	}
+	t.Fatalf("no %q heading in the collections", title)
+	return nil
 }

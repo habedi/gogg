@@ -27,6 +27,10 @@ func walkWidgets(o fyne.CanvasObject, visit func(fyne.CanvasObject)) {
 	case *container.Split:
 		walkWidgets(v.Leading, visit)
 		walkWidgets(v.Trailing, visit)
+	case *widget.PopUp:
+		// Dialogs and menus are shown in an overlay of their own, so a test
+		// asking what a dialog says has to be able to look inside one.
+		walkWidgets(v.Content, visit)
 	case *widget.Card:
 		walkWidgets(v.Content, visit)
 	case *widget.Form:

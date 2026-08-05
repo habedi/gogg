@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
@@ -520,4 +521,35 @@ func TestDownloadOptions_KeepsEverySwitchUnderAHeading(t *testing.T) {
 	require.Contains(t, headings, "What to download")
 	require.Contains(t, headings, "Which files")
 	require.Contains(t, headings, "Where they go")
+}
+
+// The pane gives its buttons a size of their own so they line up down the
+// right-hand side. That size is a floor rather than a cap: a longer label, or a
+// larger font chosen in Settings, must not be cut off.
+func TestFixedSize_GrowsForALabelThatWouldBeCut(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	for _, textSize := range []float32{14, 18} {
+		app.Settings().SetTheme(&GoggTheme{Theme: theme.DefaultTheme(), textSize: textSize})
+
+		button := widget.NewButtonWithIcon("Download Selected (12)", theme.DownloadIcon(), nil)
+		boxed := fixedSize(button, paneActionSize)
+
+		require.GreaterOrEqual(t, boxed.MinSize().Width, button.MinSize().Width,
+			"the label is cut off at text size %.0f", textSize)
+		require.GreaterOrEqual(t, boxed.MinSize().Height, button.MinSize().Height,
+			"the button is cut off at text size %.0f", textSize)
+	}
+}
+
+// A label that fits leaves the button the size it was given, so the buttons
+// beside it still line up.
+func TestFixedSize_KeepsTheSizeItWasGiven(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	boxed := fixedSize(widget.NewButton("OK", nil), paneButtonSize)
+
+	require.Equal(t, paneButtonSize, boxed.MinSize())
 }

@@ -217,6 +217,30 @@ func hasGameUpdateCached(gameID int) (bool, []string) {
 	return st.HasUpdate, st.Diff
 }
 
+// gamesWithTasks are the games the download queue has something to say about.
+// A change to the queue can only have changed the status of those, so the rest
+// of the catalogue is left as it is rather than scanned again.
+func gamesWithTasks(dm *DownloadManager, games []db.Game) []db.Game {
+	dm.mu.RLock()
+	all, _ := dm.Tasks.Get()
+	dm.mu.RUnlock()
+
+	queued := make(map[int]struct{}, len(all))
+	for _, raw := range all {
+		if task, ok := raw.(*DownloadTask); ok {
+			queued[task.ID] = struct{}{}
+		}
+	}
+
+	touched := make([]db.Game, 0, len(queued))
+	for _, game := range games {
+		if _, ok := queued[game.ID]; ok {
+			touched = append(touched, game)
+		}
+	}
+	return touched
+}
+
 // gamesWithUpdates returns the games whose cached status says an update is
 // waiting for them.
 func gamesWithUpdates(games []db.Game) []db.Game {
@@ -651,9 +675,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		_ = selectedGameBinding.Set(nil)
 	}
 
-	// Refresh icons when download tasks change
+	// A download finishing changes what a game is, so everything that says what
+	// a game is has to follow it: the collections count the statuses, and the
+	// list may be filtered by them.
 	dm.Tasks.AddListener(binding.NewDataListener(func() {
-		computeUpdateStatus(dm, displayedGames()) // recalc for current displayed games
+		computeUpdateStatus(dm, gamesWithTasks(dm, allGames))
+		if sidebar != nil && sidebar.content.Visible() {
+			sidebar.refresh(allGames)
+		}
+		updateDisplayedGames()
 		if refreshUpdatesSummary != nil {
 			refreshUpdatesSummary()
 		}
@@ -721,7 +751,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			fyne.NewMenuItem("Export Game List as CSV", func() { ExportCatalogueAction(win, "csv") }),
 			fyne.NewMenuItem("Export Full Catalogue as JSON", func() { ExportCatalogueAction(win, "json") }),
 		), win.Canvas())
-		popup.ShowAtPosition(win.Content().Position().Add(fyne.NewPos(exportBtn.Position().X, exportBtn.Position().Y+exportBtn.Size().Height)))
+		// Dropped from the button itself: where a button sits inside its own
+		// container is not where it is on the canvas, and taking the one for the
+		// other put this menu at the top of the window.
+		popup.ShowAtRelativePosition(fyne.NewPos(0, exportBtn.Size().Height), exportBtn)
 	})
 
 	var sortBtn *widget.Button
@@ -1384,7 +1417,29 @@ var (
 
 // fixedSize gives a widget a size of its own, whatever it is put inside.
 func fixedSize(object fyne.CanvasObject, size fyne.Size) fyne.CanvasObject {
-	return container.New(layout.NewGridWrapLayout(size), object)
+	return container.New(&atLeastLayout{size: size}, object)
+}
+
+// atLeastLayout lays an object out at the size it was given, or at the size it
+// needs when that is larger. The size is a floor rather than a cap: a longer
+// label, or a larger font chosen in Settings, must not be cut off.
+type atLeastLayout struct {
+	size fyne.Size
+}
+
+func (l *atLeastLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	min := l.size
+	for _, object := range objects {
+		min = min.Max(object.MinSize())
+	}
+	return min
+}
+
+func (l *atLeastLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, object := range objects {
+		object.Move(fyne.NewPos(0, 0))
+		object.Resize(size)
+	}
 }
 
 // optionGroup is a titled set of switches, so what each one affects is clear

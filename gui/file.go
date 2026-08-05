@@ -62,27 +62,48 @@ func (r *hashRow) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(container.New(r.layout, r.file, r.hash))
 }
 
-// columnLayout defines a simple two-column layout with a fixed right column.
+// columnLayout is a two-column layout: the file path, and the hash beside it.
 type columnLayout struct{}
 
+// hashColWidth is the room a hash asks for. Hashes are all of a length, so the
+// column is too, until the row is too narrow to spare that much.
 const hashColWidth float32 = 530
 
 func newColumnLayout() fyne.Layout {
 	return &columnLayout{}
 }
 
+// hashColumnWidth is what the hash column gets in a row of the given width:
+// what it asks for, but never more than half the row. A width of its own left
+// the file path a sliver in a narrow window, and then a negative width that
+// pushed the hash off the left edge.
+func hashColumnWidth(rowWidth float32) float32 {
+	width := hashColWidth
+	if half := (rowWidth - theme.Padding()) / 2; width > half {
+		width = half
+	}
+	if width < 0 {
+		width = 0
+	}
+	return width
+}
+
 func (c *columnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	if len(objects) != 2 {
 		return
 	}
+	hashWidth := hashColumnWidth(size.Width)
+
 	// Right column (hash)
-	hashSize := fyne.NewSize(hashColWidth, objects[1].MinSize().Height)
-	objects[1].Resize(hashSize)
-	objects[1].Move(fyne.NewPos(size.Width-hashColWidth, 0))
+	objects[1].Resize(fyne.NewSize(hashWidth, objects[1].MinSize().Height))
+	objects[1].Move(fyne.NewPos(size.Width-hashWidth, 0))
 
 	// Left column (file path)
-	filePathSize := fyne.NewSize(size.Width-hashColWidth-theme.Padding(), objects[0].MinSize().Height)
-	objects[0].Resize(filePathSize)
+	fileWidth := size.Width - hashWidth - theme.Padding()
+	if fileWidth < 0 {
+		fileWidth = 0
+	}
+	objects[0].Resize(fyne.NewSize(fileWidth, objects[0].MinSize().Height))
 	objects[0].Move(fyne.NewPos(0, 0))
 }
 

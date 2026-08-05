@@ -21,6 +21,15 @@ import (
 // returns the library tab plus the download root.
 func newLibraryFixture(t *testing.T, games int) (*libraryTab, string) {
 	t.Helper()
+	lt, root, _ := newLibraryFixtureInWindow(t, games)
+	return lt, root
+}
+
+// newLibraryFixtureInWindow is the same, and also hands back the window the
+// library was built against: a menu or a dialog the library opens belongs to
+// that window's canvas.
+func newLibraryFixtureInWindow(t *testing.T, games int) (*libraryTab, string, fyne.Window) {
+	t.Helper()
 
 	db.Path = filepath.Join(t.TempDir(), "games.db")
 	require.NoError(t, db.InitDB())
@@ -59,7 +68,7 @@ func newLibraryFixture(t *testing.T, games int) (*libraryTab, string) {
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	return LibraryTabUI(win, nil, dm, func() {}), root
+	return LibraryTabUI(win, nil, dm, func() {}), root, win
 }
 
 // Which games are shown depends on the search term; whether a game is

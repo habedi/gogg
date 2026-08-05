@@ -192,7 +192,10 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		limitsBox,
 	))
 
-	return container.NewCenter(mainCard)
+	// The settings are taller than the window gogg opens at. Centred and fixed
+	// in place, the download limits sat below the bottom edge with no way to
+	// reach them, so the tab scrolls.
+	return container.NewVScroll(container.NewCenter(mainCard))
 }
 
 const prefMaxSpeedKBps = "download.maxSpeedKBps"
