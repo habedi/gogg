@@ -23,6 +23,21 @@ func apiBase() string {
 	return "https://api.gog.com"
 }
 
+// Screenshot is one picture from a game's store page, at the two sizes gogg
+// shows it: a thumbnail in the strip and a larger one when it is opened.
+type Screenshot struct {
+	ThumbnailURL string
+	LargeURL     string
+}
+
+const (
+	// screenshotThumbFormatter selects a 112x63 rendition, about 2 KB.
+	screenshotThumbFormatter = "product_card_screenshot_112"
+	// screenshotLargeFormatter selects a 748x421 rendition, about 90 KB. GOG
+	// also offers a 1600 one, which is a wider crop and too big to be worth it.
+	screenshotLargeFormatter = "product_card_screenshot_748"
+)
+
 // GameMetadata is what GOG's store publishes about a game, beyond the files it
 // offers. Every field is optional: games delisted from the store keep working
 // in a library but stop being described.
@@ -38,6 +53,7 @@ type GameMetadata struct {
 	StoreURL    string
 	ForumURL    string
 	BoxArtURL   string
+	Screenshots []Screenshot
 }
 
 // FetchGameMetadata returns the store information GOG publishes for a game.
@@ -65,6 +81,16 @@ func FetchGameMetadata(ctx context.Context, productID int) (GameMetadata, error)
 	}
 	for _, feature := range game.Embedded.Features {
 		meta.Features = append(meta.Features, feature.Name)
+	}
+	for _, shot := range game.Embedded.Screenshots {
+		address := strings.TrimSpace(shot.Links.Self.Href)
+		if address == "" {
+			continue
+		}
+		meta.Screenshots = append(meta.Screenshots, Screenshot{
+			ThumbnailURL: screenshotRendition(address, screenshotThumbFormatter),
+			LargeURL:     screenshotRendition(address, screenshotLargeFormatter),
+		})
 	}
 
 	// The release date lives on the older endpoint. It is the only thing that
@@ -98,6 +124,13 @@ type v2Game struct {
 		ESRBRating struct {
 			Category struct{ Name string } `json:"category"`
 		} `json:"esrbRating"`
+		Screenshots []struct {
+			Links struct {
+				Self struct {
+					Href string `json:"href"`
+				} `json:"self"`
+			} `json:"_links"`
+		} `json:"screenshots"`
 	} `json:"_embedded"`
 }
 
@@ -131,6 +164,12 @@ func getJSON(ctx context.Context, url string, into any) error {
 		return err
 	}
 	return json.Unmarshal(body, into)
+}
+
+// screenshotRendition fills in the size GOG leaves as a placeholder in the
+// address it publishes.
+func screenshotRendition(address, formatter string) string {
+	return strings.ReplaceAll(address, "{formatter}", formatter)
 }
 
 // releaseDate trims GOG's timestamp to the day, which is all that is worth

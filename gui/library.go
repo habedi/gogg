@@ -39,6 +39,8 @@ type libraryTab struct {
 	split *container.Split
 	// refresh re-syncs the catalogue, the same as the Refresh button.
 	refresh func()
+	// screenshots is the strip of store pictures for the selected game.
+	screenshots *fyne.Container
 	// artwork is the picture shown for the selected game.
 	artwork *canvas.Image
 }
@@ -769,6 +771,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	selectedGameBinding.AddListener(binding.NewDataListener(func() {
 		gameRaw, _ := selectedGameBinding.Get()
 		if gameRaw == nil {
+			fillScreenshots(pane.screenshots, nil, covers, win, nil)
 			accordion.Hide()
 			form.narrowTo(db.Game{})
 			detailTitle.SetText("Select a game from the list")
@@ -781,11 +784,16 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		// The facts gogg already holds show at once; what GOG's store adds
 		// arrives when it arrives.
 		fillDetails(detailsBox, game, dm, nil)
-		metadata.load(game.ID, func(id int) bool {
+		fillScreenshots(pane.screenshots, nil, covers, win, nil)
+		stillShowing := func() bool {
 			current, _ := selectedGameBinding.Get()
 			shown, ok := current.(db.Game)
-			return ok && shown.ID == id
-		}, func(meta client.GameMetadata) { fillDetails(detailsBox, game, dm, &meta) })
+			return ok && shown.ID == game.ID
+		}
+		metadata.load(game.ID, func(int) bool { return stillShowing() }, func(meta client.GameMetadata) {
+			fillDetails(detailsBox, game, dm, &meta)
+			fillScreenshots(pane.screenshots, meta.Screenshots, covers, win, stillShowing)
+		})
 
 		form.narrowTo(game)
 		showArtwork(pane.artwork, game, covers)
@@ -815,6 +823,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		selected:    selectedGameBinding,
 		split:       split,
 		refresh:     func() { refreshBtn.OnTapped() },
+		screenshots: pane.screenshots,
 		artwork:     pane.artwork,
 	}
 }
@@ -845,9 +854,10 @@ var artworkSize = fyne.NewSize(392, 220)
 // detailsPane is the right-hand side of the library: the artwork, the facts and
 // the download options, in that order.
 type detailsPane struct {
-	content fyne.CanvasObject
-	form    *downloadForm
-	artwork *canvas.Image
+	content     fyne.CanvasObject
+	form        *downloadForm
+	artwork     *canvas.Image
+	screenshots *fyne.Container
 }
 
 // createDetailsPane builds the pane. detailsBox is filled with the selected
@@ -871,10 +881,15 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 	artwork.SetMinSize(artworkSize)
 	artwork.Hide()
 
+	// The strip of pictures is filled once GOG has been asked about the game,
+	// and stays empty for games with none.
+	screenshots := container.NewStack()
+
 	return &detailsPane{
-		content: container.NewVBox(container.NewPadded(artwork), facts, options),
-		form:    form,
-		artwork: artwork,
+		content:     container.NewVBox(container.NewPadded(artwork), screenshots, facts, options),
+		form:        form,
+		artwork:     artwork,
+		screenshots: screenshots,
 	}
 }
 
@@ -1207,4 +1222,21 @@ func fillDetails(detailsBox *fyne.Container, game db.Game, dm *DownloadManager, 
 		renderGameFacts(summary, gameDetails(game, dm, meta), storeURL),
 	}
 	detailsBox.Refresh()
+}
+
+// fillScreenshots replaces whatever the pane was showing with this game's
+// pictures. An empty list empties the strip, which is what a game with no store
+// page gets.
+func fillScreenshots(box *fyne.Container, shots []client.Screenshot, covers *coverCache,
+	win fyne.Window, stillWanted func() bool,
+) {
+	strip := screenshotStrip(shots, covers, stillWanted, func(shot client.Screenshot) {
+		showScreenshot(win, shot, covers)
+	})
+	if strip == nil {
+		box.Objects = nil
+	} else {
+		box.Objects = []fyne.CanvasObject{strip}
+	}
+	box.Refresh()
 }

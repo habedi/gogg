@@ -129,32 +129,43 @@ func (c *coverCache) fetch(game db.Game, kind coverKind) ([]byte, coverSource, e
 		return nil, source, errors.New("game has no cover")
 	}
 
-	path := c.pathFor(source.URL)
-	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
-		return data, source, nil
-	}
-
-	data, err := c.download(source.URL)
+	data, err := c.fetchURL(source.URL)
 	if err != nil {
 		return nil, source, err
+	}
+	return data, source, nil
+}
+
+// fetchURL returns one picture, from disk when it is already there and by
+// downloading it otherwise. Screenshots come through here too, so they share
+// the cache directory and the limit on connections.
+func (c *coverCache) fetchURL(url string) ([]byte, error) {
+	path := c.pathFor(url)
+	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
+		return data, nil
+	}
+
+	data, err := c.download(url)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := os.MkdirAll(c.dir, 0o755); err != nil {
 		log.Debug().Err(err).Msg("Could not create the cover cache directory")
-		return data, source, nil
+		return data, nil
 	}
 	// Written through a temporary file so a failed write cannot leave a
-	// half-downloaded cover to be served on the next run.
+	// half-downloaded picture to be served on the next run.
 	temp := path + ".part"
 	if err := os.WriteFile(temp, data, 0o644); err != nil {
 		log.Debug().Err(err).Msg("Could not cache cover")
-		return data, source, nil
+		return data, nil
 	}
 	if err := os.Rename(temp, path); err != nil {
 		log.Debug().Err(err).Msg("Could not cache cover")
 		_ = os.Remove(temp)
 	}
-	return data, source, nil
+	return data, nil
 }
 
 func (c *coverCache) download(url string) ([]byte, error) {
@@ -196,6 +207,25 @@ func (c *coverCache) load(game db.Game, kind coverKind, stillWanted func(gameID 
 				return
 			}
 			deliver(data, source)
+		})
+	}()
+}
+
+// loadURL fetches one picture off the UI thread and hands it back on the UI
+// thread. stillWanted is asked whether the answer is still worth showing: the
+// user may have selected another game while it was in flight.
+func (c *coverCache) loadURL(url string, stillWanted func() bool, deliver func([]byte)) {
+	go func() {
+		data, err := c.fetchURL(url)
+		if err != nil {
+			log.Debug().Err(err).Str("url", url).Msg("Could not fetch picture")
+			return
+		}
+		runOnMain(func() {
+			if stillWanted != nil && !stillWanted() {
+				return
+			}
+			deliver(data)
 		})
 	}()
 }

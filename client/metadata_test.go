@@ -22,7 +22,16 @@ const v2Response = `{
 		"publisher": {"name": "PlayStation PC LLC"},
 		"tags": [{"name": "Action"}, {"name": "Adventure"}],
 		"features": [{"id": "achievements", "name": "Achievements"}, {"id": "single", "name": "Single-player"}],
-		"esrbRating": {"category": {"name": "Mature 17+"}}
+		"esrbRating": {"category": {"name": "Mature 17+"}},
+		"screenshots": [
+			{"_links": {"self": {
+				"href": "https://images.gog-statics.com/aaa_{formatter}.jpg",
+				"templated": true,
+				"formatters": ["product_card_screenshot_112", "product_card_screenshot_748", "1600"]
+			}}},
+			{"_links": {"self": {"href": "https://images.gog-statics.com/plain.jpg"}}},
+			{"_links": {"self": {"href": ""}}}
+		]
 	}
 }`
 
@@ -76,6 +85,18 @@ func TestFetchGameMetadata_MergesBothEndpoints(t *testing.T) {
 	require.Equal(t, "https://www.gog.com/en/game/god_of_war", meta.StoreURL)
 	require.Equal(t, "https://images.gog-statics.com/boxart.jpg", meta.BoxArtURL)
 	require.Equal(t, "2024-03-12", meta.ReleaseDate, "the timestamp is trimmed to the date")
+
+	// A strip of thumbnails costs 2 KB a picture; the one that is opened costs
+	// 90 KB, so the two renditions are kept apart.
+	require.Len(t, meta.Screenshots, 2, "a screenshot with no address is dropped")
+	require.Equal(t, Screenshot{
+		ThumbnailURL: "https://images.gog-statics.com/aaa_product_card_screenshot_112.jpg",
+		LargeURL:     "https://images.gog-statics.com/aaa_product_card_screenshot_748.jpg",
+	}, meta.Screenshots[0])
+	require.Equal(t, Screenshot{
+		ThumbnailURL: "https://images.gog-statics.com/plain.jpg",
+		LargeURL:     "https://images.gog-statics.com/plain.jpg",
+	}, meta.Screenshots[1], "an address with no rendition to choose is used as it is")
 }
 
 // The second endpoint only adds the release date, so losing it must not lose
