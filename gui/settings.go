@@ -51,6 +51,16 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	)
 
 	// --- Sound Settings ---
+	// The cross interface is the one from game consoles: categories along a bar
+	// with their items in a column below.
+	xmbCheck := widget.NewCheck("Use the cross (XMB) interface instead of tabs", func(checked bool) {
+		prefs.SetBool(prefXMB, checked)
+		if onInterfaceChanged != nil {
+			onInterfaceChanged()
+		}
+	})
+	xmbCheck.SetChecked(prefs.BoolWithFallback(prefXMB, false))
+
 	soundCheck := widget.NewCheck("Play sound on download completion", func(checked bool) {
 		prefs.SetBool("soundEnabled", checked)
 	})
@@ -171,6 +181,7 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	// --- Layout ---
 	mainCard := widget.NewCard("Settings", "", container.NewVBox(
 		themeBox,
+		xmbCheck,
 		widget.NewSeparator(),
 		fontBox,
 		widget.NewSeparator(),

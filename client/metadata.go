@@ -48,6 +48,7 @@ type GameMetadata struct {
 	Genres      []string
 	Features    []string
 	AgeRating   string
+	Voiceovers  []string
 	ReleaseDate string
 	InstalledMB int64
 	StoreURL    string
@@ -81,6 +82,15 @@ func FetchGameMetadata(ctx context.Context, productID int) (GameMetadata, error)
 	}
 	for _, feature := range game.Embedded.Features {
 		meta.Features = append(meta.Features, feature.Name)
+	}
+	voiced := make(map[string]bool)
+	for _, localization := range game.Embedded.Localizations {
+		name := localization.Embedded.Language.Name
+		if localization.Embedded.Scope.Type != "audio" || name == "" || voiced[name] {
+			continue
+		}
+		voiced[name] = true
+		meta.Voiceovers = append(meta.Voiceovers, name)
 	}
 	for _, shot := range game.Embedded.Screenshots {
 		address := strings.TrimSpace(shot.Links.Self.Href)
@@ -124,6 +134,14 @@ type v2Game struct {
 		ESRBRating struct {
 			Category struct{ Name string } `json:"category"`
 		} `json:"esrbRating"`
+		Localizations []struct {
+			Embedded struct {
+				Language struct{ Name string } `json:"language"`
+				Scope    struct {
+					Type string `json:"type"`
+				} `json:"localizationScope"`
+			} `json:"_embedded"`
+		} `json:"localizations"`
 		Screenshots []struct {
 			Links struct {
 				Self struct {

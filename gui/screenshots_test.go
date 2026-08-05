@@ -11,7 +11,6 @@ import (
 
 	"fyne.io/fyne/v2/test"
 	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,104 +68,6 @@ func shots(base string, n int) []client.Screenshot {
 	return made
 }
 
-// The strip shows every picture the store page has.
-func TestScreenshotStrip_ShowsOneThumbnailPerScreenshot(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-	base, asked := pictureServer(t)
-
-	dir := t.TempDir()
-	strip := screenshotStrip(shots(base, 3), newCoverCache(dir),
-		func() bool { return true }, func(client.Screenshot) {})
-
-	require.Len(t, widgetsOfType[*screenshotThumb](strip), 3)
-	require.Eventually(t, func() bool { return cachedFiles(dir) == 3 }, 5*time.Second, 20*time.Millisecond)
-	require.Equal(t, int64(3), asked.count.Load())
-	require.True(t, asked.contains("_112.jpg"), "the strip must ask for thumbnails, not full pictures")
-	require.False(t, asked.contains("_748.jpg"), "the large rendition costs 45 times as much")
-}
-
-// Games with no pictures must not leave an empty strip behind.
-func TestScreenshotStrip_IsNothingWithoutScreenshots(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-
-	require.Nil(t, screenshotStrip(nil, newCoverCache(t.TempDir()),
-		func() bool { return true }, func(client.Screenshot) {}))
-}
-
-// Tapping a thumbnail opens the picture, and only then is the large rendition
-// worth fetching.
-func TestScreenshotStrip_TapOpensTheLargeRendition(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-	base := storeStub(t, nil)
-
-	var opened client.Screenshot
-	strip := screenshotStrip(shots(base, 2), newCoverCache(t.TempDir()),
-		func() bool { return true }, func(shot client.Screenshot) { opened = shot })
-
-	thumbs := widgetsOfType[*screenshotThumb](strip)
-	require.Len(t, thumbs, 2)
-	test.Tap(thumbs[1])
-
-	require.Equal(t, base+"/largeb_748.jpg", opened.LargeURL)
-}
-
-// Selecting another game before the pictures arrive must not fill the strip of
-// the game now on screen.
-func TestScreenshotStrip_DropsPicturesForAGameNoLongerShown(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-	base, _ := pictureServer(t)
-
-	dir := t.TempDir()
-	strip := screenshotStrip(shots(base, 1), newCoverCache(dir),
-		func() bool { return false }, func(client.Screenshot) {})
-
-	require.Eventually(t, func() bool { return cachedFiles(dir) == 1 }, 5*time.Second, 20*time.Millisecond)
-	for _, thumb := range widgetsOfType[*screenshotThumb](strip) {
-		require.Nil(t, thumb.picture.Resource, "a picture for another game must not be shown")
-	}
-}
-
-// The strip has to be part of the details pane, not a container on its own.
-func TestLibraryTab_ScreenshotsShowInTheDetailsPane(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-	base := storeStub(t, nil)
-
-	offMain(t, func() {
-		lt, _ := newLibraryFixture(t, 2)
-		require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: richGameData}))
-
-		fillScreenshots(lt.screenshots, shots(base, 2), newCoverCache(t.TempDir()),
-			test.NewWindow(nil), func() bool { return true })
-
-		require.Len(t, widgetsOfType[*screenshotThumb](lt.content), 2,
-			"the pictures must be reachable from the pane the user is looking at")
-	})
-}
-
-// Selecting another game drops the pictures of the previous one at once, rather
-// than leaving them until the new ones arrive.
-func TestLibraryTab_ScreenshotsGoWhenTheSelectionChanges(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-	base := storeStub(t, nil)
-
-	offMain(t, func() {
-		lt, _ := newLibraryFixture(t, 2)
-		require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: richGameData}))
-		fillScreenshots(lt.screenshots, shots(base, 2), newCoverCache(t.TempDir()),
-			test.NewWindow(nil), func() bool { return true })
-		require.NotEmpty(t, widgetsOfType[*screenshotThumb](lt.content))
-
-		require.NoError(t, lt.selected.Set(db.Game{ID: 2, Title: "Game 2", Data: richGameData}))
-		require.Empty(t, widgetsOfType[*screenshotThumb](lt.content))
-	})
-}
-
 // offMain runs a test body on a goroutine of its own. Fyne only queues a
 // binding listener when the caller is the main goroutine, so a test that sets a
 // binding and then looks at what changed has to run off it to see the change
@@ -179,4 +80,20 @@ func offMain(t *testing.T, body func()) {
 		body()
 	}()
 	<-done
+}
+
+// Opening a picture on its own fetches the rendition GOG serves large.
+func TestShowPicture_FetchesTheLargeRendition(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	base, asked := pictureServer(t)
+
+	dir := t.TempDir()
+	showPicture(test.NewWindow(nil),
+		galleryPicture{ThumbnailURL: base + "/thumb_112.jpg", LargeURL: base + "/large_748.jpg"},
+		newCoverCache(dir))
+
+	require.Eventually(t, func() bool { return cachedFiles(dir) == 1 }, 5*time.Second, 20*time.Millisecond)
+	require.True(t, asked.contains("_748.jpg"))
+	require.False(t, asked.contains("_112.jpg"), "the thumbnail is already on screen")
 }

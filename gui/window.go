@@ -1,12 +1,15 @@
 package gui
 
 import (
+	"fmt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/auth"
+	"github.com/habedi/gogg/db"
 )
 
 // Run starts the desktop GUI. loginer performs the GOG login flow when a
@@ -78,13 +81,26 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 		saveWindowState(prefs, saved)
 	})
 
-	myWindow.SetContent(mainTabs)
-	// Select a tab explicitly so OnSelected runs for it.
-	if state.Tab >= 0 && state.Tab < len(mainTabs.Items) {
-		mainTabs.SelectIndex(state.Tab)
-	} else {
-		mainTabs.SelectIndex(0)
+	// The interface can be switched while the app is running, which means
+	// building the one that was asked for from scratch.
+	showInterface := func() {
+		if prefs.BoolWithFallback(prefXMB, false) {
+			myWindow.SetContent(newXMBShell(appCategories(myWindow, dm, version,
+				func() fyne.CanvasObject { return library.content },
+				func() { library.refresh() })))
+			return
+		}
+
+		myWindow.SetContent(mainTabs)
+		// Select a tab explicitly so OnSelected runs for it.
+		if state.Tab >= 0 && state.Tab < len(mainTabs.Items) {
+			mainTabs.SelectIndex(state.Tab)
+		} else {
+			mainTabs.SelectIndex(0)
+		}
 	}
+	onInterfaceChanged = showInterface
+	showInterface()
 
 	myWindow.ShowAndRun()
 }
@@ -94,4 +110,77 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 func FileTabUI(win fyne.Window) fyne.CanvasObject {
 	head := widget.NewLabelWithStyle("File Hashes", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	return container.NewBorder(head, nil, nil, nil, HashUI(win))
+}
+
+// onInterfaceChanged is set by Run so that choosing the other interface in the
+// settings takes effect at once. It is nil in tests, where there is no window to
+// rebuild.
+var onInterfaceChanged func()
+
+// appCategories describes gogg for the cross interface: the same sections as the
+// tabs, with what can be done in each listed under it. catalogue is read when an
+// item is opened, because the library is rebuilt when the user logs in.
+func appCategories(win fyne.Window, dm *DownloadManager, version string,
+	catalogue func() fyne.CanvasObject, refresh func(),
+) []xmbCategory {
+	return []xmbCategory{
+		{
+			Title: "Catalogue", Icon: theme.ListIcon(),
+			Items: []xmbItem{
+				{Title: "Browse library", Detail: gameCountDetail, Pane: catalogue},
+				{Title: "Refresh catalogue", Action: refresh},
+			},
+		},
+		{
+			Title: "Downloads", Icon: theme.DownloadIcon(),
+			Items: []xmbItem{{
+				Title:  "Active downloads",
+				Detail: func() string { return downloadCountDetail(dm) },
+				Pane:   func() fyne.CanvasObject { return DownloadsTabUI(dm) },
+			}},
+		},
+		{
+			Title: "File Ops", Icon: theme.DocumentIcon(),
+			Items: []xmbItem{{
+				Title: "File hashes",
+				Pane:  func() fyne.CanvasObject { return FileTabUI(win) },
+			}},
+		},
+		{
+			Title: "Settings", Icon: theme.SettingsIcon(),
+			Items: []xmbItem{{
+				Title: "Preferences",
+				Pane:  func() fyne.CanvasObject { return SettingsTabUI(win) },
+			}},
+		},
+		{
+			Title: "About", Icon: theme.HelpIcon(),
+			Items: []xmbItem{{
+				Title: "About gogg",
+				Pane:  func() fyne.CanvasObject { return ShowAboutUI(version) },
+			}},
+		},
+	}
+}
+
+// gameCountDetail says how much is in the catalogue, so the bar carries the
+// number without opening anything.
+func gameCountDetail() string {
+	games, err := db.GetCatalogue()
+	if err != nil || len(games) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d games", len(games))
+}
+
+// downloadCountDetail says how many downloads are on the go.
+func downloadCountDetail(dm *DownloadManager) string {
+	if dm == nil {
+		return ""
+	}
+	tasks, err := dm.Tasks.Get()
+	if err != nil || len(tasks) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d in the queue", len(tasks))
 }

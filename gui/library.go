@@ -1,11 +1,9 @@
 package gui
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
 	"io"
 	"math"
 	"os"
@@ -15,7 +13,6 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
@@ -39,10 +36,14 @@ type libraryTab struct {
 	split *container.Split
 	// refresh re-syncs the catalogue, the same as the Refresh button.
 	refresh func()
-	// screenshots is the strip of store pictures for the selected game.
-	screenshots *fyne.Container
-	// artwork is the picture shown for the selected game.
-	artwork *canvas.Image
+	// storeHeader is the description of the selected game.
+	storeHeader *fyne.Container
+	// gallery is the artwork and store pictures of the selected game.
+	gallery *gameGallery
+	// pane is the right-hand side of the library, and dm the downloads it
+	// starts.
+	pane *detailsPane
+	dm   *DownloadManager
 }
 
 // isGameDownloaded checks if a game has been successfully downloaded based on download history
@@ -457,7 +458,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			searchEntry: widget.NewEntry(),
 			selected:    binding.NewUntyped(),
 			refresh:     func() {},
-			artwork:     canvas.NewImageFromResource(nil),
+			gallery:     newGameGallery(nil, win),
+			dm:          dm,
 		}
 	}
 
@@ -712,14 +714,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	leftTopContainer := container.NewVBox(searchEntry, selectionControls, widget.NewSeparator())
 	leftPane := container.NewBorder(leftTopContainer, toolbar, nil, nil, listContent)
 
-	detailTitle := NewCopyableLabel("Select a game from the list")
-	detailTitle.Alignment = fyne.TextAlignCenter
-	detailTitle.TextStyle = fyne.TextStyle{Bold: true}
-
 	detailsBox := container.NewVBox()
 	pane := createDetailsPane(win, authService, dm, selectedGameBinding,
-		sel, func() []db.Game { return allGames }, detailsBox)
-	accordion, form := pane.content, pane.form
+		sel, func() []db.Game { return allGames }, detailsBox, covers)
+	form := pane.form
 
 	afterSelectionChange = func() {
 		if n := sel.count(); n > 0 {
@@ -762,45 +760,39 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			}, win)
 	}
 	refreshUpdatesSummary()
-	topBox := container.NewVBox(detailTitle, widget.NewSeparator())
-	// The pane can be taller than the window, and a window cannot be smaller
-	// than its content, so it scrolls instead.
-	rightPane := container.NewBorder(topBox, nil, nil, nil, container.NewVScroll(accordion))
-	accordion.Hide()
+	rightPane := pane.content
+	pane.body.Hide()
 
 	selectedGameBinding.AddListener(binding.NewDataListener(func() {
 		gameRaw, _ := selectedGameBinding.Get()
 		if gameRaw == nil {
-			fillScreenshots(pane.screenshots, nil, covers, win, nil)
-			accordion.Hide()
+			fillStoreHeader(pane, nil, win)
+			pane.gallery.show(nil, 0)
+			pane.body.Hide()
 			form.narrowTo(db.Game{})
-			detailTitle.SetText("Select a game from the list")
-			topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator()}
-			topBox.Refresh()
+			pane.title.SetText("Select a game from the list")
 			return
 		}
 		game := gameRaw.(db.Game)
-		detailTitle.SetText(game.Title)
+		pane.title.SetText(game.Title)
 		// The facts gogg already holds show at once; what GOG's store adds
 		// arrives when it arrives.
-		fillDetails(detailsBox, game, dm, nil)
-		fillScreenshots(pane.screenshots, nil, covers, win, nil)
+		fillDetails(pane, game, dm, nil)
+		fillStoreHeader(pane, nil, win)
+		showGallery(pane.gallery, game, nil)
 		stillShowing := func() bool {
 			current, _ := selectedGameBinding.Get()
 			shown, ok := current.(db.Game)
 			return ok && shown.ID == game.ID
 		}
 		metadata.load(game.ID, func(int) bool { return stillShowing() }, func(meta client.GameMetadata) {
-			fillDetails(detailsBox, game, dm, &meta)
-			fillScreenshots(pane.screenshots, meta.Screenshots, covers, win, stillShowing)
+			fillDetails(pane, game, dm, &meta)
+			fillStoreHeader(pane, &meta, win)
+			showGallery(pane.gallery, game, meta.Screenshots)
 		})
 
 		form.narrowTo(game)
-		showArtwork(pane.artwork, game, covers)
-		accordion.Show()
-
-		topBox.Objects = []fyne.CanvasObject{detailTitle, widget.NewSeparator()}
-		topBox.Refresh()
+		pane.body.Show()
 	}))
 	// AddListener invokes the listener once on registration, and the status
 	// worked out above is still valid at that point.
@@ -823,8 +815,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		selected:    selectedGameBinding,
 		split:       split,
 		refresh:     func() { refreshBtn.OnTapped() },
-		screenshots: pane.screenshots,
-		artwork:     pane.artwork,
+		storeHeader: pane.storeHeader,
+		gallery:     pane.gallery,
+		pane:        pane,
+		dm:          dm,
 	}
 }
 
@@ -838,7 +832,11 @@ func untypedSlice(games []db.Game) []interface{} {
 
 // downloadForm exposes what the rest of the library needs from the options pane.
 type downloadForm struct {
-	content fyne.CanvasObject
+	// options is what a download is made of: the path, the choices and the
+	// switches. It goes in a tab of its own.
+	options fyne.CanvasObject
+	// actions are the buttons, which stay in sight at the foot of the pane.
+	actions fyne.CanvasObject
 	// relabel brings the download button in line with the current selection.
 	relabel func()
 	// queue starts downloads for the given games with the options on screen.
@@ -846,6 +844,11 @@ type downloadForm struct {
 	// narrowTo restricts the language and platform choices to what a game
 	// offers; a zero game restores the full lists.
 	narrowTo func(game db.Game)
+	// links are the ways out to the web pages about a game.
+	links fyne.CanvasObject
+	// showStore points the GOG button at a game's store page, hiding it for
+	// games GOG no longer lists.
+	showStore func(url string)
 }
 
 // artworkSize is how much room the details pane gives a game's picture.
@@ -854,10 +857,20 @@ var artworkSize = fyne.NewSize(392, 220)
 // detailsPane is the right-hand side of the library: the artwork, the facts and
 // the download options, in that order.
 type detailsPane struct {
-	content     fyne.CanvasObject
-	form        *downloadForm
-	artwork     *canvas.Image
-	screenshots *fyne.Container
+	content fyne.CanvasObject
+	form    *downloadForm
+	gallery *gameGallery
+	// title names the game the pane is describing.
+	title *CopyableLabel
+	// storeHeader is the description, shown on the overview.
+	storeHeader *fyne.Container
+	// keyFacts are the few facts worth seeing without asking; facts is all of
+	// them.
+	keyFacts *fyne.Container
+	facts    *fyne.Container
+	// body holds everything about a game, and is hidden when none is selected.
+	body *fyne.Container
+	tabs *container.AppTabs
 }
 
 // createDetailsPane builds the pane. detailsBox is filled with the selected
@@ -866,30 +879,51 @@ type detailsPane struct {
 // game you are looking at.
 func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadManager,
 	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
-	detailsBox *fyne.Container,
+	detailsBox *fyne.Container, covers *coverCache,
 ) *detailsPane {
 	form := createDownloadForm(win, authService, dm, selectedGame, sel, catalogue)
 
-	facts := widget.NewAccordion(widget.NewAccordionItem("Game Details", detailsBox))
-	options := widget.NewAccordion(widget.NewAccordionItem("Download Options", form.content))
-	options.Open(0)
+	title := NewCopyableLabel("Select a game from the list")
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.Truncation = fyne.TextTruncateEllipsis
 
-	// The banner is served at 392x220, so it is shown at its own size rather
-	// than upscaled.
-	artwork := canvas.NewImageFromResource(nil)
-	artwork.FillMode = canvas.ImageFillContain
-	artwork.SetMinSize(artworkSize)
-	artwork.Hide()
+	// The game's own artwork and the pictures from its store page are shown
+	// together, the artwork first.
+	gallery := newGameGallery(covers, win)
 
-	// The strip of pictures is filled once GOG has been asked about the game,
-	// and stays empty for games with none.
-	screenshots := container.NewStack()
+	// The description is filled once GOG has been asked about the game, and
+	// stays empty for games it no longer describes.
+	storeHeader := container.NewStack()
+	keyFacts := container.NewStack()
+
+	// Three tabs rather than one column: everything about a game stacked up
+	// comes to some 1400 points, more than twice what the pane can show.
+	overview := container.NewVScroll(container.NewVBox(
+		gallery, storeHeader, keyFacts, widget.NewSeparator(), form.links,
+	))
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Overview", overview),
+		container.NewTabItem("Details", container.NewVScroll(detailsBox)),
+		container.NewTabItem("Download", container.NewVScroll(form.options)),
+	)
+
+	// The buttons sit under the tabs rather than in them, so the download is
+	// always in the same place and never at the far end of a scroll.
+	actions := container.NewVBox(widget.NewSeparator(), form.actions)
+	body := container.NewBorder(nil, actions, nil, nil, tabs)
+
+	header := container.NewVBox(title, widget.NewSeparator())
 
 	return &detailsPane{
-		content:     container.NewVBox(container.NewPadded(artwork), screenshots, facts, options),
+		content:     container.NewBorder(header, nil, nil, nil, body),
 		form:        form,
-		artwork:     artwork,
-		screenshots: screenshots,
+		gallery:     gallery,
+		title:       title,
+		storeHeader: storeHeader,
+		keyFacts:    keyFacts,
+		facts:       detailsBox,
+		body:        body,
+		tabs:        tabs,
 	}
 }
 
@@ -960,7 +994,15 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	rommCheck := widget.NewCheck("RomM folder layout (platform/game)", func(b bool) { prefs.SetBool("downloadForm.romm", b) })
 	rommCheck.SetChecked(prefs.BoolWithFallback("downloadForm.romm", false))
 
-	gogdbBtn := widget.NewButtonWithIcon("View on gogdb.org", theme.SearchIcon(), func() {
+	storeURL := ""
+	storeBtn := widget.NewButtonWithIcon("View on GOG", theme.SearchIcon(), func() {
+		if parsed := parseURL(storeURL); parsed != nil {
+			_ = fyne.CurrentApp().OpenURL(parsed)
+		}
+	})
+	storeBtn.Hide()
+
+	gogdbBtn := widget.NewButtonWithIcon("gogdb.org", theme.SearchIcon(), func() {
 		gameRaw, _ := selectedGame.Get()
 		if gameRaw == nil {
 			return
@@ -1047,8 +1089,22 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	}
 
 	return &downloadForm{
-		content: container.NewVBox(form, checkboxes, layout.NewSpacer(),
-			container.NewGridWithColumns(2, gogdbBtn, estimateBtn), downloadBtn),
+		options: container.NewVBox(form, widget.NewSeparator(), checkboxes),
+		// Right-aligned at their own size: a button handed the whole width of
+		// the pane reads as a banner rather than something to press.
+		actions: container.NewHBox(layout.NewSpacer(),
+			fixedSize(estimateBtn, paneButtonSize), fixedSize(downloadBtn, paneActionSize)),
+		links: container.NewHBox(
+			fixedSize(storeBtn, paneButtonSize), fixedSize(gogdbBtn, paneLinkSize),
+			layout.NewSpacer()),
+		showStore: func(url string) {
+			storeURL = url
+			if url == "" {
+				storeBtn.Hide()
+				return
+			}
+			storeBtn.Show()
+		},
 		relabel:  relabel,
 		queue:    queue,
 		narrowTo: narrowTo,
@@ -1185,58 +1241,54 @@ func buildVersionMapExtended(g client.Game, language, platform string, includeEx
 	return m
 }
 
-// showArtwork puts the selected game's picture in the details pane, hiding the
-// space it takes when the game has none.
-func showArtwork(artwork *canvas.Image, game db.Game, covers *coverCache) {
-	artwork.Image = nil
-	artwork.Resource = nil
-	artwork.Hide()
-
-	if covers == nil {
-		return
-	}
-	wanted := game.ID
-	covers.load(game, coverBanner, func(id int) bool { return id == wanted },
-		func(data []byte, source coverSource) {
-			decoded, _, err := image.Decode(bytes.NewReader(data))
-			if err != nil {
-				return
-			}
-			if source.Faded {
-				decoded = cropArtwork(decoded)
-			}
-			artwork.Image = decoded
-			artwork.Show()
-			artwork.Refresh()
-		})
+// showGallery puts everything there is to see of a game in the gallery: its own
+// artwork, and the pictures from its store page once they are known.
+func showGallery(gallery *gameGallery, game db.Game, shots []client.Screenshot) {
+	pictures, selected := galleryPicturesFor(game, shots)
+	gallery.show(pictures, selected)
 }
 
 // fillDetails puts a game's facts in the pane. meta is nil until GOG's store
 // has been looked up, and the pane is filled twice: once without it, once with.
-func fillDetails(detailsBox *fyne.Container, game db.Game, dm *DownloadManager, meta *client.GameMetadata) {
+func fillDetails(pane *detailsPane, game db.Game, dm *DownloadManager, meta *client.GameMetadata) {
+	details := gameDetails(game, dm, meta)
+
+	pane.facts.Objects = []fyne.CanvasObject{renderGameDetails(details)}
+	pane.facts.Refresh()
+
+	pane.keyFacts.Objects = []fyne.CanvasObject{renderKeyFacts(details)}
+	pane.keyFacts.Refresh()
+}
+
+// fillStoreHeader puts the description and the link to the store page above the
+// facts, where they can be read without opening anything. A game GOG does not
+// describe leaves the space empty.
+func fillStoreHeader(pane *detailsPane, meta *client.GameMetadata, win fyne.Window) {
 	summary, storeURL := "", ""
 	if meta != nil {
 		summary, storeURL = meta.Summary, meta.StoreURL
 	}
-	detailsBox.Objects = []fyne.CanvasObject{
-		renderGameFacts(summary, gameDetails(game, dm, meta), storeURL),
+
+	if header := renderStoreHeader(win, summary); header != nil {
+		pane.storeHeader.Objects = []fyne.CanvasObject{header}
+	} else {
+		pane.storeHeader.Objects = nil
 	}
-	detailsBox.Refresh()
+	pane.storeHeader.Refresh()
+	pane.form.showStore(storeURL)
 }
 
-// fillScreenshots replaces whatever the pane was showing with this game's
-// pictures. An empty list empties the strip, which is what a game with no store
-// page gets.
-func fillScreenshots(box *fyne.Container, shots []client.Screenshot, covers *coverCache,
-	win fyne.Window, stillWanted func() bool,
-) {
-	strip := screenshotStrip(shots, covers, stillWanted, func(shot client.Screenshot) {
-		showScreenshot(win, shot, covers)
-	})
-	if strip == nil {
-		box.Objects = nil
-	} else {
-		box.Objects = []fyne.CanvasObject{strip}
-	}
-	box.Refresh()
+// Buttons in a box or a grid are handed the whole width they are given, which
+// leaves a button of 154 points rendered at 560. These are the sizes the details
+// pane hands out instead.
+var (
+	paneButtonSize = fyne.NewSize(160, 36)
+	paneLinkSize   = fyne.NewSize(120, 36)
+	paneSmallSize  = fyne.NewSize(96, 32)
+	paneActionSize = fyne.NewSize(200, 36)
+)
+
+// fixedSize gives a widget a size of its own, whatever it is put inside.
+func fixedSize(object fyne.CanvasObject, size fyne.Size) fyne.CanvasObject {
+	return container.New(layout.NewGridWrapLayout(size), object)
 }

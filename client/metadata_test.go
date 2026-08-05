@@ -23,6 +23,12 @@ const v2Response = `{
 		"tags": [{"name": "Action"}, {"name": "Adventure"}],
 		"features": [{"id": "achievements", "name": "Achievements"}, {"id": "single", "name": "Single-player"}],
 		"esrbRating": {"category": {"name": "Mature 17+"}},
+		"localizations": [
+			{"_embedded": {"language": {"name": "English"}, "localizationScope": {"type": "audio"}}},
+			{"_embedded": {"language": {"name": "English"}, "localizationScope": {"type": "text"}}},
+			{"_embedded": {"language": {"name": "Czech"}, "localizationScope": {"type": "text"}}},
+			{"_embedded": {"language": {"name": "German"}, "localizationScope": {"type": "audio"}}}
+		],
 		"screenshots": [
 			{"_links": {"self": {
 				"href": "https://images.gog-statics.com/aaa_{formatter}.jpg",
@@ -85,6 +91,10 @@ func TestFetchGameMetadata_MergesBothEndpoints(t *testing.T) {
 	require.Equal(t, "https://www.gog.com/en/game/god_of_war", meta.StoreURL)
 	require.Equal(t, "https://images.gog-statics.com/boxart.jpg", meta.BoxArtURL)
 	require.Equal(t, "2024-03-12", meta.ReleaseDate, "the timestamp is trimmed to the date")
+
+	// Which languages a game speaks is not something the download files say.
+	require.Equal(t, []string{"English", "German"}, meta.Voiceovers,
+		"only languages with audio are voiced, and each is named once")
 
 	// A strip of thumbnails costs 2 KB a picture; the one that is opened costs
 	// 90 KB, so the two renditions are kept apart.

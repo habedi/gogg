@@ -3,13 +3,11 @@ package gui
 import (
 	"os"
 	"path/filepath"
-	"sync/atomic"
+	"strings"
 	"testing"
-	"time"
+	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -144,13 +142,13 @@ func TestLibraryTab_SelectingAGameFillsTheDetailsPane(t *testing.T) {
 
 	lt, _ := newLibraryFixture(t, 2)
 
-	before := len(widgetsOfType[*widget.Form](lt.content))
+	before := len(widgetsOfType[*widget.Form](lt.pane.facts))
 
 	// The list drives this binding when a row is clicked.
 	require.NotNil(t, lt.selected)
 	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: richGameData, Version: "2.1"}))
 
-	require.Greater(t, len(widgetsOfType[*widget.Form](lt.content)), before,
+	require.Greater(t, len(widgetsOfType[*widget.Form](lt.pane.facts)), before,
 		"the details pane must gain a form of facts")
 }
 
@@ -174,60 +172,39 @@ func TestLibraryTab_FitsInADefaultWindow(t *testing.T) {
 		"the library must fit in the default window width")
 }
 
-func accordionWithItem(t *testing.T, root fyne.CanvasObject, title string) *widget.AccordionItem {
-	t.Helper()
-	for _, accordion := range widgetsOfType[*widget.Accordion](root) {
-		for _, item := range accordion.Items {
-			if item.Title == title {
-				return item
-			}
-		}
+// The pane opens on the overview: the pictures and a few facts, not a form.
+func TestLibraryTab_PaneOpensOnTheOverview(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 2)
+
+	var titles []string
+	for _, item := range lt.pane.tabs.Items {
+		titles = append(titles, item.Text)
 	}
-	t.Fatalf("no accordion section titled %q", title)
-	return nil
+	require.Equal(t, []string{"Overview", "Details", "Download"}, titles)
+	require.Equal(t, "Overview", lt.pane.tabs.Selected().Text)
+	require.NotNil(t, lt.gallery, "the details pane carries a place for pictures")
 }
 
-// The facts are reference material; the pane should lead with the artwork and
-// the thing you came to do.
-func TestLibraryTab_GameDetailsStartCollapsed(t *testing.T) {
+// Whichever tab is open, the download button stays where it is.
+func TestLibraryTab_DownloadStaysBelowTheTabs(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	lt, _ := newLibraryFixture(t, 2)
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+		require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: richGameData}))
 
-	require.False(t, accordionWithItem(t, lt.content, "Game Details").Open)
-	require.True(t, accordionWithItem(t, lt.content, "Download Options").Open)
-}
+		require.NotNil(t, buttonWithLabel(lt.content, "Download Game"),
+			"the download button is part of the pane")
 
-// Artwork leads the pane, above the facts and the download options.
-func TestLibraryTab_ShowsArtworkAboveTheSections(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-
-	lt, _ := newLibraryFixture(t, 2)
-	require.NotNil(t, lt.artwork, "the details pane carries a place for artwork")
-
-	order := paneOrder(t, lt)
-	require.Equal(t, []string{"artwork", "Game Details", "Download Options"}, order)
-}
-
-// paneOrder names the details-pane sections from top to bottom.
-func paneOrder(t *testing.T, lt *libraryTab) []string {
-	t.Helper()
-	var order []string
-	walkWidgets(lt.content, func(o fyne.CanvasObject) {
-		switch v := o.(type) {
-		case *widget.Accordion:
-			for _, item := range v.Items {
-				order = append(order, item.Title)
-			}
-		case *canvas.Image:
-			if v == lt.artwork {
-				order = append(order, "artwork")
-			}
+		for _, tab := range lt.pane.tabs.Items {
+			require.Nil(t, buttonWithLabel(tab.Content, "Download Game"),
+				"the download button must not be inside the %q tab, or it scrolls away with it", tab.Text)
 		}
 	})
-	return order
 }
 
 // What GOG's store publishes fills in what the local catalogue cannot say.
@@ -244,6 +221,7 @@ func TestGameDetails_IncludesStoreInformation(t *testing.T) {
 		Genres:      []string{"Action", "Adventure"},
 		Features:    []string{"Achievements"},
 		AgeRating:   "Mature 17+",
+		Voiceovers:  []string{"English", "German"},
 		InstalledMB: 40981,
 	}
 	details := gameDetails(db.Game{ID: 42, Title: "Rich Game", Data: richGameData},
@@ -254,6 +232,7 @@ func TestGameDetails_IncludesStoreInformation(t *testing.T) {
 	require.Equal(t, "2024-03-12", detailValue(t, details, "Released"))
 	require.Equal(t, "Action, Adventure", detailValue(t, details, "Genres"))
 	require.Equal(t, "Mature 17+", detailValue(t, details, "Age rating"))
+	require.Equal(t, "English, German", detailValue(t, details, "Voiceovers"))
 	require.Equal(t, "40.0 GiB", detailValue(t, details, "Installed size"))
 }
 
@@ -272,62 +251,207 @@ func TestGameDetails_OmitsStoreFactsThatAreMissing(t *testing.T) {
 	}
 }
 
-func TestRenderGameFacts_ShowsSummaryAndStoreLink(t *testing.T) {
+func TestRenderStoreHeader_ShowsTheDescription(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	rendered := renderGameFacts("A summary of the game.",
-		[]gameDetail{{"Game ID", "42"}}, "https://www.gog.com/game/x")
+	rendered := renderStoreHeader(test.NewWindow(nil), "A summary of the game.")
 
 	var texts []string
 	for _, label := range widgetsOfType[*widget.Label](rendered) {
 		texts = append(texts, label.Text)
 	}
 	require.Contains(t, texts, "A summary of the game.")
-	require.NotNil(t, buttonWithLabel(rendered, "View on GOG"))
+	require.Nil(t, buttonWithLabel(rendered, "More"), "a short description is all there is")
 }
 
-func TestRenderGameFacts_WithoutStoreInformation(t *testing.T) {
+// A game GOG no longer describes must not take up the space of one it does.
+func TestRenderStoreHeader_IsNothingWithoutADescription(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	rendered := renderGameFacts("", []gameDetail{{"Game ID", "42"}}, "")
-	require.Nil(t, buttonWithLabel(rendered, "View on GOG"))
+	require.Nil(t, renderStoreHeader(test.NewWindow(nil), ""))
 }
 
-// Selecting a game asks GOG's store about it.
-func TestLibraryTab_SelectingAGameLooksUpTheStore(t *testing.T) {
+// A description of any length has to leave room for the facts below it, so only
+// its opening is shown and the rest is a click away.
+func TestRenderStoreHeader_LongDescriptionIsCutWithAWayToReadIt(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	var asked atomic.Int64
-	t.Setenv("GOGG_API_BASE", storeStub(t, &asked))
+	long := strings.Repeat("A long description. ", 40)
+	rendered := renderStoreHeader(test.NewWindow(nil), long)
 
-	lt, _ := newLibraryFixture(t, 2)
-	require.NoError(t, lt.selected.Set(db.Game{ID: 7, Title: "Game 7", Data: richGameData, Version: "2.1"}))
-
-	require.Eventually(t, func() bool { return asked.Load() > 0 }, 5*time.Second, 20*time.Millisecond,
-		"the pane must look the game up, not only show what is stored locally")
+	shown := widgetsOfType[*widget.Label](rendered)[0].Text
+	require.Less(t, len(shown), len(long))
+	require.LessOrEqual(t, utf8.RuneCountInString(shown), summaryClamp+1, "the opening is what is shown")
+	require.True(t, strings.HasSuffix(shown, "\u2026"))
+	require.NotNil(t, buttonWithLabel(rendered, "More"), "the rest has to be reachable")
 }
 
-// The pane is filled twice: once with what gogg holds, once when GOG answers.
+func TestClampSummary(t *testing.T) {
+	short, more := clampSummary("Two words.")
+	require.Equal(t, "Two words.", short)
+	require.False(t, more)
+
+	paragraph, more := clampSummary("The game.\nA list of features.")
+	require.Equal(t, "The game.", paragraph, "the opening paragraph describes the game")
+	require.True(t, more)
+
+	cut, more := clampSummary(strings.Repeat("word ", 200))
+	require.True(t, more)
+	require.LessOrEqual(t, utf8.RuneCountInString(cut), summaryClamp+1)
+	require.NotContains(t, cut, "wor\u2026", "words are not cut in half")
+
+	empty, more := clampSummary("   ")
+	require.Empty(t, empty)
+	require.False(t, more)
+}
+
+// The overview shows the few facts worth seeing at a glance, not all fifteen.
+func TestRenderKeyFacts_ShowsOnlyWhatMatters(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	rendered := renderKeyFacts([]gameDetail{
+		{"Game ID", "42"}, {"Version", "2.1"}, {"Released", "2024-03-12"},
+		{"Genres", "Action"}, {"Platforms", "Windows"}, {"Installed size", "40.0 GiB"},
+	})
+
+	texts := labelTexts(rendered)
+	require.Contains(t, texts, "Version")
+	require.Contains(t, texts, "2.1")
+	require.Contains(t, texts, "40.0 GiB")
+	require.NotContains(t, texts, "Genres", "the full list is a tab away")
+	require.NotContains(t, texts, "Game ID")
+}
+
+// The facts are filled twice: once with what gogg holds, once when GOG answers.
 func TestFillDetails_AddsTheStoreFactsWhenTheyArrive(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	box := container.NewVBox()
-	game := db.Game{ID: 7, Title: "Game 7", Data: richGameData, Version: "2.1"}
-	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+		game := db.Game{ID: 7, Title: "Game 7", Data: richGameData, Version: "2.1"}
+		require.NoError(t, lt.selected.Set(game))
 
-	fillDetails(box, game, dm, nil)
-	require.Nil(t, buttonWithLabel(box, "View on GOG"), "nothing is known about the store yet")
+		require.NotContains(t, formLabels(lt.pane.facts), "Publisher", "nothing is known about the store yet")
 
-	fillDetails(box, game, dm, &client.GameMetadata{
-		Summary: "A game about a game.", Publisher: "A Publisher",
-		StoreURL: "https://www.gog.com/game/x",
+		fillDetails(lt.pane, game, lt.dm, &client.GameMetadata{Publisher: "A Publisher"})
+		require.Contains(t, formLabels(lt.pane.facts), "Publisher")
 	})
-	require.NotNil(t, buttonWithLabel(box, "View on GOG"))
-	require.Equal(t, "A Publisher", detailValue(t, gameDetails(game, dm, &client.GameMetadata{
-		Publisher: "A Publisher",
-	}), "Publisher"))
+}
+
+// The description replaces whatever the previous game left behind, and a game
+// with none leaves the space empty.
+func TestFillStoreHeader_ShowsAndClearsTheDescription(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+		win := test.NewWindow(nil)
+
+		fillStoreHeader(lt.pane, &client.GameMetadata{
+			Summary: "A summary of the game.", StoreURL: "https://www.gog.com/game/x",
+		}, win)
+		require.NotEmpty(t, lt.pane.storeHeader.Objects)
+		require.True(t, buttonWithLabel(lt.content, "View on GOG").Visible(),
+			"the way to the store page shows once there is one")
+
+		fillStoreHeader(lt.pane, &client.GameMetadata{}, win)
+		require.Empty(t, lt.pane.storeHeader.Objects, "a game GOG does not describe shows nothing")
+		require.False(t, buttonWithLabel(lt.content, "View on GOG").Visible())
+
+		fillStoreHeader(lt.pane, nil, win)
+		require.Empty(t, lt.pane.storeHeader.Objects)
+	})
+}
+
+// formLabels names the facts a filled pane is showing.
+func formLabels(root fyne.CanvasObject) []string {
+	var labels []string
+	for _, form := range widgetsOfType[*widget.Form](root) {
+		for _, item := range form.Items {
+			labels = append(labels, item.Text)
+		}
+	}
+	return labels
+}
+
+// The description has to be readable without opening the facts accordion.
+func TestLibraryTab_StoreHeaderShowsInThePane(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+		require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: richGameData}))
+
+		fillStoreHeader(lt.pane, &client.GameMetadata{
+			Summary: "A summary of the game.", StoreURL: "https://www.gog.com/game/x",
+		}, test.NewWindow(nil))
+
+		require.NotEmpty(t, lt.pane.storeHeader.Objects, "the description shows on the overview")
+		require.True(t, buttonWithLabel(lt.content, "View on GOG").Visible())
+	})
+}
+
+// A game with a description and a strip of pictures still has to fit in the
+// window, or the download button ends up off the screen.
+func TestLibraryTab_FitsInADefaultWindowWithStoreInformation(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 3)
+		require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Rich Game", Data: richGameData}))
+
+		fillStoreHeader(lt.pane, &client.GameMetadata{
+			Summary:  strings.Repeat("A long description. ", 40),
+			StoreURL: "https://www.gog.com/game/x",
+		}, test.NewWindow(nil))
+		showGallery(lt.gallery, gameWithCover(storeStub(t, nil)+"/cover"),
+			shots(storeStub(t, nil), 6))
+
+		// The defaults in window.go.
+		const defaultWidth, defaultHeight = 960, 640
+		min := lt.content.MinSize()
+		t.Logf("library minimum size with store information: %.0fx%.0f", min.Width, min.Height)
+
+		require.LessOrEqual(t, min.Height, float32(defaultHeight))
+		require.LessOrEqual(t, min.Width, float32(defaultWidth))
+	})
+}
+
+// A button handed the whole width of the pane reads as a banner. They keep the
+// size they were given, however wide the pane is dragged.
+func TestDetailsPane_ButtonsKeepTheirOwnSize(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+		require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: richGameData}))
+		fillStoreHeader(lt.pane, &client.GameMetadata{
+			Summary: "A summary.", StoreURL: "https://www.gog.com/game/x",
+		}, test.NewWindow(nil))
+
+		win := test.NewWindow(lt.content)
+		t.Cleanup(win.Close)
+		win.Resize(fyne.NewSize(1600, 900))
+
+		for name, want := range map[string]fyne.Size{
+			"Download Game": paneActionSize,
+			"Estimate Size": paneButtonSize,
+			"View on GOG":   paneButtonSize,
+			"gogdb.org":     paneLinkSize,
+		} {
+			button := buttonWithLabel(lt.content, name)
+			require.NotNil(t, button, "%q is missing from the pane", name)
+			require.Equal(t, want.Width, button.Size().Width, "%q is stretched", name)
+			require.Equal(t, want.Height, button.Size().Height, "%q is stretched", name)
+		}
+	})
 }

@@ -8,7 +8,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
@@ -38,6 +39,7 @@ func gameDetails(game db.Game, dm *DownloadManager, meta *client.GameMetadata) [
 		details = appendIf(details, "Released", meta.ReleaseDate)
 		details = appendIf(details, "Genres", strings.Join(meta.Genres, ", "))
 		details = appendIf(details, "Features", strings.Join(meta.Features, ", "))
+		details = appendIf(details, "Voiceovers", strings.Join(meta.Voiceovers, ", "))
 		details = appendIf(details, "Age rating", meta.AgeRating)
 		if meta.InstalledMB > 0 {
 			details = append(details, gameDetail{
@@ -129,27 +131,89 @@ func appendIf(details []gameDetail, label, value string) []gameDetail {
 	return append(details, gameDetail{Label: label, Value: value})
 }
 
-// renderGameFacts lays out the summary, the facts and a link to the store page.
-func renderGameFacts(summary string, details []gameDetail, storeURL string) fyne.CanvasObject {
-	sections := make([]fyne.CanvasObject, 0, 3)
+// summaryClamp is how much of a description the overview shows. GOG writes them
+// at any length, and a wall of text pushes everything else off the pane.
+const summaryClamp = 220
 
-	if summary != "" {
-		text := widget.NewLabel(summary)
-		text.Wrapping = fyne.TextWrapWord
-		sections = append(sections, text, widget.NewSeparator())
+// clampSummary cuts a description down to its opening, on a word boundary, and
+// says whether anything was left out.
+func clampSummary(summary string) (string, bool) {
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return "", false
 	}
 
-	sections = append(sections, renderGameDetails(details))
-
-	if storeURL != "" {
-		sections = append(sections, widget.NewButtonWithIcon("View on GOG", theme.SearchIcon(), func() {
-			if parsed := parseURL(storeURL); parsed != nil {
-				_ = fyne.CurrentApp().OpenURL(parsed)
-			}
-		}))
+	// The first paragraph is the part that describes the game; what follows is
+	// usually a feature list.
+	opening := summary
+	if end := strings.Index(opening, "\n"); end >= 0 {
+		opening = strings.TrimSpace(opening[:end])
+	}
+	if len(opening) <= summaryClamp {
+		return opening, opening != summary
 	}
 
-	return container.NewVBox(sections...)
+	cut := opening[:summaryClamp]
+	if space := strings.LastIndex(cut, " "); space > summaryClamp/2 {
+		cut = cut[:space]
+	}
+	return strings.TrimRight(cut, " ,.;:") + "\u2026", true
+}
+
+// renderStoreHeader is the description GOG publishes, cut to its opening. It
+// returns nil for a game GOG no longer describes, so the overview gives the
+// space to the pictures and the facts instead.
+func renderStoreHeader(win fyne.Window, summary string) fyne.CanvasObject {
+	shown, more := clampSummary(summary)
+	if shown == "" {
+		return nil
+	}
+
+	text := widget.NewLabel(shown)
+	text.Wrapping = fyne.TextWrapWord
+	if !more {
+		return container.NewVBox(text)
+	}
+
+	// The rest is a click away rather than a scroll inside a scroll, which is
+	// what a fixed height for the description came down to.
+	open := widget.NewButton("More", func() {
+		full := widget.NewLabel(strings.TrimSpace(summary))
+		full.Wrapping = fyne.TextWrapWord
+		body := container.NewVScroll(full)
+		body.SetMinSize(fyne.NewSize(420, 320))
+		dialog.ShowCustom("Description", "Close", body, win)
+	})
+	return container.NewVBox(text, container.NewHBox(fixedSize(open, paneSmallSize), layout.NewSpacer()))
+}
+
+// keyFactLabels are the facts worth seeing without opening anything, in the
+// order the overview shows them.
+var keyFactLabels = []string{
+	"Version", "Released", "Installed size", "Estimated size", "Platforms", "Update",
+}
+
+// renderKeyFacts is the short version of the facts, for the overview.
+func renderKeyFacts(details []gameDetail) fyne.CanvasObject {
+	have := make(map[string]string, len(details))
+	for _, detail := range details {
+		have[detail.Label] = detail.Value
+	}
+
+	rows := make([]fyne.CanvasObject, 0, len(keyFactLabels)*2)
+	for _, label := range keyFactLabels {
+		value, ok := have[label]
+		if !ok || value == "" {
+			continue
+		}
+		name := widget.NewLabel(label)
+		name.TextStyle = fyne.TextStyle{Bold: true}
+		rows = append(rows, name, NewCopyableLabel(value))
+	}
+	if len(rows) == 0 {
+		return container.NewVBox()
+	}
+	return container.New(layout.NewFormLayout(), rows...)
 }
 
 // renderGameDetails lays the facts out as a form of copyable values.

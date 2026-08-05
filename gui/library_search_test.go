@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -86,11 +85,11 @@ func TestLibrary_SearchDoesNotRescanDownloadStatus(t *testing.T) {
 // storeStub stands in for GOG's store API. It answers nothing, so the details
 // pane stays with the facts gogg already holds; asked records what was
 // requested, for tests that check a lookup happened at all.
-func storeStub(t *testing.T, asked *atomic.Int64) string {
+func storeStub(t *testing.T, asked *pathLog) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if asked != nil {
-			asked.Add(1)
+			asked.add(r.URL.Path)
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))

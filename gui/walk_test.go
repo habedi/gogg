@@ -37,6 +37,12 @@ func walkWidgets(o fyne.CanvasObject, visit func(fyne.CanvasObject)) {
 		for _, item := range v.Items {
 			walkWidgets(item.Detail, visit)
 		}
+	case *container.AppTabs:
+		// Every tab, not only the one on show: a test asking what the pane holds
+		// should not have to click through it.
+		for _, item := range v.Items {
+			walkWidgets(item.Content, visit)
+		}
 	}
 }
 
@@ -71,4 +77,16 @@ func selectWithOption(t *testing.T, root fyne.CanvasObject, option string) *widg
 	}
 	t.Fatalf("no select offering %q", option)
 	return nil
+}
+
+// labelTexts is what a tree says, in plain labels and copyable ones alike.
+func labelTexts(root fyne.CanvasObject) []string {
+	var texts []string
+	for _, label := range widgetsOfType[*widget.Label](root) {
+		texts = append(texts, label.Text)
+	}
+	for _, label := range widgetsOfType[*CopyableLabel](root) {
+		texts = append(texts, label.Text)
+	}
+	return texts
 }
