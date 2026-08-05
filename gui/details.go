@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
@@ -216,8 +217,22 @@ func renderKeyFacts(details []gameDetail) fyne.CanvasObject {
 	return container.New(layout.NewFormLayout(), rows...)
 }
 
-// renderGameDetails lays the facts out as a form of copyable values.
+// factsTwoColumnWidth is the width from which the facts are worth splitting in
+// two. Below it the values have no room to say anything.
+const factsTwoColumnWidth = 520
+
+// renderGameDetails lays the facts out as forms of copyable values, in two
+// columns when the pane is wide enough for them. Fifteen facts in one column is
+// a wall; the same fifteen in two is a page.
 func renderGameDetails(details []gameDetail) fyne.CanvasObject {
+	if len(details) < 4 {
+		return factsForm(details)
+	}
+	half := (len(details) + 1) / 2
+	return newFactsGrid(factsForm(details[:half]), factsForm(details[half:]))
+}
+
+func factsForm(details []gameDetail) *widget.Form {
 	items := make([]*widget.FormItem, 0, len(details))
 	for _, detail := range details {
 		value := NewCopyableLabel(detail.Value)
@@ -226,6 +241,77 @@ func renderGameDetails(details []gameDetail) fyne.CanvasObject {
 	}
 	return widget.NewForm(items...)
 }
+
+// factsGrid puts its two halves side by side when there is room, and one above
+// the other when there is not. It is a widget rather than a layout because how
+// tall it needs to be depends on how wide it has been made, and a layout is
+// asked for its size before it is given one.
+type factsGrid struct {
+	widget.BaseWidget
+
+	halves []fyne.CanvasObject
+	// width is what the grid was last laid out at, which decides the shape it
+	// reports next time it is asked.
+	width float32
+}
+
+func newFactsGrid(halves ...fyne.CanvasObject) *factsGrid {
+	grid := &factsGrid{halves: halves}
+	grid.ExtendBaseWidget(grid)
+	return grid
+}
+
+func (g *factsGrid) sideBySide() bool { return g.width >= factsTwoColumnWidth }
+
+func (g *factsGrid) CreateRenderer() fyne.WidgetRenderer {
+	return &factsGridRenderer{grid: g}
+}
+
+type factsGridRenderer struct {
+	grid *factsGrid
+}
+
+func (r *factsGridRenderer) Layout(size fyne.Size) {
+	r.grid.width = size.Width
+
+	if !r.grid.sideBySide() {
+		top := float32(0)
+		for _, half := range r.grid.halves {
+			height := half.MinSize().Height
+			half.Move(fyne.NewPos(0, top))
+			half.Resize(fyne.NewSize(size.Width, height))
+			top += height + theme.Padding()
+		}
+		return
+	}
+
+	width := (size.Width - theme.Padding()) / 2
+	for i, half := range r.grid.halves {
+		half.Move(fyne.NewPos(float32(i)*(width+theme.Padding()), 0))
+		half.Resize(fyne.NewSize(width, half.MinSize().Height))
+	}
+}
+
+func (r *factsGridRenderer) MinSize() fyne.Size {
+	min := fyne.NewSize(0, 0)
+	for _, half := range r.grid.halves {
+		size := half.MinSize()
+		if r.grid.sideBySide() {
+			// Side by side they are as tall as the taller one, and each needs
+			// only half the width.
+			min.Width += size.Width + theme.Padding()
+			min.Height = fyne.Max(min.Height, size.Height)
+			continue
+		}
+		min.Width = fyne.Max(min.Width, size.Width)
+		min.Height += size.Height + theme.Padding()
+	}
+	return min
+}
+
+func (r *factsGridRenderer) Objects() []fyne.CanvasObject { return r.grid.halves }
+func (r *factsGridRenderer) Refresh()                     { r.Layout(r.grid.Size()) }
+func (r *factsGridRenderer) Destroy()                     {}
 
 func filesWord(n int) string {
 	if n == 1 {

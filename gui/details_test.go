@@ -455,3 +455,69 @@ func TestDetailsPane_ButtonsKeepTheirOwnSize(t *testing.T) {
 		}
 	})
 }
+
+// Fifteen facts in one column is a wall. Given room, they go in two.
+func TestRenderGameDetails_SplitsIntoTwoColumnsWhenThereIsRoom(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	details := make([]gameDetail, 0, 8)
+	for _, label := range []string{"Game ID", "Version", "Developer", "Publisher", "Released", "Genres", "Platforms", "DLCs"} {
+		details = append(details, gameDetail{label, "value"})
+	}
+	rendered := renderGameDetails(details)
+
+	forms := widgetsOfType[*widget.Form](rendered)
+	require.Len(t, forms, 2, "the facts are halved")
+	require.Len(t, forms[0].Items, 4)
+	require.Len(t, forms[1].Items, 4)
+
+	grid := rendered.(*factsGrid)
+	win := test.NewWindow(grid)
+	t.Cleanup(win.Close)
+
+	win.Resize(fyne.NewSize(600, 500))
+	require.Greater(t, forms[1].Position().X, float32(0), "side by side in a wide pane")
+	require.Equal(t, float32(0), forms[1].Position().Y)
+	sideBySide := grid.MinSize().Height
+
+	win.Resize(fyne.NewSize(400, 500))
+	require.Equal(t, float32(0), forms[1].Position().X, "and stacked in a narrow one")
+	require.Greater(t, forms[1].Position().Y, float32(0))
+
+	require.Less(t, sideBySide, grid.MinSize().Height,
+		"two columns must claim back the height, not only rearrange it")
+}
+
+// A short list is not worth splitting.
+func TestRenderGameDetails_LeavesAShortListAlone(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	rendered := renderGameDetails([]gameDetail{{"Game ID", "42"}, {"Version", "2.1"}})
+	_, single := rendered.(*widget.Form)
+	require.True(t, single)
+}
+
+// Grouping the switches must not lose any of them.
+func TestDownloadOptions_KeepsEverySwitchUnderAHeading(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 2)
+	options := lt.pane.tabs.Items[2].Content
+
+	var labels []string
+	for _, check := range widgetsOfType[*widget.Check](options) {
+		labels = append(labels, check.Text)
+	}
+	require.ElementsMatch(t, []string{
+		"Include Extras", "Include DLCs", "Resume Downloads", "Skip Patches",
+		"Keep only latest installer", "Flatten Directory", "RomM folder layout (platform/game)",
+	}, labels)
+
+	headings := labelTexts(options)
+	require.Contains(t, headings, "What to download")
+	require.Contains(t, headings, "Which files")
+	require.Contains(t, headings, "Where they go")
+}

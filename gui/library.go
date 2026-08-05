@@ -1078,7 +1078,13 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		widget.NewFormItem("Language", langSelect),
 		widget.NewFormItem("Threads", threadsSelect),
 	)
-	checkboxes := container.New(layout.NewGridLayout(2), extrasCheck, dlcsCheck, resumeCheck, flattenCheck, skipPatchesCheck, keepLatestCheck, rommCheck)
+	// Seven switches in a grid say nothing about what they do to each other.
+	// Grouped, each heading answers that.
+	checkboxes := container.NewVBox(
+		optionGroup("What to download", extrasCheck, dlcsCheck),
+		optionGroup("Which files", resumeCheck, skipPatchesCheck, keepLatestCheck),
+		optionGroup("Where they go", flattenCheck, rommCheck),
+	)
 
 	relabel := func() {
 		if n := sel.count(); n > 0 {
@@ -1291,4 +1297,17 @@ var (
 // fixedSize gives a widget a size of its own, whatever it is put inside.
 func fixedSize(object fyne.CanvasObject, size fyne.Size) fyne.CanvasObject {
 	return container.New(layout.NewGridWrapLayout(size), object)
+}
+
+// optionGroup is a titled set of switches, so what each one affects is clear
+// from the heading rather than from its own wording alone.
+func optionGroup(title string, checks ...*widget.Check) fyne.CanvasObject {
+	heading := widget.NewLabel(title)
+	heading.TextStyle = fyne.TextStyle{Bold: true}
+
+	boxes := make([]fyne.CanvasObject, 0, len(checks))
+	for _, check := range checks {
+		boxes = append(boxes, check)
+	}
+	return container.NewVBox(heading, container.New(layout.NewGridLayout(2), boxes...))
 }

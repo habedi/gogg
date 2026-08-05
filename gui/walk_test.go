@@ -37,6 +37,10 @@ func walkWidgets(o fyne.CanvasObject, visit func(fyne.CanvasObject)) {
 		for _, item := range v.Items {
 			walkWidgets(item.Detail, visit)
 		}
+	case *factsGrid:
+		for _, half := range v.halves {
+			walkWidgets(half, visit)
+		}
 	case *container.AppTabs:
 		// Every tab, not only the one on show: a test asking what the pane holds
 		// should not have to click through it.
