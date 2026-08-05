@@ -42,6 +42,10 @@ type libraryTab struct {
 	storeHeader *fyne.Container
 	// gallery is the artwork and store pictures of the selected game.
 	gallery *gameGallery
+	// sidebar lists the collections beside the games, when it is shown.
+	sidebar *librarySidebar
+	// showCollections is the toolbar button that shows and hides them.
+	showCollections *widget.Button
 	// listed is what the search and the filters have left showing, and relist
 	// asks that question again after something they depend on has changed.
 	listed func() []db.Game
@@ -500,6 +504,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	allGames, _ := db.GetCatalogue()
 	loadGameTags()
 	gamesListBinding := binding.NewUntypedList()
+	var sidebar *librarySidebar
 	selectedGameBinding := binding.NewUntyped()
 	isSortAscending := true
 
@@ -571,6 +576,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			gameGridWidget.Refresh()
 		}
 		gameCountLabel.SetText(fmt.Sprintf("%d games found", len(displayGames)))
+		if sidebar != nil && sidebar.content.Visible() {
+			sidebar.syncTo(searchEntry.Text)
+		}
 		if strings.TrimSpace(searchEntry.Text) == "" {
 			clearSearchBtn.Hide()
 		} else {
@@ -583,6 +591,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// it runs only when something that can change a status happened.
 	recomputeStatuses := func() {
 		computeUpdateStatus(dm, allGames)
+		if sidebar != nil && sidebar.content.Visible() {
+			sidebar.refresh(allGames)
+		}
 		updateDisplayedGames()
 		if refreshUpdatesSummary != nil {
 			refreshUpdatesSummary()
@@ -726,12 +737,16 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	})
 
 	settingsBtn := newUpdateSettingsButton(prefs, dm, recomputeStatuses)
+	// The button is made here so the toolbar can hold it; what it does is wired
+	// once the collections it shows exist.
+	collectionsBtn := widget.NewButtonWithIcon("Collections", theme.ListIcon(), nil)
 	filtersBtn := newFiltersButton(searchEntry, updateDisplayedGames)
 	// Compact toolbar now
 	// The buttons scroll rather than forcing a minimum width on the window; the
 	// counts stay pinned to the right.
 	toolbarButtons := container.NewHScroll(
-		container.NewHBox(refreshBtn, exportBtn, viewBtn, sortBtn, settingsBtn, filtersBtn, updateAllBtn))
+		container.NewHBox(collectionsBtn, refreshBtn, exportBtn, viewBtn, sortBtn, settingsBtn,
+			filtersBtn, updateAllBtn))
 	toolbar := container.NewBorder(nil, nil, nil,
 		container.NewHBox(updatesLabel, gameCountLabel), toolbarButtons)
 	selectionLabel := widget.NewLabel("")
@@ -752,7 +767,34 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	selectionControls := container.NewHBox(selectAllBtn, clearSelectionBtn, layout.NewSpacer(), selectionLabel)
 
 	leftTopContainer := container.NewVBox(searchEntry, selectionControls, widget.NewSeparator())
-	leftPane := container.NewBorder(leftTopContainer, toolbar, nil, nil, listContent)
+	listPane := container.NewBorder(leftTopContainer, toolbar, nil, nil, listContent)
+
+	// A collection is a stored query, so picking one is the same as typing it,
+	// keeping whatever words are already in the box.
+	sidebar = newLibrarySidebar(libraryCollections(), func(query string) {
+		text := strings.TrimSpace(search.Words(searchEntry.Text) + " " + query)
+		searchEntry.SetText(text)
+		updateDisplayedGames()
+	})
+	leftPane := container.NewBorder(nil, nil, sidebar.content, nil, listPane)
+
+	// Counting the collections parses the catalogue, so it is only done while
+	// they are on screen.
+	showCollections := func(shown bool) {
+		prefs.SetBool(prefSidebar, shown)
+		if shown {
+			sidebar.refresh(allGames)
+			sidebar.syncTo(searchEntry.Text)
+			sidebar.content.Show()
+		} else {
+			sidebar.content.Hide()
+		}
+		// Hiding a child sets a flag on the child; the pane holding it has to be
+		// told to lay itself out again, or the space stays where it was.
+		leftPane.Refresh()
+	}
+	collectionsBtn.OnTapped = func() { showCollections(!sidebar.content.Visible()) }
+	showCollections(prefs.BoolWithFallback(prefSidebar, false))
 
 	detailsBox := container.NewVBox()
 	pane := createDetailsPane(win, authService, dm, selectedGameBinding,
@@ -850,17 +892,19 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	split.Offset = loadWindowState(prefs).SplitOffset
 
 	return &libraryTab{
-		content:     split,
-		searchEntry: searchEntry,
-		selected:    selectedGameBinding,
-		split:       split,
-		refresh:     func() { refreshBtn.OnTapped() },
-		storeHeader: pane.storeHeader,
-		gallery:     pane.gallery,
-		listed:      displayedGames,
-		relist:      updateDisplayedGames,
-		pane:        pane,
-		dm:          dm,
+		content:         split,
+		searchEntry:     searchEntry,
+		selected:        selectedGameBinding,
+		split:           split,
+		refresh:         func() { refreshBtn.OnTapped() },
+		storeHeader:     pane.storeHeader,
+		gallery:         pane.gallery,
+		listed:          displayedGames,
+		sidebar:         sidebar,
+		showCollections: collectionsBtn,
+		relist:          updateDisplayedGames,
+		pane:            pane,
+		dm:              dm,
 	}
 }
 
@@ -893,8 +937,10 @@ type downloadForm struct {
 	showStore func(url string)
 }
 
-// artworkSize is how much room the details pane gives a game's picture.
-var artworkSize = fyne.NewSize(392, 220)
+// artworkSize is the least room the details pane gives a game's picture. It
+// grows with the pane from there, so this is a floor rather than a size: the
+// smaller it is, the narrower gogg's window is allowed to be.
+var artworkSize = fyne.NewSize(320, 180)
 
 // detailsPane is the right-hand side of the library: the artwork, the facts and
 // the download options, in that order.
@@ -1347,9 +1393,13 @@ func optionGroup(title string, checks ...*widget.Check) fyne.CanvasObject {
 	heading := widget.NewLabel(title)
 	heading.TextStyle = fyne.TextStyle{Bold: true}
 
-	boxes := make([]fyne.CanvasObject, 0, len(checks))
+	// One per line: two columns of "RomM folder layout (platform/game)" set the
+	// width of the whole pane, and the pane is beside the list, not instead of
+	// it.
+	boxes := make([]fyne.CanvasObject, 0, len(checks)+1)
+	boxes = append(boxes, heading)
 	for _, check := range checks {
 		boxes = append(boxes, check)
 	}
-	return container.NewVBox(heading, container.New(layout.NewGridLayout(2), boxes...))
+	return container.NewVBox(boxes...)
 }
