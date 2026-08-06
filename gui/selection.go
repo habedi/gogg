@@ -77,15 +77,14 @@ func bindCheck(check *widget.Check, checked bool, onChanged func(bool)) {
 // the grid show the same ones, so they are built and filled in one place.
 type statusBadges struct {
 	downloaded *widget.Icon
-	update     *widget.Button
+	update     *iconButton
 }
 
 func newStatusBadges() *statusBadges {
 	badges := &statusBadges{
 		downloaded: widget.NewIcon(theme.ConfirmIcon()),
-		update:     widget.NewButtonWithIcon("", theme.DownloadIcon(), nil),
+		update:     newIconButton(theme.DownloadIcon(), "What this update changes", nil),
 	}
-	badges.update.Importance = widget.LowImportance
 	badges.downloaded.Hide()
 	badges.update.Hide()
 	return badges

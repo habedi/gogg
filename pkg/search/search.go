@@ -118,15 +118,16 @@ func (q Query) TermValue(field, operator string) string {
 	return ""
 }
 
-// FormatSize writes a size the way a query takes it back.
+// FormatSize writes a size the way a query takes it back, in the units the app
+// shows beside a game.
 func FormatSize(size int64) string {
 	switch {
 	case size >= 1<<40:
-		return trimZeros(float64(size)/(1<<40)) + "tb"
+		return trimZeros(float64(size)/(1<<40)) + "tib"
 	case size >= 1<<30:
-		return trimZeros(float64(size)/(1<<30)) + "gb"
+		return trimZeros(float64(size)/(1<<30)) + "gib"
 	case size >= 1<<20:
-		return trimZeros(float64(size)/(1<<20)) + "mb"
+		return trimZeros(float64(size)/(1<<20)) + "mib"
 	default:
 		return strconv.FormatInt(size, 10)
 	}
@@ -151,6 +152,24 @@ func Words(input string) string {
 		words = append(words, token)
 	}
 	return strings.Join(words, " ")
+}
+
+// Mentions reports whether a query says anything about a field. The library
+// asks before it adds a term of its own, so a search that is about hidden games
+// is left to say so itself.
+func (q Query) Mentions(field string) bool {
+	field = resolveAlias(field)
+	for _, t := range q.terms {
+		if t.field == field {
+			return true
+		}
+	}
+	return false
+}
+
+// And narrows a query with another one's terms.
+func (q Query) And(other Query) Query {
+	return Query{terms: append(append([]term{}, q.terms...), other.terms...)}
 }
 
 // IsEmpty reports whether the query lets everything through.
@@ -296,10 +315,14 @@ func ParseSize(input string) (int64, error) {
 	}
 
 	multiplier := int64(1)
+	// Longest first: "gib" has to be recognised before the "b" at the end of it
+	// leads anywhere else. Sizes are powers of two whichever way they are
+	// written, which is what the app shows beside a game.
 	for _, unit := range []struct {
 		suffix string
 		scale  int64
 	}{
+		{"tib", 1 << 40}, {"gib", 1 << 30}, {"mib", 1 << 20}, {"kib", 1 << 10},
 		{"tb", 1 << 40}, {"gb", 1 << 30}, {"mb", 1 << 20}, {"kb", 1 << 10},
 		{"t", 1 << 40}, {"g", 1 << 30}, {"m", 1 << 20}, {"k", 1 << 10},
 	} {

@@ -119,22 +119,3 @@ func windowStateOnClose(prefs fyne.Preferences, size fyne.Size, tab int, split *
 	}
 	return state
 }
-
-// showingTabs reports whether the tab interface is what the window is showing.
-// The tabs are built either way, so a shortcut that moves through them has to
-// ask first: in the cross interface it would take the focus to a box that is
-// not on screen.
-func showingTabs(win fyne.Window, tabs fyne.CanvasObject) bool {
-	return win != nil && win.Content() == tabs
-}
-
-// handOverCatalogue gives the catalogue widgets to the interface that is about
-// to show them. The tabs are built whether or not they are on screen, and the
-// same widgets cannot hang in two places at once.
-func handOverCatalogue(tab *container.TabItem, catalogue fyne.CanvasObject, toTabs bool) {
-	if toTabs {
-		tab.Content = catalogue
-		return
-	}
-	tab.Content = container.NewStack()
-}

@@ -70,6 +70,9 @@ func collectionCounts(games []db.Game, rows []sidebarRow) map[string]int {
 		if err != nil {
 			continue
 		}
+		// Counted the way the list lists: a hidden game is not among "all
+		// games" any more than it is in the list.
+		query = withoutHidden(query)
 		queries[row.Title] = query
 
 		asks := query.Needs()

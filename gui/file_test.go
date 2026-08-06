@@ -86,3 +86,14 @@ func TestGenerateHashFiles_HashesWhatIsThere(t *testing.T) {
 		require.Len(t, items, 1)
 	})
 }
+
+// The tab already names the section, so the pane under it does not repeat it.
+func TestFileTabUI_DoesNotRepeatTheSectionName(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	require.NotContains(t, labelTexts(FileTabUI(win)), sectionFileHashes,
+		"the tab says what this is; the pane does not have to say it again")
+}

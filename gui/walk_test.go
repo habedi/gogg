@@ -98,3 +98,13 @@ func labelTexts(root fyne.CanvasObject) []string {
 	}
 	return texts
 }
+
+// checkWithLabel finds a check box by what it says.
+func checkWithLabel(root fyne.CanvasObject, label string) *widget.Check {
+	for _, check := range widgetsOfType[*widget.Check](root) {
+		if check.Text == label {
+			return check
+		}
+	}
+	return nil
+}

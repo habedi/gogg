@@ -203,39 +203,3 @@ func TestWindowStateOnClose_ReadsTheSplitOnScreen(t *testing.T) {
 
 	require.InDelta(t, 0.7, state.SplitOffset, 0.001)
 }
-
-// The tabs are built whether or not they are on screen. A shortcut that moves
-// through them has to check first: in the cross interface it would take the
-// focus to a search box the user cannot see.
-func TestShowingTabs(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-
-	tabs := container.NewAppTabs(container.NewTabItem("Catalogue", widget.NewLabel("games")))
-	win := test.NewWindow(tabs)
-	t.Cleanup(win.Close)
-
-	require.True(t, showingTabs(win, tabs))
-
-	win.SetContent(widget.NewLabel("the cross interface"))
-	require.False(t, showingTabs(win, tabs), "the tabs are built, but they are not what is on screen")
-}
-
-// The catalogue is one set of widgets, and an object cannot be in two places at
-// once. The tabs hold it while they are on screen and let go of it when the
-// cross interface takes over.
-func TestHandOverCatalogue(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-
-	catalogue := widget.NewLabel("games")
-	tab := container.NewTabItem("Catalogue", widget.NewLabel("placeholder"))
-
-	handOverCatalogue(tab, catalogue, true)
-	require.Equal(t, catalogue, tab.Content)
-
-	handOverCatalogue(tab, catalogue, false)
-	require.NotEqual(t, catalogue, tab.Content,
-		"the tabs let go before the cross interface shows the same widgets")
-	require.NotNil(t, tab.Content, "and leave something behind rather than a hole")
-}

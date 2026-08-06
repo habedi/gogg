@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"path/filepath"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -9,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,14 +33,14 @@ func TestSettings_MaxConcurrentTakesEffect(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	ui := SettingsTabUI(win)
+	ui := SettingsTabUI(win, func() {})
 	maxConcurrentSelect(t, ui).SetSelected("5")
 
 	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
 	require.Equal(t, 5, dm.maxConcurrent(), "the queue must use the chosen limit")
 
 	// The choice also has to survive a rebuild of the settings tab.
-	require.Equal(t, "5", maxConcurrentSelect(t, SettingsTabUI(win)).Selected)
+	require.Equal(t, "5", maxConcurrentSelect(t, SettingsTabUI(win, func() {})).Selected)
 }
 
 // Older versions stored this preference as a string; that choice must still be
@@ -76,7 +78,7 @@ func TestSettings_SavedSpeedLimitIsApplied(t *testing.T) {
 	t.Cleanup(func() { client.SetGlobalDownloadRateLimit(0) })
 	app.Preferences().SetInt("download.maxSpeedKBps", 512)
 
-	_ = SettingsTabUI(win)
+	_ = SettingsTabUI(win, func() {})
 
 	require.NotNil(t, client.GlobalDownloadRateLimiter,
 		"the saved speed limit must be applied without the user touching the field")
@@ -92,7 +94,7 @@ func TestSettings_NoSavedSpeedLimitLeavesDownloadsUnthrottled(t *testing.T) {
 	t.Cleanup(func() { client.SetGlobalDownloadRateLimit(0) })
 	app.Preferences().SetInt("download.maxSpeedKBps", 0)
 
-	_ = SettingsTabUI(win)
+	_ = SettingsTabUI(win, func() {})
 
 	require.Nil(t, client.GlobalDownloadRateLimiter)
 }
@@ -106,7 +108,7 @@ func TestSettings_ScrollSoEveryOptionCanBeReached(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	ui := SettingsTabUI(win)
+	ui := SettingsTabUI(win, func() {})
 	win.SetContent(ui)
 	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
 
@@ -133,7 +135,7 @@ func TestSettings_MarksASpeedLimitItCannotRead(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	ui := SettingsTabUI(win)
+	ui := SettingsTabUI(win, func() {})
 	speed := speedLimitEntry(t, ui)
 
 	speed.SetText("as fast as it goes")
@@ -154,7 +156,7 @@ func TestSettings_SpeedLimitSaysItsUnit(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	require.Contains(t, formItemLabels(SettingsTabUI(win)), "Speed Limit (KB/s)")
+	require.Contains(t, formItemLabels(SettingsTabUI(win, func() {})), "Speed Limit (KB/s)")
 }
 
 func speedLimitEntry(t *testing.T, ui fyne.CanvasObject) *widget.Entry {
@@ -173,4 +175,60 @@ func formItemLabels(root fyne.CanvasObject) []string {
 		}
 	}
 	return texts
+}
+
+// gogg could be signed in to but never out of.
+func TestSettings_SignsOut(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	db.Path = filepath.Join(t.TempDir(), "games.db")
+	require.NoError(t, db.InitDB())
+	t.Cleanup(func() { _ = db.CloseDB() })
+	require.NoError(t, db.UpsertTokenRecord(&db.Token{
+		AccessToken: "a", RefreshToken: "r", ExpiresAt: "2999-01-01T00:00:00Z",
+	}))
+
+	signedOut := 0
+	ui := SettingsTabUI(win, func() { signedOut++ })
+	win.SetContent(ui)
+
+	logout := buttonWithLabel(ui, "Log Out")
+	require.NotNil(t, logout, "a signed-in gogg has to offer a way out")
+
+	test.Tap(logout)
+	confirm := buttonWithLabel(topOverlay(t), "Yes")
+	require.NotNil(t, confirm, "signing out has to be asked about first")
+	token, err := db.GetTokenRecord()
+	require.NoError(t, err)
+	require.NotNil(t, token, "and nothing happens until it is answered")
+
+	test.Tap(confirm)
+
+	token, err = db.GetTokenRecord()
+	require.NoError(t, err)
+	require.Nil(t, token, "signing out clears what gogg was signed in with")
+	require.Equal(t, 1, signedOut, "and the rest of the app is told")
+}
+
+// Options that apply to every download belong with the settings, not behind a
+// button in the library toolbar.
+func TestSettings_CarriesTheUpdateDetectionOptions(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	defer win.Close()
+
+	ui := SettingsTabUI(win, func() {})
+
+	var labels []string
+	for _, check := range widgetsOfType[*widget.Check](ui) {
+		labels = append(labels, check.Text)
+	}
+	require.Subset(t, labels, []string{
+		"Include Extras in update check", "Include DLCs in update check",
+		"Include patches", "Scan folders when history missing",
+	})
 }

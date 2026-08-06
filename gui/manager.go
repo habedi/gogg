@@ -51,6 +51,11 @@ type DownloadTask struct {
 	// only reachable through State and SetState.
 	state atomic.Int32
 
+	// onStateChange is set by the manager when it takes a download on. Nothing
+	// else says a download has moved between running and finished, which is
+	// what the Downloads tab is ordered by.
+	onStateChange func()
+
 	// Byte counters for the aggregate header, written by the download
 	// goroutine and read by the UI.
 	downloadedBytes atomic.Int64
@@ -74,7 +79,12 @@ func (t *DownloadTask) ProgressBytes() (downloaded, total, speed int64) {
 func (t *DownloadTask) State() int { return int(t.state.Load()) }
 
 // SetState updates the state of the task. Safe for concurrent use.
-func (t *DownloadTask) SetState(state int) { t.state.Store(int32(state)) }
+func (t *DownloadTask) SetState(state int) {
+	t.state.Store(int32(state))
+	if t.onStateChange != nil {
+		t.onStateChange()
+	}
+}
 
 // PersistentDownloadTask is a serializable representation of a finished task.
 type PersistentDownloadTask struct {
@@ -93,6 +103,23 @@ type DownloadManager struct {
 	queue         []queuedDownload
 	totalsOnce    sync.Once
 	totalsBinding binding.String
+	statesOnce    sync.Once
+	statesBinding binding.Int
+}
+
+// states counts the times a download has moved between running and finished.
+// The Downloads tab is ordered by that, and the list of downloads itself does
+// not change when one of them finishes.
+func (dm *DownloadManager) states() binding.Int {
+	dm.statesOnce.Do(func() { dm.statesBinding = binding.NewInt() })
+	return dm.statesBinding
+}
+
+// noteStateChange tells whoever is listening that a download has moved.
+func (dm *DownloadManager) noteStateChange() {
+	states := dm.states()
+	moves, _ := states.Get()
+	_ = states.Set(moves + 1)
 }
 
 type queuedDownload struct {
@@ -127,9 +154,11 @@ func NewDownloadManager() *DownloadManager {
 	return dm
 }
 
+// AddTask registers a download. The manager's lock is not held while the list
+// is appended to: appending tells the UI, and the UI asks the manager what it
+// is holding, which would be waiting on a lock the same call already has.
 func (dm *DownloadManager) AddTask(task *DownloadTask) error {
-	dm.mu.Lock()
-	defer dm.mu.Unlock()
+	task.onStateChange = dm.noteStateChange
 	return dm.Tasks.Append(task)
 }
 
@@ -285,7 +314,7 @@ type downloadRow struct {
 
 	title      *widget.Label
 	actionBtn  *widget.Button
-	clearBtn   *widget.Button
+	clearBtn   *iconButton
 	status     *widget.Label
 	details    *widget.Label
 	progress   *widget.ProgressBar
@@ -298,7 +327,7 @@ func newDownloadRow() fyne.CanvasObject {
 	row := &downloadRow{
 		title:      widget.NewLabel("Game Title"),
 		actionBtn:  widget.NewButtonWithIcon("Action", theme.CancelIcon(), nil),
-		clearBtn:   widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
+		clearBtn:   newIconButton(theme.DeleteIcon(), "Take this off the list", nil),
 		status:     widget.NewLabel("Status"),
 		details:    widget.NewLabel("Details"),
 		progress:   widget.NewProgressBar(),
@@ -307,7 +336,6 @@ func newDownloadRow() fyne.CanvasObject {
 
 	row.title.TextStyle = fyne.TextStyle{Bold: true}
 	row.title.Truncation = fyne.TextTruncateEllipsis
-	row.clearBtn.Importance = widget.LowImportance
 	row.status.Wrapping = fyne.TextWrapWord
 	row.details.TextStyle = fyne.TextStyle{Italic: true}
 	row.details.Wrapping = fyne.TextWrapWord
@@ -508,11 +536,8 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 
 	// Nothing to show is worth saying: a blank page reads as something that has
 	// not loaded.
-	empty := container.NewCenter(container.NewVBox(
-		widget.NewIcon(theme.DownloadIcon()),
-		widget.NewLabelWithStyle("No downloads yet", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("What you download from the catalogue shows its progress here."),
-	))
+	empty := emptyState(theme.DownloadIcon(), "No downloads yet",
+		"What you download from the catalogue shows its progress here.", nil)
 	body := container.NewStack()
 
 	relist := func() {
@@ -527,6 +552,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 	}
 	relist()
 	dm.Tasks.AddListener(binding.NewDataListener(relist))
+	dm.states().AddListener(binding.NewDataListener(relist))
 
 	totalsLabel := widget.NewLabelWithData(dm.totals())
 	totalsLabel.TextStyle = fyne.TextStyle{Bold: true}
@@ -652,9 +678,10 @@ func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
 	// The Downloads tab offers a Cancel button for this task, so it needs a way
 	// to take the download back out of the queue.
 	placeholder.CancelFunc = func() { dm.cancelQueued(placeholder) }
-	_ = dm.Tasks.Append(placeholder)
 	dm.mu.Unlock()
-	return nil
+
+	// Appended after letting go of the lock, for the reason AddTask gives.
+	return dm.AddTask(placeholder)
 }
 
 func (dm *DownloadManager) startNextIfAvailable() {

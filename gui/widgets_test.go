@@ -1,11 +1,16 @@
 package gui
 
 import (
+	"path/filepath"
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
 
@@ -87,4 +92,92 @@ func TestAboutUI_DoesNotCarryAYearThatGoesStale(t *testing.T) {
 
 	require.Contains(t, texts, "© Hassan Abedi")
 	require.Contains(t, texts, "Version: 1.2.3")
+}
+
+// Everywhere that can be empty says so the same way: an icon, a heading, and a
+// line about what would fill it. Four places each had their own idea of how
+// much to say, from a full explanation down to one unstyled line.
+func TestEmptyStates_AllSayItTheSameWay(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	db.Path = filepath.Join(t.TempDir(), "games.db")
+	require.NoError(t, db.InitDB())
+	t.Cleanup(func() { _ = db.CloseDB() })
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	signedOut := LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()}, func() {})
+	// A signed-in library with nothing picked out of the list.
+	signedIn, _ := newLibraryFixture(t, 2)
+
+	empty := map[string]fyne.CanvasObject{
+		"signed out":       signedOut.content,
+		"no downloads yet": DownloadsTabUI(&DownloadManager{Tasks: binding.NewUntypedList()}),
+		"nothing selected": signedIn.pane.content,
+	}
+
+	for what, ui := range empty {
+		require.NotEmpty(t, widgetsOfType[*widget.Icon](ui), "%s has no icon", what)
+		require.True(t, hasBoldLabel(ui), "%s has no heading", what)
+	}
+}
+
+func hasBoldLabel(root fyne.CanvasObject) bool {
+	for _, label := range widgetsOfType[*widget.Label](root) {
+		if label.TextStyle.Bold && label.Text != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// A button whose whole meaning is its icon has to be able to say what it does.
+func TestIconButton_SaysWhatItDoesWhenPointedAt(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	button := newIconButton(theme.CancelIcon(), "Clear the search", nil)
+	win := test.NewWindow(button)
+	t.Cleanup(win.Close)
+	win.Resize(fyne.NewSize(300, 200))
+
+	button.MouseIn(&desktop.MouseEvent{})
+	overlay := win.Canvas().Overlays().Top()
+	require.NotNil(t, overlay, "resting on the button has to say what it is")
+	require.Contains(t, labelTexts(overlay), "Clear the search")
+
+	button.MouseOut()
+	require.Nil(t, win.Canvas().Overlays().Top(), "and stop saying it on the way out")
+}
+
+// The icon-only buttons in the app all carry one.
+func TestIconOnlyButtons_AllSayWhatTheyDo(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+		updateStatusCache = map[int]updateStatus{
+			1: {Downloaded: true, HasUpdate: true, Diff: []string{"one"}},
+		}
+		t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
+
+		row := newGameRow().(*gameRow)
+		bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil)
+
+		for what, ui := range map[string]fyne.CanvasObject{
+			"the library":  lt.content,
+			"a download":   DownloadsTabUI(lt.dm),
+			"a game's row": row,
+		} {
+			for _, button := range widgetsOfType[*widget.Button](ui) {
+				require.NotEmpty(t, button.Text,
+					"%s has a button with neither words nor a tip", what)
+			}
+			for _, button := range widgetsOfType[*iconButton](ui) {
+				require.NotEmpty(t, button.tip, "%s has an icon button with nothing to say", what)
+			}
+		}
+	})
 }

@@ -107,10 +107,47 @@ func TestLibrarySearch_FindsTaggedGames(t *testing.T) {
 	})
 }
 
-// The dialog and the search box are the same filter.
+// The dialog and the search box are the same filter, and the dialog offers what
+// the box understands rather than half of it.
 func TestFilterTerms_ReadAsAQuery(t *testing.T) {
-	require.Empty(t, filterTerms(false, false, "", ""))
-	require.Equal(t, []string{"downloaded:yes"}, filterTerms(true, false, "", ""))
-	require.Equal(t, []string{"downloaded:yes", "updates:yes", "size:>=10GB", "size:<=1.5TB"},
-		filterTerms(true, true, "10 GB", " 1.5 TB "))
+	require.Empty(t, filterTerms(filterChoices{}))
+	require.Equal(t, []string{"downloaded:yes"}, filterTerms(filterChoices{Downloaded: true}))
+	require.Equal(t, []string{
+		"downloaded:yes", "updates:yes", "size:>=10GiB", "size:<=1.5TiB",
+		"platform:linux", "lang:de", "tag:finished",
+	}, filterTerms(filterChoices{
+		Downloaded: true, HasUpdate: true, MinSize: "10 GiB", MaxSize: " 1.5 TiB ",
+		Platform: "linux", Language: "de", Tag: " finished ",
+	}))
+}
+
+// A choice of "any" is not a filter.
+func TestFilterTerms_LeavesOutWhatWasNotChosen(t *testing.T) {
+	require.Empty(t, filterTerms(filterChoices{Platform: anyChoice, Language: anyChoice}))
+}
+
+// Hidden means hidden: the tag put games in a collection of their own but left
+// them in every other list as well.
+func TestLibraryTab_HiddenGamesStayOutOfTheOtherLists(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 3)
+		gameTags = map[int][]string{2: {db.TagHidden}}
+		t.Cleanup(func() { gameTags = map[int][]string{} })
+		lt.relist()
+
+		require.ElementsMatch(t, []string{"Game 1", "Game 3"}, listedTitles(t, lt),
+			"a hidden game is not in the list")
+
+		lt.sidebar.refresh([]db.Game{{ID: 1, Title: "Game 1"}, {ID: 2, Title: "Game 2"}, {ID: 3, Title: "Game 3"}})
+		require.Equal(t, "2", lt.sidebar.buttons["All games"].count.Text,
+			"nor counted among all games")
+		require.Equal(t, "1", lt.sidebar.buttons["Hidden"].count.Text)
+
+		lt.searchEntry.SetText("hidden:yes")
+		require.Equal(t, []string{"Game 2"}, listedTitles(t, lt),
+			"and is there when it is what was asked for")
+	})
 }

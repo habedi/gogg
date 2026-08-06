@@ -372,8 +372,11 @@ func clearPersistedUpdateStatus() {
 var parseGameData = client.ParseGameData
 
 // gameFacts is what a query asks about a game that costs something to answer:
-// reading its stored data.
+// reading its stored data. The data it was read from is kept alongside, so a
+// game whose data has changed is read again rather than answered from what it
+// used to say.
 type gameFacts struct {
+	data      string
 	platforms []string
 	languages []string
 }
@@ -385,11 +388,11 @@ var parsedFacts = map[int]gameFacts{}
 
 // factsOf reads a game's stored data, or remembers what it said last time.
 func factsOf(game db.Game) gameFacts {
-	if facts, ok := parsedFacts[game.ID]; ok {
+	if facts, ok := parsedFacts[game.ID]; ok && facts.data == game.Data {
 		return facts
 	}
 
-	var facts gameFacts
+	facts := gameFacts{data: game.Data}
 	if parsed, err := parseGameData(game.Data); err == nil {
 		for _, platform := range offeredPlatforms(parsed) {
 			facts.platforms = append(facts.platforms, strings.ToLower(platform))
@@ -464,23 +467,55 @@ func loadGameTags() {
 	gameTags = tags
 }
 
+// anyChoice is what a select says when it is not filtering on anything.
+const anyChoice = "Any"
+
+// filterChoices is what the filter dialog was set to.
+type filterChoices struct {
+	Downloaded, HasUpdate bool
+	MinSize, MaxSize      string
+	Platform, Language    string
+	Tag                   string
+}
+
 // filterTerms turns what the filter dialog was set to into the terms it writes
-// into the search box.
-func filterTerms(downloaded, hasUpdate bool, minSize, maxSize string) []string {
+// into the search box, so the dialog and the box stay the same filter.
+func filterTerms(choices filterChoices) []string {
 	var terms []string
-	if downloaded {
+	if choices.Downloaded {
 		terms = append(terms, "downloaded:yes")
 	}
-	if hasUpdate {
+	if choices.HasUpdate {
 		terms = append(terms, "updates:yes")
 	}
-	if size := strings.ReplaceAll(strings.TrimSpace(minSize), " ", ""); size != "" {
+	if size := strings.ReplaceAll(strings.TrimSpace(choices.MinSize), " ", ""); size != "" {
 		terms = append(terms, "size:>="+size)
 	}
-	if size := strings.ReplaceAll(strings.TrimSpace(maxSize), " ", ""); size != "" {
+	if size := strings.ReplaceAll(strings.TrimSpace(choices.MaxSize), " ", ""); size != "" {
 		terms = append(terms, "size:<="+size)
 	}
+	for _, field := range []struct{ name, chosen string }{
+		{"platform", choices.Platform}, {"lang", choices.Language}, {"tag", choices.Tag},
+	} {
+		if value := strings.TrimSpace(field.chosen); value != "" && value != anyChoice {
+			terms = append(terms, field.name+":"+value)
+		}
+	}
 	return terms
+}
+
+// withoutHidden leaves out the games the user has marked hidden, unless the
+// query is about hidden games. The tag put them in a collection of their own
+// and left them in every other list as well, which is not what hiding means.
+func withoutHidden(query search.Query) search.Query {
+	if query.Mentions("hidden") {
+		return query
+	}
+	notHidden, err := search.Parse("hidden:no")
+	if err != nil {
+		return query
+	}
+	return query.And(notHidden)
 }
 
 // factsFor describes a game to a query. Working out the size or the platforms
@@ -538,12 +573,24 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 		updateChk := widget.NewCheck("Has update", nil)
 		updateChk.SetChecked(current.HasTerm("updates", "yes"))
 
+		// The sizes are suggested the way the app writes them, so what the
+		// dialog hints at is what a game's size beside it says.
 		sizeMinEntry := widget.NewEntry()
-		sizeMinEntry.SetPlaceHolder("10 GB")
+		sizeMinEntry.SetPlaceHolder("10 GiB")
 		sizeMinEntry.SetText(current.TermValue("size", ">="))
 		sizeMaxEntry := widget.NewEntry()
-		sizeMaxEntry.SetPlaceHolder("50 GB")
+		sizeMaxEntry.SetPlaceHolder("50 GiB")
 		sizeMaxEntry.SetText(current.TermValue("size", "<="))
+
+		// The box understands more than downloads and sizes, so the dialog
+		// offers the rest of it rather than half.
+		platformSelect := widget.NewSelect([]string{anyChoice, "windows", "mac", "linux"}, nil)
+		platformSelect.SetSelected(chosenOr(current.TermValue("platform", ""), anyChoice))
+		languageSelect := widget.NewSelect(append([]string{anyChoice}, languageCodesOffered()...), nil)
+		languageSelect.SetSelected(chosenOr(current.TermValue("lang", ""), anyChoice))
+		tagEntry := widget.NewEntry()
+		tagEntry.SetPlaceHolder("finished")
+		tagEntry.SetText(current.TermValue("tag", ""))
 
 		apply := func(terms ...string) {
 			query := strings.TrimSpace(strings.Join(append([]string{search.Words(searchEntry.Text)}, terms...), " "))
@@ -553,23 +600,51 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 		}
 
 		applyBtn := widget.NewButtonWithIcon("Apply", theme.ConfirmIcon(), func() {
-			apply(filterTerms(downloadedChk.Checked, updateChk.Checked,
-				sizeMinEntry.Text, sizeMaxEntry.Text)...)
+			apply(filterTerms(filterChoices{
+				Downloaded: downloadedChk.Checked, HasUpdate: updateChk.Checked,
+				MinSize: sizeMinEntry.Text, MaxSize: sizeMaxEntry.Text,
+				Platform: platformSelect.Selected, Language: languageSelect.Selected,
+				Tag: tagEntry.Text,
+			})...)
 		})
 		resetBtn := widget.NewButtonWithIcon("Reset", theme.ViewRefreshIcon(), func() { apply() })
 
 		content := container.NewVBox(
-			widget.NewLabelWithStyle("Filters", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewSeparator(),
-			container.NewGridWithColumns(2, widget.NewLabel("Min Size"), sizeMinEntry, widget.NewLabel("Max Size"), sizeMaxEntry),
+			widget.NewForm(
+				widget.NewFormItem("Min Size", sizeMinEntry),
+				widget.NewFormItem("Max Size", sizeMaxEntry),
+				widget.NewFormItem("Platform", platformSelect),
+				widget.NewFormItem("Language", languageSelect),
+				widget.NewFormItem("Tag", tagEntry),
+			),
 			container.NewGridWithColumns(2, downloadedChk, updateChk),
 			widget.NewLabel("These become terms in the search box, where they can also be typed."),
 			container.NewHBox(applyBtn, resetBtn),
 		)
 		dlg = dialog.NewCustom("Library Filters", "Close", content, fyne.CurrentApp().Driver().AllWindows()[0])
-		dlg.Resize(fyne.NewSize(460, 300))
+		dlg.Resize(fyne.NewSize(460, 420))
 		dlg.Show()
 	})
 	return btn
+}
+
+// chosenOr is what a select shows: what the search says, or that it is not
+// filtering on this at all.
+func chosenOr(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+// languageCodesOffered lists the language codes a search can ask for.
+func languageCodesOffered() []string {
+	codes := make([]string, 0, len(client.GameLanguages))
+	for code := range client.GameLanguages {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	return codes
 }
 
 // LibraryTabUI modifications: remove tag editor and apply initial speed limit.
@@ -584,12 +659,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			}
 		})
 		loginBtn.Importance = widget.HighImportance
-		content := container.NewCenter(container.NewVBox(
-			widget.NewIcon(theme.WarningIcon()),
-			widget.NewLabelWithStyle("Not logged in.", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-			widget.NewLabel("Log in to GOG to see the games you own."),
-			loginBtn,
-		))
+		content := emptyState(theme.WarningIcon(), "Not logged in",
+			"Log in to GOG to see the games you own.", loginBtn)
 		return &libraryTab{
 			content:     content,
 			searchEntry: widget.NewEntry(),
@@ -622,7 +693,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		_, err := search.Parse(text)
 		return err
 	}
-	clearSearchBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
+	clearSearchBtn := newIconButton(theme.CancelIcon(), "Clear the search", func() {
 		searchEntry.SetText("")
 	})
 	searchEntry.ActionItem = clearSearchBtn
@@ -662,6 +733,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			// is there so far is treated as words rather than as a mistake.
 			query, _ = search.Parse(search.Words(searchEntry.Text))
 		}
+		query = withoutHidden(query)
 		needs := query.Needs()
 
 		displayGames := make([]db.Game, 0, len(allGames))
@@ -834,12 +906,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	if len(allGames) == 0 {
 		refreshNowBtn = widget.NewButton("Refresh Catalogue", startRefresh)
-		placeholder := container.NewCenter(container.NewVBox(
-			widget.NewIcon(theme.InfoIcon()),
-			widget.NewLabel("Your library is empty or hasn't been synced."),
-			refreshNowBtn,
-		))
-		listContent.Add(placeholder)
+		listContent.Add(emptyState(theme.InfoIcon(), "Nothing in the catalogue yet",
+			"Refresh to fetch the games you own from GOG.", refreshNowBtn))
 	} else {
 		listContent.Add(gameListWidget)
 		showGames()
@@ -882,7 +950,6 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		gameListWidget.Refresh()
 	})
 
-	settingsBtn := newUpdateSettingsButton(prefs, dm, recomputeStatuses)
 	// The button is made here so the toolbar can hold it; what it does is wired
 	// once the collections it shows exist.
 	collectionsBtn := widget.NewButtonWithIcon("Collections", theme.ListIcon(), nil)
@@ -891,7 +958,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// The buttons scroll rather than forcing a minimum width on the window; the
 	// counts stay pinned to the right.
 	toolbarButtons := container.NewHScroll(
-		container.NewHBox(collectionsBtn, refreshBtn, exportBtn, viewBtn, sortBtn, settingsBtn,
+		container.NewHBox(collectionsBtn, refreshBtn, exportBtn, viewBtn, sortBtn,
 			filtersBtn, updateAllBtn))
 	toolbar := container.NewBorder(nil, nil, nil,
 		container.NewHBox(updatesLabel, gameCountLabel), toolbarButtons)
@@ -990,6 +1057,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	refreshUpdatesSummary()
 	rightPane := pane.content
 	pane.body.Hide()
+	pane.empty.Show()
 
 	selectedGameBinding.AddListener(binding.NewDataListener(func() {
 		gameRaw, _ := selectedGameBinding.Get()
@@ -997,11 +1065,13 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			fillStoreHeader(pane, nil, win)
 			pane.gallery.show(nil, 0)
 			pane.body.Hide()
+			pane.empty.Show()
 			form.narrowTo(db.Game{})
-			pane.title.SetText("Select a game from the list")
+			pane.title.SetText("")
 			return
 		}
 		game := gameRaw.(db.Game)
+		pane.empty.Hide()
 		pane.title.SetText(game.Title)
 		// The facts gogg already holds show at once; what GOG's store adds
 		// arrives when it arrives.
@@ -1035,6 +1105,18 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		recomputeStatuses()
 	})
 	catalogueUpdated.AddListener(catalogueListener)
+
+	// The rules for spotting an update are set in Settings, and what was worked
+	// out under the old ones is no longer the answer.
+	settingsJustRegistered := true
+	settingsListener := binding.NewDataListener(func() {
+		if settingsJustRegistered {
+			settingsJustRegistered = false
+			return
+		}
+		recomputeStatuses()
+	})
+	updateSettingsChanged.AddListener(settingsListener)
 	split := container.NewHSplit(leftPane, rightPane)
 	split.Offset = loadWindowState(prefs).SplitOffset
 
@@ -1052,7 +1134,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		relist:          updateDisplayedGames,
 		pane:            pane,
 		dm:              dm,
-		close:           func() { catalogueUpdated.RemoveListener(catalogueListener) },
+		close: func() {
+			catalogueUpdated.RemoveListener(catalogueListener)
+			updateSettingsChanged.RemoveListener(settingsListener)
+		},
 	}
 }
 
@@ -1106,7 +1191,9 @@ type detailsPane struct {
 	facts    *fyne.Container
 	// body holds everything about a game, and is hidden when none is selected.
 	body *fyne.Container
-	tabs *container.AppTabs
+	// empty takes its place then, saying what would fill the pane.
+	empty fyne.CanvasObject
+	tabs  *container.AppTabs
 }
 
 // createDetailsPane builds the pane. detailsBox is filled with the selected
@@ -1150,8 +1237,14 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 
 	header := container.NewVBox(title, widget.NewSeparator())
 
+	// With no game picked out, the pane says what would fill it rather than
+	// leaving half the window blank under a line of text.
+	nothing := emptyState(theme.ListIcon(), "No game selected",
+		"Pick one from the list to see what it is and to download it.", nil)
+
 	return &detailsPane{
-		content:     container.NewBorder(header, nil, nil, nil, body),
+		content:     container.NewBorder(header, nil, nil, nil, container.NewStack(body, nothing)),
+		empty:       nothing,
 		form:        form,
 		gallery:     gallery,
 		title:       title,
@@ -1354,28 +1447,6 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		queue:    queue,
 		narrowTo: narrowTo,
 	}
-}
-
-func newUpdateSettingsButton(prefs fyne.Preferences, dm *DownloadManager, refresh func()) *widget.Button {
-	btn := widget.NewButtonWithIcon("Update Settings", theme.SettingsIcon(), func() {
-		extrasUpd := widget.NewCheck("Include Extras in update check", func(b bool) { prefs.SetBool("downloadForm.includeExtrasUpdates", b); refresh() })
-		extrasUpd.SetChecked(prefs.BoolWithFallback("downloadForm.includeExtrasUpdates", false))
-		dlcUpd := widget.NewCheck("Include DLCs in update check", func(b bool) { prefs.SetBool("downloadForm.includeDLCUpdates", b); refresh() })
-		dlcUpd.SetChecked(prefs.BoolWithFallback("downloadForm.includeDLCUpdates", false))
-		patchUpd := widget.NewCheck("Include patches", func(b bool) { prefs.SetBool("downloadForm.includePatchUpdates", b); refresh() })
-		patchUpd.SetChecked(prefs.BoolWithFallback("downloadForm.includePatchUpdates", false))
-		scanDirs := widget.NewCheck("Scan folders when history missing", func(b bool) { prefs.SetBool("downloadForm.scanDirsForDownloads", b); refresh() })
-		scanDirs.SetChecked(prefs.BoolWithFallback("downloadForm.scanDirsForDownloads", true))
-
-		content := container.NewVBox(
-			widget.NewLabelWithStyle("Update Detection Options", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), widget.NewSeparator(), extrasUpd, dlcUpd, patchUpd, scanDirs,
-		)
-		d := dialog.NewCustom("Update Settings", "Close", content, fyne.CurrentApp().Driver().AllWindows()[0])
-		d.Resize(fyne.NewSize(380, 320))
-		d.Show()
-	})
-	btn.Importance = widget.MediumImportance
-	return btn
 }
 
 // FIX tag buttons capture

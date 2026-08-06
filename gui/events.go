@@ -16,3 +16,17 @@ func SignalCatalogueUpdated() {
 	}
 	_ = catalogueUpdated.Set(!current)
 }
+
+// updateSettingsChanged says the rules for spotting an update have changed, so
+// whatever was worked out under the old ones is no longer the answer.
+var updateSettingsChanged = binding.NewBool()
+
+// SignalUpdateSettingsChanged sends that notification. Like the catalogue
+// signal, the value carries no meaning, only the change.
+func SignalUpdateSettingsChanged() {
+	current, err := updateSettingsChanged.Get()
+	if err != nil {
+		return
+	}
+	_ = updateSettingsChanged.Set(!current)
+}

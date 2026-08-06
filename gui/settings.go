@@ -7,15 +7,19 @@ import (
 	"strings"
 
 	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/db"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
-func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
+// SettingsTabUI builds the settings. onSignOut is called once the user has
+// signed out, so the rest of the app can go back to its signed-out self.
+func SettingsTabUI(win fyne.Window, onSignOut func()) fyne.CanvasObject {
 	prefs := fyne.CurrentApp().Preferences()
 	a := fyne.CurrentApp()
 
@@ -52,16 +56,6 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 	)
 
 	// --- Sound Settings ---
-	// The cross interface is the one from game consoles: categories along a bar
-	// with their items in a column below.
-	xmbCheck := widget.NewCheck("Use the cross (XMB) interface instead of tabs", func(checked bool) {
-		prefs.SetBool(prefXMB, checked)
-		if onInterfaceChanged != nil {
-			onInterfaceChanged()
-		}
-	})
-	xmbCheck.SetChecked(prefs.BoolWithFallback(prefXMB, false))
-
 	soundCheck := widget.NewCheck("Play sound on download completion", func(checked bool) {
 		prefs.SetBool("soundEnabled", checked)
 	})
@@ -191,10 +185,36 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		widget.NewFormItem("Speed Limit (KB/s)", speedEntry),
 	))
 
+	// --- Update Detection ---
+	// These decide what counts as an update for every game, so they belong with
+	// the settings rather than behind a button in the library toolbar. The
+	// library is told, because what it worked out under the old rules is no
+	// longer the answer.
+	updateChecks := make([]fyne.CanvasObject, 0, 5)
+	updateChecks = append(updateChecks, widget.NewLabel("Update Detection"))
+	for _, option := range []struct {
+		label    string
+		pref     string
+		fallback bool
+	}{
+		{"Include Extras in update check", "downloadForm.includeExtrasUpdates", false},
+		{"Include DLCs in update check", "downloadForm.includeDLCUpdates", false},
+		{"Include patches", "downloadForm.includePatchUpdates", false},
+		{"Scan folders when history missing", "downloadForm.scanDirsForDownloads", true},
+	} {
+		key := option.pref
+		check := widget.NewCheck(option.label, func(checked bool) {
+			prefs.SetBool(key, checked)
+			SignalUpdateSettingsChanged()
+		})
+		check.SetChecked(prefs.BoolWithFallback(key, option.fallback))
+		updateChecks = append(updateChecks, check)
+	}
+	updatesBox := container.NewVBox(updateChecks...)
+
 	// --- Layout ---
-	mainCard := widget.NewCard("Settings", "", container.NewVBox(
+	sections := []fyne.CanvasObject{
 		themeBox,
-		xmbCheck,
 		widget.NewSeparator(),
 		fontBox,
 		widget.NewSeparator(),
@@ -203,7 +223,13 @@ func SettingsTabUI(win fyne.Window) fyne.CanvasObject {
 		soundConfigBox,
 		widget.NewSeparator(),
 		limitsBox,
-	))
+		widget.NewSeparator(),
+		updatesBox,
+	}
+	if account := accountBox(win, onSignOut); account != nil {
+		sections = append(sections, widget.NewSeparator(), account)
+	}
+	mainCard := widget.NewCard("Settings", "", container.NewVBox(sections...))
 
 	// The settings are taller than the window gogg opens at. Centred and fixed
 	// in place, the download limits sat below the bottom edge with no way to
@@ -226,4 +252,32 @@ func applySpeedLimit(kbps int) {
 		return
 	}
 	client.SetGlobalDownloadRateLimit(int64(kbps) * 1024)
+}
+
+// accountBox offers the way out of an account. There is nothing to offer when
+// nobody is signed in, so it is left out then.
+func accountBox(win fyne.Window, onSignOut func()) fyne.CanvasObject {
+	token, err := db.GetTokenRecord()
+	if err != nil || token == nil {
+		return nil
+	}
+
+	signOut := widget.NewButtonWithIcon("Log Out", theme.LogoutIcon(), func() {
+		dialog.ShowConfirm("Log Out",
+			"Sign out of GOG? The catalogue gogg has already fetched stays where it is.",
+			func(confirmed bool) {
+				if !confirmed {
+					return
+				}
+				if err := db.DeleteTokenRecord(); err != nil {
+					showErrorDialog(win, "Could not sign out", err)
+					return
+				}
+				if onSignOut != nil {
+					onSignOut()
+				}
+			}, win)
+	})
+
+	return container.NewVBox(widget.NewLabel("Account"), container.NewHBox(signOut))
 }

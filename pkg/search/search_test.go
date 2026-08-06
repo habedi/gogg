@@ -170,8 +170,8 @@ func TestQuery_ReadsBackItsOwnTerms(t *testing.T) {
 	require.False(t, parsed.HasTerm("downloaded", "no"))
 	require.False(t, parsed.HasTerm("updates", "yes"), "a term that is not there")
 
-	require.Equal(t, "10gb", parsed.TermValue("size", ">="))
-	require.Equal(t, "1.5tb", parsed.TermValue("size", "<="))
+	require.Equal(t, "10gib", parsed.TermValue("size", ">="))
+	require.Equal(t, "1.5tib", parsed.TermValue("size", "<="))
 	require.Empty(t, parsed.TermValue("size", "<"))
 }
 
@@ -182,4 +182,22 @@ func TestFormatSize_RoundTrips(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, size, again, FormatSize(size))
 	}
+}
+
+// The app writes sizes as GiB, so the query language has to take them that way
+// as well as the shorthand people type.
+func TestParseSize_TakesTheUnitsTheAppWrites(t *testing.T) {
+	for _, text := range []string{"10gb", "10GB", "10 GiB", "10gib", "10g"} {
+		size, err := ParseSize(text)
+		require.NoError(t, err, text)
+		require.Equal(t, int64(10)<<30, size, text)
+	}
+}
+
+// And writes them back the same way, so a filter put into the box reads like
+// the sizes beside the games.
+func TestFormatSize_WritesTheUnitsTheAppShows(t *testing.T) {
+	require.Equal(t, "10gib", FormatSize(10<<30))
+	require.Equal(t, "512mib", FormatSize(512<<20))
+	require.Equal(t, "2tib", FormatSize(2<<40))
 }

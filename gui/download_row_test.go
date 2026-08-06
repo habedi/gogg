@@ -174,3 +174,51 @@ func TestTransferSummary_ReadsLikeTheHeaderAboveTheList(t *testing.T) {
 	require.Equal(t, "5.0 MiB/s", transferSummary(5<<20, 0), "nothing left to say how long it will take")
 	require.Empty(t, transferSummary(0, 100<<20), "a download that has not moved says nothing yet")
 }
+
+// titleAt is the download the list shows in a given place.
+func titleAt(t *testing.T, list *widget.List, id int) string {
+	t.Helper()
+	row := list.CreateItem()
+	list.UpdateItem(widget.ListItemID(id), row)
+	return row.(*downloadRow).title.Text
+}
+
+// A download that has just finished belongs with the finished ones. Nothing but
+// its own state changing says so, and the tab was only ever told when downloads
+// were added or removed.
+func TestDownloadsTab_ReordersWhenADownloadFinishes(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+		ui := DownloadsTabUI(dm)
+
+		start := time.Now()
+		running := &DownloadTask{
+			Title: "running", InstanceID: start.Add(-time.Hour), Status: binding.NewString(),
+			Details: binding.NewString(), Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+		}
+		running.SetState(StateDownloading)
+		finished := &DownloadTask{
+			Title: "finished", InstanceID: start, Status: binding.NewString(),
+			Details: binding.NewString(), Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+		}
+		finished.SetState(StateCompleted)
+
+		// Adding a download tells the tab, which asks the manager what it holds:
+		// that must not deadlock.
+		require.NoError(t, dm.AddTask(running))
+		require.NoError(t, dm.AddTask(finished))
+
+		// The list takes the place of the empty state once there is something
+		// in it.
+		list := widgetsOfType[*widget.List](ui)[0]
+		require.Equal(t, "running", titleAt(t, list, 0), "what is running comes first")
+
+		running.SetState(StateCompleted)
+
+		require.Equal(t, "finished", titleAt(t, list, 0),
+			"once it is done it takes its place among the finished, newest first")
+	})
+}

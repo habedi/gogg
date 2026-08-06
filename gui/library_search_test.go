@@ -171,3 +171,11 @@ func TestLibraryTab_SearchBoxSaysItTakesFilters(t *testing.T) {
 	require.Contains(t, lt.searchEntry.PlaceHolder, "platform:",
 		"the search box has to hint at what else it takes")
 }
+
+// newLibraryFixtureShown is a library that is what its window is showing.
+func newLibraryFixtureShown(t *testing.T, games int) (*libraryTab, fyne.Window) {
+	t.Helper()
+	lt, _, win := newLibraryFixtureInWindow(t, games)
+	win.SetContent(lt.content)
+	return lt, win
+}

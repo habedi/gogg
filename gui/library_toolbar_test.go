@@ -129,3 +129,37 @@ func TestLibraryTab_TheToolbarTogglesNameWhatTheyDo(t *testing.T) {
 		require.Equal(t, "Sort A-Z", sort.Text, "and back again")
 	})
 }
+
+// The toolbar has one job, and holding a second set of settings was not it.
+func TestLibraryTab_ToolbarNoLongerHoldsSettings(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+		require.Nil(t, buttonWithLabel(lt.content, "Update Settings"),
+			"update detection is set in Settings now")
+	})
+}
+
+// Changing how updates are detected has to make the library work them out
+// again, wherever the change was made.
+func TestSettings_ChangingUpdateDetectionRechecksTheLibrary(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, win := newLibraryFixtureShown(t, 2)
+		held := holdStatusWork(t)
+
+		settings := SettingsTabUI(win, func() {})
+		check := checkWithLabel(settings, "Include patches")
+		require.NotNil(t, check)
+		check.SetChecked(true)
+
+		require.Contains(t, labelTexts(lt.content), "Checking downloads...",
+			"the library has to look again")
+		held.run()
+		require.NotContains(t, labelTexts(lt.content), "Checking downloads...")
+	})
+}

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
@@ -27,6 +28,71 @@ func showCopied(near fyne.CanvasObject, message string) {
 	popup.ShowAtPosition(driver.AbsolutePositionForObject(near).
 		Add(fyne.NewPos(0, near.Size().Height)))
 	time.AfterFunc(copiedShownFor, func() { fyne.Do(popup.Hide) })
+}
+
+// emptyState is what a pane, a list, or a tab shows when there is nothing in
+// it: an icon, a heading, a line about what would fill it, and where there is
+// something to do about it, a button. One shape for all of them, so an empty
+// library and an empty download list do not read as different kinds of nothing.
+func emptyState(icon fyne.Resource, heading, detail string, action fyne.CanvasObject) fyne.CanvasObject {
+	parts := []fyne.CanvasObject{
+		container.NewCenter(widget.NewIcon(icon)),
+		widget.NewLabelWithStyle(heading, fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+	}
+	if detail != "" {
+		parts = append(parts, widget.NewLabelWithStyle(detail, fyne.TextAlignCenter, fyne.TextStyle{}))
+	}
+	if action != nil {
+		parts = append(parts, container.NewCenter(action))
+	}
+	return container.NewCenter(container.NewVBox(parts...))
+}
+
+// iconButton is a button whose whole meaning is its icon. Fyne has no tooltips,
+// so it says what it does while the pointer rests on it: an icon nobody can
+// name is a button nobody can use.
+type iconButton struct {
+	widget.Button
+
+	tip   string
+	shown *widget.PopUp
+}
+
+func newIconButton(icon fyne.Resource, tip string, tapped func()) *iconButton {
+	button := &iconButton{tip: tip}
+	button.Icon = icon
+	button.OnTapped = tapped
+	button.Importance = widget.LowImportance
+	button.ExtendBaseWidget(button)
+	return button
+}
+
+// MouseIn shows what the button is for. The button's own hover highlight still
+// happens: this is on top of it, not instead of it.
+func (b *iconButton) MouseIn(event *desktop.MouseEvent) {
+	b.Button.MouseIn(event)
+
+	if b.tip == "" || b.shown != nil {
+		return
+	}
+	driver := fyne.CurrentApp().Driver()
+	canvas := driver.CanvasForObject(b)
+	if canvas == nil {
+		return
+	}
+
+	b.shown = widget.NewPopUp(widget.NewLabel(b.tip), canvas)
+	b.shown.ShowAtPosition(driver.AbsolutePositionForObject(b).
+		Add(fyne.NewPos(0, b.Size().Height)))
+}
+
+func (b *iconButton) MouseOut() {
+	b.Button.MouseOut()
+
+	if b.shown != nil {
+		b.shown.Hide()
+		b.shown = nil
+	}
 }
 
 // CopyableLabel is a label that copies its content to the clipboard when tapped.
