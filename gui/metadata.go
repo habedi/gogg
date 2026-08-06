@@ -22,6 +22,18 @@ const metadataFetchers = 2
 // changes rarely, and a stale summary is better than none.
 const metadataMaxAge = 30 * 24 * time.Hour
 
+// metadataFormat is the shape gogg writes a lookup in. What gogg reads out of
+// GOG's answer grows: an entry written before it read screenshots says nothing
+// about screenshots, which is not the same as a game having none. Raising this
+// makes every older entry be looked up again.
+const metadataFormat = 2
+
+// storedMetadata is a cached lookup, with the shape it was written in.
+type storedMetadata struct {
+	Format int
+	Meta   client.GameMetadata
+}
+
 // metadataCache keeps GOG's store information for a game, in memory for this
 // session and on disk between runs.
 type metadataCache struct {
@@ -69,10 +81,10 @@ func (c *metadataCache) fetch(ctx context.Context, gameID int) (client.GameMetad
 	path := c.pathFor(gameID)
 	if info, err := os.Stat(path); err == nil && time.Since(info.ModTime()) < metadataMaxAge {
 		if data, err := os.ReadFile(path); err == nil {
-			var meta client.GameMetadata
-			if json.Unmarshal(data, &meta) == nil {
-				c.remember(gameID, meta)
-				return meta, nil
+			var stored storedMetadata
+			if json.Unmarshal(data, &stored) == nil && stored.Format == metadataFormat {
+				c.remember(gameID, stored.Meta)
+				return stored.Meta, nil
 			}
 		}
 	}
@@ -90,7 +102,7 @@ func (c *metadataCache) fetch(ctx context.Context, gameID int) (client.GameMetad
 }
 
 func (c *metadataCache) store(path string, meta client.GameMetadata) {
-	data, err := json.Marshal(meta)
+	data, err := json.Marshal(storedMetadata{Format: metadataFormat, Meta: meta})
 	if err != nil {
 		return
 	}

@@ -8,8 +8,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
@@ -132,89 +130,19 @@ func appendIf(details []gameDetail, label, value string) []gameDetail {
 	return append(details, gameDetail{Label: label, Value: value})
 }
 
-// summaryClamp is how much of a description the overview shows. GOG writes them
-// at any length, and a wall of text pushes everything else off the pane.
-const summaryClamp = 220
-
-// clampSummary cuts a description down to its opening, on a word boundary, and
-// says whether anything was left out.
-func clampSummary(summary string) (string, bool) {
+// renderStoreHeader is the description GOG publishes, in full. The pane it sits
+// in scrolls, so there is nothing to be gained by cutting it short and putting
+// the rest behind a button. It returns nil for a game GOG no longer describes,
+// so the overview gives the space to the pictures instead.
+func renderStoreHeader(summary string) fyne.CanvasObject {
 	summary = strings.TrimSpace(summary)
 	if summary == "" {
-		return "", false
-	}
-
-	// The first paragraph is the part that describes the game; what follows is
-	// usually a feature list.
-	opening := summary
-	if end := strings.Index(opening, "\n"); end >= 0 {
-		opening = strings.TrimSpace(opening[:end])
-	}
-	if len(opening) <= summaryClamp {
-		return opening, opening != summary
-	}
-
-	cut := opening[:summaryClamp]
-	if space := strings.LastIndex(cut, " "); space > summaryClamp/2 {
-		cut = cut[:space]
-	}
-	return strings.TrimRight(cut, " ,.;:") + "\u2026", true
-}
-
-// renderStoreHeader is the description GOG publishes, cut to its opening. It
-// returns nil for a game GOG no longer describes, so the overview gives the
-// space to the pictures and the facts instead.
-func renderStoreHeader(win fyne.Window, summary string) fyne.CanvasObject {
-	shown, more := clampSummary(summary)
-	if shown == "" {
 		return nil
 	}
 
-	text := widget.NewLabel(shown)
+	text := widget.NewLabel(summary)
 	text.Wrapping = fyne.TextWrapWord
-	if !more {
-		return container.NewVBox(text)
-	}
-
-	// The rest is a click away rather than a scroll inside a scroll, which is
-	// what a fixed height for the description came down to.
-	open := widget.NewButton("More", func() {
-		full := widget.NewLabel(strings.TrimSpace(summary))
-		full.Wrapping = fyne.TextWrapWord
-		body := container.NewVScroll(full)
-		body.SetMinSize(fyne.NewSize(420, 320))
-		dialog.ShowCustom("Description", "Close", body, win)
-	})
-	return container.NewVBox(text, container.NewHBox(fixedSize(open, paneSmallSize), layout.NewSpacer()))
-}
-
-// keyFactLabels are the facts worth seeing without opening anything, in the
-// order the overview shows them.
-var keyFactLabels = []string{
-	"Version", "Released", "Installed size", "Estimated size", "Platforms", "Update",
-}
-
-// renderKeyFacts is the short version of the facts, for the overview.
-func renderKeyFacts(details []gameDetail) fyne.CanvasObject {
-	have := make(map[string]string, len(details))
-	for _, detail := range details {
-		have[detail.Label] = detail.Value
-	}
-
-	rows := make([]fyne.CanvasObject, 0, len(keyFactLabels)*2)
-	for _, label := range keyFactLabels {
-		value, ok := have[label]
-		if !ok || value == "" {
-			continue
-		}
-		name := widget.NewLabel(label)
-		name.TextStyle = fyne.TextStyle{Bold: true}
-		rows = append(rows, name, NewCopyableLabel(value))
-	}
-	if len(rows) == 0 {
-		return container.NewVBox()
-	}
-	return container.New(layout.NewFormLayout(), rows...)
+	return container.NewVBox(text)
 }
 
 // factsTwoColumnWidth is the width from which the facts are worth splitting in

@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -131,4 +132,41 @@ func TestMetadataCacheDir(t *testing.T) {
 	defer app.Quit()
 
 	require.Equal(t, "metadata", filepath.Base(metadataCacheDir()))
+}
+
+// A description cached before gogg read screenshots is not a game without
+// screenshots: it is the answer to a question nobody had asked yet. Trusting it
+// for a month left games with nothing in the gallery for no reason.
+func TestMetadataCache_ReadsAgainWhatAnOlderGoggWrote(t *testing.T) {
+	srv, calls := metadataAPI(t)
+	t.Setenv("GOGG_API_BASE", srv.URL)
+
+	dir := t.TempDir()
+	older, err := json.Marshal(client.GameMetadata{Summary: "what an older gogg knew"})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "7.json"), older, 0o644))
+
+	meta, err := newMetadataCache(dir).fetch(context.Background(), 7)
+
+	require.NoError(t, err)
+	require.Equal(t, "A Publisher", meta.Publisher, "GOG has to be asked again")
+	require.Positive(t, calls.Load())
+}
+
+// What this gogg wrote is still read from disk between runs.
+func TestMetadataCache_KeepsWhatThisGoggWrote(t *testing.T) {
+	srv, calls := metadataAPI(t)
+	t.Setenv("GOGG_API_BASE", srv.URL)
+	dir := t.TempDir()
+
+	_, err := newMetadataCache(dir).fetch(context.Background(), 7)
+	require.NoError(t, err)
+	asked := calls.Load()
+
+	// A cache of its own, so nothing is remembered in memory.
+	meta, err := newMetadataCache(dir).fetch(context.Background(), 7)
+
+	require.NoError(t, err)
+	require.Equal(t, "A Publisher", meta.Publisher)
+	require.Equal(t, asked, calls.Load(), "what is on disk is used as it is")
 }

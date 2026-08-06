@@ -1062,7 +1062,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	selectedGameBinding.AddListener(binding.NewDataListener(func() {
 		gameRaw, _ := selectedGameBinding.Get()
 		if gameRaw == nil {
-			fillStoreHeader(pane, nil, win)
+			fillStoreHeader(pane, nil)
 			pane.gallery.show(nil, 0)
 			pane.body.Hide()
 			pane.empty.Show()
@@ -1076,7 +1076,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		// The facts gogg already holds show at once; what GOG's store adds
 		// arrives when it arrives.
 		fillDetails(pane, game, dm, nil)
-		fillStoreHeader(pane, nil, win)
+		fillStoreHeader(pane, nil)
 		showGallery(pane.gallery, game, nil)
 		stillShowing := func() bool {
 			current, _ := selectedGameBinding.Get()
@@ -1085,7 +1085,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		}
 		metadata.load(game.ID, func(int) bool { return stillShowing() }, func(meta client.GameMetadata) {
 			fillDetails(pane, game, dm, &meta)
-			fillStoreHeader(pane, &meta, win)
+			fillStoreHeader(pane, &meta)
 			showGallery(pane.gallery, game, meta.Screenshots)
 		})
 
@@ -1149,6 +1149,17 @@ func untypedSlice(games []db.Game) []interface{} {
 	return out
 }
 
+// rememberedDownloadPath is where a download would go without being told. What
+// the user last typed comes first, because it is the box they typed it into; a
+// catalogue from a version that only recorded where downloads went still opens
+// on that.
+func rememberedDownloadPath(prefs fyne.Preferences) string {
+	if path := prefs.String("downloadForm.path"); path != "" {
+		return path
+	}
+	return prefs.StringWithFallback("lastUsedDownloadPath", "")
+}
+
 // downloadForm exposes what the rest of the library needs from the options pane.
 type downloadForm struct {
 	// options is what a download is made of: the path, the choices and the
@@ -1185,21 +1196,21 @@ type detailsPane struct {
 	title *CopyableLabel
 	// storeHeader is the description, shown on the overview.
 	storeHeader *fyne.Container
-	// keyFacts are the few facts worth seeing without asking; facts is all of
-	// them.
-	keyFacts *fyne.Container
-	facts    *fyne.Container
+	// facts is everything gogg knows about the game.
+	facts *fyne.Container
 	// body holds everything about a game, and is hidden when none is selected.
 	body *fyne.Container
 	// empty takes its place then, saying what would fill the pane.
 	empty fyne.CanvasObject
-	tabs  *container.AppTabs
+	// tabs are what a game is: the overview it is downloaded from, and the
+	// facts. The buttons are not in either, so they do not scroll away.
+	tabs *container.AppTabs
 }
 
 // createDetailsPane builds the pane. detailsBox is filled with the selected
-// game's facts by the caller. The artwork leads, and the facts start collapsed:
-// they are reference material, while the picture tells you at a glance which
-// game you are looking at.
+// game's facts by the caller. The artwork leads, because a picture says which
+// game this is at a glance, and the options sit under it so that choosing them
+// and pressing Download happen in the same place.
 func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadManager,
 	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
 	detailsBox *fyne.Container, covers *coverCache,
@@ -1217,17 +1228,18 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 	// The description is filled once GOG has been asked about the game, and
 	// stays empty for games it no longer describes.
 	storeHeader := container.NewStack()
-	keyFacts := container.NewStack()
 
-	// Three tabs rather than one column: everything about a game stacked up
-	// comes to some 1400 points, more than twice what the pane can show.
+	// The overview is the game and what fetching it would take: the pictures,
+	// what the store says, the options a download uses, and the ways out to the
+	// web. The facts are a tab of their own, being reference rather than
+	// something to read through.
 	overview := container.NewVScroll(container.NewVBox(
-		gallery, storeHeader, keyFacts, widget.NewSeparator(), form.links,
+		gallery, storeHeader, widget.NewSeparator(), form.options,
+		widget.NewSeparator(), form.links,
 	))
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Overview", overview),
 		container.NewTabItem("Details", container.NewVScroll(detailsBox)),
-		container.NewTabItem("Download", container.NewVScroll(form.options)),
 	)
 
 	// The buttons sit under the tabs rather than in them, so the download is
@@ -1249,7 +1261,6 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 		gallery:     gallery,
 		title:       title,
 		storeHeader: storeHeader,
-		keyFacts:    keyFacts,
 		facts:       detailsBox,
 		body:        body,
 		tabs:        tabs,
@@ -1261,14 +1272,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 ) *downloadForm {
 	prefs := fyne.CurrentApp().Preferences()
 	downloadPathEntry := widget.NewEntry()
-	// What the user last typed comes first: it is the box they typed it into.
-	// A catalogue from a version that only recorded where downloads went still
-	// opens on that.
-	path := prefs.String("downloadForm.path")
-	if path == "" {
-		path = prefs.StringWithFallback("lastUsedDownloadPath", "")
-	}
-	downloadPathEntry.SetText(path)
+	downloadPathEntry.SetText(rememberedDownloadPath(prefs))
 	downloadPathEntry.OnChanged = func(s string) { prefs.SetString("downloadForm.path", s) }
 	downloadPathEntry.SetPlaceHolder("Enter download path")
 	browseBtn := widget.NewButton("Browse...", func() {
@@ -1638,21 +1642,18 @@ func fillDetails(pane *detailsPane, game db.Game, dm *DownloadManager, meta *cli
 
 	pane.facts.Objects = []fyne.CanvasObject{renderGameDetails(details)}
 	pane.facts.Refresh()
-
-	pane.keyFacts.Objects = []fyne.CanvasObject{renderKeyFacts(details)}
-	pane.keyFacts.Refresh()
 }
 
 // fillStoreHeader puts the description and the link to the store page above the
 // facts, where they can be read without opening anything. A game GOG does not
 // describe leaves the space empty.
-func fillStoreHeader(pane *detailsPane, meta *client.GameMetadata, win fyne.Window) {
+func fillStoreHeader(pane *detailsPane, meta *client.GameMetadata) {
 	summary, storeURL := "", ""
 	if meta != nil {
 		summary, storeURL = meta.Summary, meta.StoreURL
 	}
 
-	if header := renderStoreHeader(win, summary); header != nil {
+	if header := renderStoreHeader(summary); header != nil {
 		pane.storeHeader.Objects = []fyne.CanvasObject{header}
 	} else {
 		pane.storeHeader.Objects = nil
@@ -1667,7 +1668,6 @@ func fillStoreHeader(pane *detailsPane, meta *client.GameMetadata, win fyne.Wind
 var (
 	paneButtonSize = fyne.NewSize(160, 36)
 	paneLinkSize   = fyne.NewSize(120, 36)
-	paneSmallSize  = fyne.NewSize(96, 32)
 	paneActionSize = fyne.NewSize(200, 36)
 )
 
