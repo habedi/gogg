@@ -548,8 +548,8 @@ func TestDownloadOptions_KeepsEverySwitchUnderAHeading(t *testing.T) {
 		labels = append(labels, check.Text)
 	}
 	require.ElementsMatch(t, []string{
-		"Include Extras", "Include DLCs", "Resume Downloads", "Skip Patches",
-		"Keep only latest installer", "Flatten Directory", "RomM folder layout (platform/game)",
+		"Include extras", "Include DLCs", "Resume downloads", "Skip patches",
+		"Keep only latest installer", "Flatten directory", "RomM folder layout (platform/game)",
 	}, labels)
 
 	headings := labelTexts(options)

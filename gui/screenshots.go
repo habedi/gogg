@@ -24,8 +24,15 @@ func suggestedPictureName(url string) string {
 	return name
 }
 
-// screenshotLargeSize is the size GOG serves the larger rendition at.
-var screenshotLargeSize = fyne.NewSize(748, 421)
+// pictureViewerMinSize is the least room the dialog's picture insists on,
+// well under the rendition itself: on a small window the picture scales down
+// rather than pushing the dialog's controls off the screen.
+var pictureViewerMinSize = fyne.NewSize(480, 270)
+
+// pictureDialogSize is the room the dialog opens with: GOG's large rendition,
+// 748x421, plus its controls. Fyne clamps it to the window when the window is
+// smaller, and the picture shrinks with it.
+var pictureDialogSize = fyne.NewSize(880, 600)
 
 // pictureViewer is the dialog's body. It is a widget so it can take focus and
 // turn the arrow keys into moves, the way the gallery under it does.
@@ -62,7 +69,7 @@ func showPictures(win fyne.Window, pictures []galleryPicture, start int, covers 
 		return
 	}
 
-	large := newGalleryImage(screenshotLargeSize, nil)
+	large := newGalleryImage(pictureViewerMinSize, nil)
 	counter := widget.NewLabel("")
 	counter.Alignment = fyne.TextAlignCenter
 
@@ -156,6 +163,7 @@ func showPictures(win fyne.Window, pictures []galleryPicture, start int, covers 
 
 	popup := dialog.NewCustom("Picture", "Close", viewer, win)
 	popup.SetOnClosed(func() { open = false })
+	popup.Resize(pictureDialogSize)
 
 	// Shown before the picture is asked for, so a fetch that answers quickly
 	// cannot land in a dialog that is still opening.

@@ -228,7 +228,7 @@ func TestSettings_CarriesTheUpdateDetectionOptions(t *testing.T) {
 		labels = append(labels, check.Text)
 	}
 	require.Subset(t, labels, []string{
-		"Include Extras in update check", "Include DLCs in update check",
+		"Include extras in update check", "Include DLCs in update check",
 		"Include patches", "Scan folders when history missing",
 	})
 }

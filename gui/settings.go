@@ -197,7 +197,7 @@ func SettingsTabUI(win fyne.Window, onSignOut func()) fyne.CanvasObject {
 		pref     string
 		fallback bool
 	}{
-		{"Include Extras in update check", "downloadForm.includeExtrasUpdates", false},
+		{"Include extras in update check", "downloadForm.includeExtrasUpdates", false},
 		{"Include DLCs in update check", "downloadForm.includeDLCUpdates", false},
 		{"Include patches", "downloadForm.includePatchUpdates", false},
 		{"Scan folders when history missing", "downloadForm.scanDirsForDownloads", true},

@@ -18,8 +18,9 @@ import (
 // sidebarWidth is what the collections get when they are shown. The widest
 // name, "Not downloaded", measures 116 with its icon and a four-figure count
 // either side of it, so there is room left for names yet to come without
-// taking what the details pane needs to fit the default window.
-const sidebarWidth = 240
+// taking what the details pane needs to fit the default window with margin
+// to spare.
+const sidebarWidth = 220
 
 // prefSidebar remembers whether the collections are shown. They are not, until
 // asked for: most of the time the list is what the window is for.
