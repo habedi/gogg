@@ -130,18 +130,35 @@ func appendIf(details []gameDetail, label, value string) []gameDetail {
 	return append(details, gameDetail{Label: label, Value: value})
 }
 
-// renderStoreHeader is the description GOG publishes, in full. The pane it sits
-// in scrolls, so there is nothing to be gained by cutting it short and putting
-// the rest behind a button. It returns nil for a game GOG no longer describes,
-// so the overview gives the space to the pictures instead.
-func renderStoreHeader(summary string) fyne.CanvasObject {
+// renderStoreHeader is the description GOG publishes, in full and with its
+// markup kept where there is any: what GOG set in bold, headings, and lists
+// stays set that way. Records from before gogg kept the markup fall back to
+// the plain text, set as paragraphs. It returns nil for a game GOG no longer
+// describes, so the overview gives the space to the pictures instead.
+func renderStoreHeader(summary, markdown string) fyne.CanvasObject {
+	if markdown = strings.TrimSpace(markdown); markdown != "" {
+		text := widget.NewRichTextFromMarkdown(markdown)
+		text.Wrapping = fyne.TextWrapWord
+		return container.NewVBox(text)
+	}
+
 	summary = strings.TrimSpace(summary)
 	if summary == "" {
 		return nil
 	}
 
-	text := widget.NewLabel(summary)
+	text := widget.NewRichText()
 	text.Wrapping = fyne.TextWrapWord
+	for _, paragraph := range strings.Split(summary, "\n") {
+		paragraph = strings.TrimSpace(paragraph)
+		if paragraph == "" {
+			continue
+		}
+		text.Segments = append(text.Segments, &widget.TextSegment{
+			Text:  paragraph,
+			Style: widget.RichTextStyleParagraph,
+		})
+	}
 	return container.NewVBox(text)
 }
 

@@ -276,17 +276,26 @@ func TestGameDetails_OmitsStoreFactsThatAreMissing(t *testing.T) {
 	}
 }
 
+// storeHeaderText is what a rendered description says, passage by passage.
+func storeHeaderText(rendered fyne.CanvasObject) []string {
+	var parts []string
+	for _, rich := range widgetsOfType[*widget.RichText](rendered) {
+		for _, segment := range rich.Segments {
+			if text, ok := segment.(*widget.TextSegment); ok {
+				parts = append(parts, text.Text)
+			}
+		}
+	}
+	return parts
+}
+
 func TestRenderStoreHeader_ShowsTheDescription(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	rendered := renderStoreHeader("A summary of the game.")
+	rendered := renderStoreHeader("A summary of the game.", "")
 
-	var texts []string
-	for _, label := range widgetsOfType[*widget.Label](rendered) {
-		texts = append(texts, label.Text)
-	}
-	require.Contains(t, texts, "A summary of the game.")
+	require.Contains(t, storeHeaderText(rendered), "A summary of the game.")
 	require.Nil(t, buttonWithLabel(rendered, "More"), "a short description is all there is")
 }
 
@@ -295,21 +304,25 @@ func TestRenderStoreHeader_IsNothingWithoutADescription(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	require.Nil(t, renderStoreHeader(""))
+	require.Nil(t, renderStoreHeader("", ""))
 }
 
 // The description is what the store says about a game, and the pane it sits in
 // scrolls. Cutting it at 220 characters and hiding the rest behind a button
-// made reading it a chore.
+// made reading it a chore. GOG writes in passages, so each line is set as a
+// paragraph of its own rather than run together into a wall.
 func TestRenderStoreHeader_ShowsTheWholeDescription(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	long := strings.Repeat("A long description. ", 40) + "\nAnd a list of features."
-	rendered := renderStoreHeader(long)
+	long := strings.Repeat("A long description. ", 40) + "\n\nAnd a list of features."
+	rendered := renderStoreHeader(long, "")
 
-	shown := widgetsOfType[*widget.Label](rendered)[0].Text
-	require.Equal(t, strings.TrimSpace(long), shown, "all of it, not its opening")
+	paragraphs := storeHeaderText(rendered)
+	require.Len(t, paragraphs, 2, "each passage is set on its own")
+	require.Equal(t, strings.TrimSpace(strings.Repeat("A long description. ", 40)), paragraphs[0],
+		"all of it, not its opening")
+	require.Equal(t, "And a list of features.", paragraphs[1])
 	require.Nil(t, buttonWithLabel(rendered, "More"), "there is nothing left to open")
 }
 
@@ -330,6 +343,44 @@ func TestFillDetails_AddsTheStoreFactsWhenTheyArrive(t *testing.T) {
 	})
 }
 
+// What GOG set in bold stays bold: the description keeps its markup when the
+// record carries it.
+func TestRenderStoreHeader_KeepsTheMarkup(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	rendered := renderStoreHeader("Bold and plain.", "**Bold** and plain.")
+
+	rich := widgetsOfType[*widget.RichText](rendered)
+	require.Len(t, rich, 1)
+	sawBold := false
+	for _, segment := range rich[0].Segments {
+		if text, ok := segment.(*widget.TextSegment); ok && text.Style.TextStyle.Bold {
+			sawBold = strings.Contains(text.Text, "Bold")
+		}
+	}
+	require.True(t, sawBold, "what GOG set in bold has to stay bold")
+}
+
+// The description waits behind its heading, closed until asked for: the pane
+// is first of all the way to a download.
+func TestFillStoreHeader_DescriptionIsFoldedAway(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 1)
+
+		fillStoreHeader(lt.pane, &client.GameMetadata{Summary: "A summary of the game."})
+
+		folds := widgetsOfType[*widget.Accordion](lt.pane.storeHeader)
+		require.Len(t, folds, 1)
+		require.Len(t, folds[0].Items, 1)
+		require.Equal(t, "Description", folds[0].Items[0].Title)
+		require.False(t, folds[0].Items[0].Open, "hidden until asked for")
+	})
+}
+
 // The description replaces whatever the previous game left behind, and a game
 // with none leaves the space empty.
 func TestFillStoreHeader_ShowsAndClearsTheDescription(t *testing.T) {
@@ -343,12 +394,12 @@ func TestFillStoreHeader_ShowsAndClearsTheDescription(t *testing.T) {
 			Summary: "A summary of the game.", StoreURL: "https://www.gog.com/game/x",
 		})
 		require.NotEmpty(t, lt.pane.storeHeader.Objects)
-		require.True(t, buttonWithLabel(lt.content, "View on GOG").Visible(),
+		require.True(t, buttonWithLabel(lt.content, "GOG").Visible(),
 			"the way to the store page shows once there is one")
 
 		fillStoreHeader(lt.pane, &client.GameMetadata{})
 		require.Empty(t, lt.pane.storeHeader.Objects, "a game GOG does not describe shows nothing")
-		require.False(t, buttonWithLabel(lt.content, "View on GOG").Visible())
+		require.False(t, buttonWithLabel(lt.content, "GOG").Visible())
 
 		fillStoreHeader(lt.pane, nil)
 		require.Empty(t, lt.pane.storeHeader.Objects)
@@ -380,7 +431,7 @@ func TestLibraryTab_StoreHeaderShowsInThePane(t *testing.T) {
 		})
 
 		require.NotEmpty(t, lt.pane.storeHeader.Objects, "the description shows on the overview")
-		require.True(t, buttonWithLabel(lt.content, "View on GOG").Visible())
+		require.True(t, buttonWithLabel(lt.content, "GOG").Visible())
 	})
 }
 
@@ -430,9 +481,8 @@ func TestDetailsPane_ButtonsKeepTheirOwnSize(t *testing.T) {
 
 		for name, want := range map[string]fyne.Size{
 			"Download Game": paneActionSize,
-			"Estimate Size": paneButtonSize,
-			"View on GOG":   paneButtonSize,
-			"gogdb.org":     paneLinkSize,
+			"GOG":           paneCompactSize,
+			"GOGDB":         paneCompactSize,
 		} {
 			button := buttonWithLabel(lt.content, name)
 			require.NotNil(t, button, "%q is missing from the pane", name)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"fyne.io/fyne/v2/test"
 	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,6 +22,15 @@ const metadataBody = `{
 	"_links": {"store": {"href": "https://www.gog.com/game/x"}},
 	"_embedded": {"publisher": {"name": "A Publisher"}}
 }`
+
+// openTestDB gives a test a catalogue database of its own: the cache stores
+// what it fetched in there.
+func openTestDB(t *testing.T) {
+	t.Helper()
+	db.Path = filepath.Join(t.TempDir(), "games.db")
+	require.NoError(t, db.InitDB())
+	t.Cleanup(func() { _ = db.CloseDB() })
+}
 
 // metadataAPI serves the two store endpoints and counts what was asked for.
 func metadataAPI(t *testing.T) (*httptest.Server, *atomic.Int64) {
@@ -44,10 +53,11 @@ func metadataAPI(t *testing.T) (*httptest.Server, *atomic.Int64) {
 
 // Clicking back and forth between two games must not hit GOG every time.
 func TestMetadataCache_FetchesOncePerGame(t *testing.T) {
+	openTestDB(t)
 	srv, calls := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	cache := newMetadataCache(t.TempDir())
+	cache := newMetadataCache()
 	first, err := cache.fetch(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, "A Publisher", first.Publisher)
@@ -61,62 +71,62 @@ func TestMetadataCache_FetchesOncePerGame(t *testing.T) {
 }
 
 // Store copy barely changes, so the next run of gogg should not re-fetch it.
-func TestMetadataCache_ReusesWhatIsOnDisk(t *testing.T) {
+func TestMetadataCache_ReusesWhatTheDatabaseHolds(t *testing.T) {
+	openTestDB(t)
 	srv, calls := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	dir := t.TempDir()
-	_, err := newMetadataCache(dir).fetch(context.Background(), 7)
+	_, err := newMetadataCache().fetch(context.Background(), 7)
 	require.NoError(t, err)
 	asked := calls.Load()
 
 	// A fresh cache stands in for a fresh run of the app.
-	meta, err := newMetadataCache(dir).fetch(context.Background(), 7)
+	meta, err := newMetadataCache().fetch(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, "A Publisher", meta.Publisher)
 	require.Equal(t, asked, calls.Load(), "the stored copy must be enough")
 }
 
 // A description older than a month is fetched again.
-func TestMetadataCache_RefetchesAStaleFile(t *testing.T) {
+func TestMetadataCache_RefetchesAStaleRecord(t *testing.T) {
+	openTestDB(t)
 	srv, calls := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	dir := t.TempDir()
-	cache := newMetadataCache(dir)
-	_, err := cache.fetch(context.Background(), 7)
+	stale, err := json.Marshal(client.GameMetadata{Summary: "what an older run knew"})
 	require.NoError(t, err)
-	asked := calls.Load()
+	require.NoError(t, db.PutGameMetadataAt(context.Background(), 7, metadataFormat, stale,
+		time.Now().Add(-2*metadataMaxAge)))
 
-	old := time.Now().Add(-2 * metadataMaxAge)
-	require.NoError(t, os.Chtimes(cache.pathFor(7), old, old))
-
-	_, err = newMetadataCache(dir).fetch(context.Background(), 7)
+	meta, err := newMetadataCache().fetch(context.Background(), 7)
 	require.NoError(t, err)
-	require.Greater(t, calls.Load(), asked, "a month-old description is looked up again")
+	require.Equal(t, "A Publisher", meta.Publisher, "a month-old description is looked up again")
+	require.Positive(t, calls.Load())
 }
 
-// A delisted game leaves the library working and the cache empty.
-func TestMetadataCache_DoesNotCacheAFailedLookup(t *testing.T) {
+// A delisted game leaves the library working and the database without a record.
+func TestMetadataCache_DoesNotStoreAFailedLookup(t *testing.T) {
+	openTestDB(t)
 	srv, _ := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	dir := t.TempDir()
-	_, err := newMetadataCache(dir).fetch(context.Background(), 999)
+	_, err := newMetadataCache().fetch(context.Background(), 999)
 	require.Error(t, err)
 
-	entries, _ := os.ReadDir(dir)
-	require.Empty(t, entries, "a failed lookup must not leave a file behind")
+	record, err := db.GetGameMetadata(context.Background(), 999)
+	require.NoError(t, err)
+	require.Nil(t, record, "a failed lookup must not leave a record behind")
 }
 
 // The answer arrives after the click, and the user may have clicked on.
 func TestMetadataCache_LoadDeliversToTheSelectedGame(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
+	openTestDB(t)
 	srv, _ := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	cache := newMetadataCache(t.TempDir())
+	cache := newMetadataCache()
 
 	var delivered atomic.Int64
 	cache.load(7, func(int) bool { return true }, func(client.GameMetadata) { delivered.Add(1) }, nil)
@@ -132,10 +142,11 @@ func TestMetadataCache_LoadDeliversToTheSelectedGame(t *testing.T) {
 func TestMetadataCache_LoadReportsAFailedLookup(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
+	openTestDB(t)
 	srv, _ := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	cache := newMetadataCache(t.TempDir())
+	cache := newMetadataCache()
 
 	var failed atomic.Int64
 	cache.load(999, func(int) bool { return true }, func(client.GameMetadata) {}, func() { failed.Add(1) })
@@ -146,46 +157,40 @@ func TestMetadataCache_LoadReportsAFailedLookup(t *testing.T) {
 	require.Never(t, func() bool { return stale.Load() > 0 }, 300*time.Millisecond, 20*time.Millisecond)
 }
 
-func TestMetadataCacheDir(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-
-	require.Equal(t, "metadata", filepath.Base(metadataCacheDir()))
-}
-
-// A description cached before gogg read screenshots is not a game without
-// screenshots: it is the answer to a question nobody had asked yet. Trusting it
-// for a month left games with nothing in the gallery for no reason.
+// A record written before gogg read screenshots is not a game without
+// screenshots: it is the answer to a question nobody had asked yet. Trusting
+// it for a month left games with nothing in the gallery for no reason.
 func TestMetadataCache_ReadsAgainWhatAnOlderGoggWrote(t *testing.T) {
+	openTestDB(t)
 	srv, calls := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	dir := t.TempDir()
 	older, err := json.Marshal(client.GameMetadata{Summary: "what an older gogg knew"})
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "7.json"), older, 0o644))
+	require.NoError(t, db.PutGameMetadata(context.Background(), 7, metadataFormat-1, older))
 
-	meta, err := newMetadataCache(dir).fetch(context.Background(), 7)
+	meta, err := newMetadataCache().fetch(context.Background(), 7)
 
 	require.NoError(t, err)
 	require.Equal(t, "A Publisher", meta.Publisher, "GOG has to be asked again")
 	require.Positive(t, calls.Load())
 }
 
-// What this gogg wrote is still read from disk between runs.
-func TestMetadataCache_KeepsWhatThisGoggWrote(t *testing.T) {
-	srv, calls := metadataAPI(t)
+// What a lookup stores is readable as the database record it is.
+func TestMetadataCache_StoresTheLookupInTheDatabase(t *testing.T) {
+	openTestDB(t)
+	srv, _ := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
-	dir := t.TempDir()
 
-	_, err := newMetadataCache(dir).fetch(context.Background(), 7)
+	_, err := newMetadataCache().fetch(context.Background(), 7)
 	require.NoError(t, err)
-	asked := calls.Load()
 
-	// A cache of its own, so nothing is remembered in memory.
-	meta, err := newMetadataCache(dir).fetch(context.Background(), 7)
-
+	record, err := db.GetGameMetadata(context.Background(), 7)
 	require.NoError(t, err)
+	require.NotNil(t, record)
+	require.Equal(t, metadataFormat, record.Format)
+
+	var meta client.GameMetadata
+	require.NoError(t, json.Unmarshal(record.Data, &meta))
 	require.Equal(t, "A Publisher", meta.Publisher)
-	require.Equal(t, asked, calls.Load(), "what is on disk is used as it is")
 }

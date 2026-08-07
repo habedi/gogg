@@ -42,19 +42,22 @@ const (
 // offers. Every field is optional: games delisted from the store keep working
 // in a library but stop being described.
 type GameMetadata struct {
-	Summary     string
-	Developers  []string
-	Publisher   string
-	Genres      []string
-	Features    []string
-	AgeRating   string
-	Voiceovers  []string
-	ReleaseDate string
-	InstalledMB int64
-	StoreURL    string
-	ForumURL    string
-	BoxArtURL   string
-	Screenshots []Screenshot
+	Summary string
+	// SummaryMarkdown is the same description with GOG's markup kept in a
+	// form a rich text widget can set: emphasis, headings, and lists.
+	SummaryMarkdown string
+	Developers      []string
+	Publisher       string
+	Genres          []string
+	Features        []string
+	AgeRating       string
+	Voiceovers      []string
+	ReleaseDate     string
+	InstalledMB     int64
+	StoreURL        string
+	ForumURL        string
+	BoxArtURL       string
+	Screenshots     []Screenshot
 }
 
 // FetchGameMetadata returns the store information GOG publishes for a game.
@@ -66,13 +69,14 @@ func FetchGameMetadata(ctx context.Context, productID int) (GameMetadata, error)
 	}
 
 	meta := GameMetadata{
-		Summary:     plainText(game.Overview),
-		Publisher:   game.Embedded.Publisher.Name,
-		AgeRating:   game.Embedded.ESRBRating.Category.Name,
-		InstalledMB: game.Size,
-		StoreURL:    game.Links.Store.Href,
-		ForumURL:    game.Links.Forum.Href,
-		BoxArtURL:   game.Links.BoxArtImage.Href,
+		Summary:         plainText(game.Overview),
+		SummaryMarkdown: markdownText(game.Overview),
+		Publisher:       game.Embedded.Publisher.Name,
+		AgeRating:       game.Embedded.ESRBRating.Category.Name,
+		InstalledMB:     game.Size,
+		StoreURL:        game.Links.Store.Href,
+		ForumURL:        game.Links.Forum.Href,
+		BoxArtURL:       game.Links.BoxArtImage.Href,
 	}
 	for _, developer := range game.Embedded.Developers {
 		meta.Developers = append(meta.Developers, developer.Name)
@@ -210,7 +214,38 @@ var (
 	htmlBreaks = regexp.MustCompile(`(?i)<br\s*/?>|</p>|</div>|</li>`)
 	htmlTags   = regexp.MustCompile(`<[^>]*>`)
 	blankLines = regexp.MustCompile(`\n{2,}`)
+
+	htmlBold       = regexp.MustCompile(`(?i)</?(?:b|strong)>`)
+	htmlItalic     = regexp.MustCompile(`(?i)</?(?:i|em)>`)
+	htmlHeading    = regexp.MustCompile(`(?i)<h[1-6][^>]*>`)
+	htmlHeadingEnd = regexp.MustCompile(`(?i)</h[1-6]>`)
+	htmlListItem   = regexp.MustCompile(`(?i)<li[^>]*>`)
+	htmlBlockEnd   = regexp.MustCompile(`(?i)</p>|</div>|</ul>|</ol>|<br\s*/?>`)
+	tripleNewlines = regexp.MustCompile(`\n{3,}`)
 )
+
+// markdownText keeps the shape of GOG's description markup in what a rich
+// text widget can set: emphasis, headings, and lists survive, and everything
+// else drops to plain text.
+func markdownText(markup string) string {
+	text := htmlBold.ReplaceAllString(markup, "**")
+	text = htmlItalic.ReplaceAllString(text, "*")
+	text = htmlHeading.ReplaceAllString(text, "\n\n## ")
+	text = htmlHeadingEnd.ReplaceAllString(text, "\n\n")
+	text = htmlListItem.ReplaceAllString(text, "\n- ")
+	text = htmlBlockEnd.ReplaceAllString(text, "\n\n")
+	text = htmlTags.ReplaceAllString(text, "")
+	text = html.UnescapeString(text)
+
+	lines := strings.Split(text, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		kept = append(kept, strings.TrimSpace(line))
+	}
+	text = strings.Join(kept, "\n")
+	text = tripleNewlines.ReplaceAllString(text, "\n\n")
+	return strings.TrimSpace(text)
+}
 
 // plainText turns the HTML GOG writes its descriptions in into something a
 // label can show.

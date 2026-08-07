@@ -220,12 +220,13 @@ func (g *gameGallery) scrollTo(index int) {
 	g.scroll.Refresh()
 }
 
-// openSelected shows the picture in the viewer at the size GOG serves it.
+// openSelected shows the pictures at the size GOG serves them, opening on the
+// one in the viewer.
 func (g *gameGallery) openSelected() {
 	if g.win == nil || g.selected < 0 || g.selected >= len(g.pictures) {
 		return
 	}
-	showPicture(g.win, g.pictures[g.selected], g.covers)
+	showPictures(g.win, g.pictures, g.selected, g.covers)
 }
 
 func (g *gameGallery) takeFocus() {

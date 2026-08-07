@@ -81,6 +81,8 @@ func TestFetchGameMetadata_MergesBothEndpoints(t *testing.T) {
 	require.Contains(t, meta.Summary, "Enter the Norse realm")
 	require.NotContains(t, meta.Summary, "<b>", "the summary is HTML and has to be readable as text")
 	require.Contains(t, meta.Summary, "Gods & monsters", "entities are decoded")
+	require.Contains(t, meta.SummaryMarkdown, "**Enter the Norse realm**",
+		"the markup survives in the form a rich text widget can set")
 
 	require.Equal(t, []string{"Santa Monica Studio"}, meta.Developers)
 	require.Equal(t, "PlayStation PC LLC", meta.Publisher)

@@ -43,6 +43,7 @@ const (
 	tipShowList    = "Show as a list"
 	tipShowCovers  = "Show as covers"
 	tipMore        = "Sort and export"
+	tipEstimate    = "Estimate the download size"
 )
 
 func newSearchBox() *searchBox {
@@ -782,7 +783,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	updateAllBtn.Hide()
 
 	covers := newCoverCache(coverCacheDir())
-	metadata := newMetadataCache(metadataCacheDir())
+	metadata := newMetadataCache()
 
 	var gameListWidget *widget.List
 	var gameGridWidget *widget.GridWrap
@@ -1286,6 +1287,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		dm:              dm,
 		close: func() {
 			closed.Store(true)
+			metadata.close()
 			catalogueUpdated.RemoveListener(catalogueListener)
 			updateSettingsChanged.RemoveListener(settingsListener)
 		},
@@ -1325,8 +1327,6 @@ type downloadForm struct {
 	// narrowTo restricts the language and platform choices to what a game
 	// offers; a zero game restores the full lists.
 	narrowTo func(game db.Game)
-	// links are the ways out to the web pages about a game.
-	links fyne.CanvasObject
 	// showStore points the GOG button at a game's store page, hiding it for
 	// games GOG no longer lists.
 	showStore func(url string)
@@ -1447,7 +1447,6 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 	// something to read through.
 	overview := container.NewVScroll(container.NewVBox(
 		gallery, storeStatus, storeHeader, widget.NewSeparator(), form.options,
-		widget.NewSeparator(), form.links,
 	))
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Overview", overview),
@@ -1500,7 +1499,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			}
 			downloadPathEntry.SetText(uri.Path())
 		}, win)
-		fd.Resize(fyne.NewSize(920, 700))
+		fd.Resize(fileDialogSize)
 		fd.Show()
 	})
 	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, downloadPathEntry)
@@ -1548,15 +1547,17 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	rommCheck := widget.NewCheck("RomM folder layout (platform/game)", func(b bool) { prefs.SetBool("downloadForm.romm", b) })
 	rommCheck.SetChecked(prefs.BoolWithFallback("downloadForm.romm", false))
 
+	// Short names, because these share a line with the download button now,
+	// and the pane has to fit the default window with the sidebar open.
 	storeURL := ""
-	storeBtn := widget.NewButtonWithIcon("View on GOG", theme.SearchIcon(), func() {
+	storeBtn := widget.NewButton("GOG", func() {
 		if parsed := parseURL(storeURL); parsed != nil {
 			_ = fyne.CurrentApp().OpenURL(parsed)
 		}
 	})
 	storeBtn.Hide()
 
-	gogdbBtn := widget.NewButtonWithIcon("gogdb.org", theme.SearchIcon(), func() {
+	gogdbBtn := widget.NewButton("GOGDB", func() {
 		gameRaw, _ := selectedGame.Get()
 		if gameRaw == nil {
 			return
@@ -1598,7 +1599,9 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		return []db.Game{gameRaw.(db.Game)}
 	}
 
-	estimateBtn := widget.NewButtonWithIcon("Estimate Size", theme.InfoIcon(), func() {
+	// An icon with its meaning on hover, like the toolbar's: the row it sits
+	// in has the web links, the download button, and only so much pane.
+	estimateBtn := newIconButton(theme.InfoIcon(), tipEstimate, func() {
 		games := targets()
 		if len(games) == 0 {
 			return
@@ -1650,13 +1653,14 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 
 	return &downloadForm{
 		options: container.NewVBox(form, widget.NewSeparator(), checkboxes),
-		// Right-aligned at their own size: a button handed the whole width of
-		// the pane reads as a banner rather than something to press.
-		actions: container.NewHBox(layout.NewSpacer(),
-			fixedSize(estimateBtn, paneButtonSize), fixedSize(downloadBtn, paneActionSize)),
-		links: container.NewHBox(
-			fixedSize(storeBtn, paneButtonSize), fixedSize(gogdbBtn, paneLinkSize),
-			layout.NewSpacer()),
+		// The ways out to the web sit left, the things to do sit right, on one
+		// line: what is about the game and what acts on it, at a glance. Each
+		// at its own size: a button handed the whole width of the pane reads
+		// as a banner rather than something to press.
+		actions: container.NewHBox(
+			fixedSize(storeBtn, paneCompactSize), fixedSize(gogdbBtn, paneCompactSize),
+			layout.NewSpacer(),
+			estimateBtn, fixedSize(downloadBtn, paneActionSize)),
 		showStore: func(url string) {
 			storeURL = url
 			if url == "" {
@@ -1864,13 +1868,16 @@ func fillDetails(pane *detailsPane, game db.Game, dm *DownloadManager, meta *cli
 // facts, where they can be read without opening anything. A game GOG does not
 // describe leaves the space empty.
 func fillStoreHeader(pane *detailsPane, meta *client.GameMetadata) {
-	summary, storeURL := "", ""
+	summary, markdown, storeURL := "", "", ""
 	if meta != nil {
-		summary, storeURL = meta.Summary, meta.StoreURL
+		summary, markdown, storeURL = meta.Summary, meta.SummaryMarkdown, meta.StoreURL
 	}
 
-	if header := renderStoreHeader(summary); header != nil {
-		pane.storeHeader.Objects = []fyne.CanvasObject{header}
+	if header := renderStoreHeader(summary, markdown); header != nil {
+		// Folded away until asked for: the pane is first of all the way to a
+		// download, and a long description pushed everything below the fold.
+		description := widget.NewAccordion(widget.NewAccordionItem("Description", header))
+		pane.storeHeader.Objects = []fyne.CanvasObject{description}
 	} else {
 		pane.storeHeader.Objects = nil
 	}
@@ -1883,8 +1890,10 @@ func fillStoreHeader(pane *detailsPane, meta *client.GameMetadata) {
 // pane hands out instead.
 var (
 	paneButtonSize = fyne.NewSize(160, 36)
-	paneLinkSize   = fyne.NewSize(120, 36)
 	paneActionSize = fyne.NewSize(200, 36)
+	// paneCompactSize fits a short word: the web links share the action row
+	// with the download button, and every point they take is the pane's.
+	paneCompactSize = fyne.NewSize(88, 36)
 )
 
 // fixedSize gives a widget a size of its own, whatever it is put inside.

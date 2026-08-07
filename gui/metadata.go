@@ -3,13 +3,11 @@ package gui
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/habedi/gogg/client"
+	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
 )
 
@@ -23,27 +21,31 @@ const metadataFetchers = 2
 const metadataMaxAge = 30 * 24 * time.Hour
 
 // metadataFormat is the shape gogg writes a lookup in. What gogg reads out of
-// GOG's answer grows: an entry written before it read screenshots says nothing
+// GOG's answer grows: a record written before it read screenshots says nothing
 // about screenshots, which is not the same as a game having none. Raising this
-// makes every older entry be looked up again.
-const metadataFormat = 2
-
-// storedMetadata is a cached lookup, with the shape it was written in.
-type storedMetadata struct {
-	Format int
-	Meta   client.GameMetadata
-}
+// makes every older record be looked up again. 3 added the description with
+// its markup kept.
+const metadataFormat = 3
 
 // metadataCache keeps GOG's store information for a game, in memory for this
-// session and on disk between runs.
+// session and in the catalogue database between runs: it is what gogg knows
+// about the game, so it lives with the game.
 type metadataCache struct {
-	dir     string
 	fetches chan struct{}
+
+	// ctx is cancelled when the cache is closed, taking every lookup still in
+	// flight with it: a library that has been replaced has no pane to fill
+	// and no business writing to the database on its way out.
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	// memory is read and written by every lookup goroutine.
 	mu     sync.Mutex
 	memory map[int]client.GameMetadata
 }
+
+// close abandons the lookups still in flight.
+func (c *metadataCache) close() { c.cancel() }
 
 func (c *metadataCache) remembered(gameID int) (client.GameMetadata, bool) {
 	c.mu.Lock()
@@ -58,35 +60,26 @@ func (c *metadataCache) remember(gameID int, meta client.GameMetadata) {
 	c.memory[gameID] = meta
 }
 
-func newMetadataCache(dir string) *metadataCache {
+func newMetadataCache() *metadataCache {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &metadataCache{
-		dir:     dir,
 		fetches: make(chan struct{}, metadataFetchers),
+		ctx:     ctx,
+		cancel:  cancel,
 		memory:  make(map[int]client.GameMetadata),
 	}
 }
 
-// metadataCacheDir is where descriptions are kept between runs.
-func metadataCacheDir() string {
-	return filepath.Join(cacheRoot(), "metadata")
-}
-
-// fetch returns a game's store information, from disk when it is there and
-// still fresh, and from GOG otherwise.
+// fetch returns a game's store information, from the database when it is there
+// and still fresh, and from GOG otherwise.
 func (c *metadataCache) fetch(ctx context.Context, gameID int) (client.GameMetadata, error) {
 	if meta, ok := c.remembered(gameID); ok {
 		return meta, nil
 	}
 
-	path := c.pathFor(gameID)
-	if info, err := os.Stat(path); err == nil && time.Since(info.ModTime()) < metadataMaxAge {
-		if data, err := os.ReadFile(path); err == nil {
-			var stored storedMetadata
-			if json.Unmarshal(data, &stored) == nil && stored.Format == metadataFormat {
-				c.remember(gameID, stored.Meta)
-				return stored.Meta, nil
-			}
-		}
+	if meta, ok := c.stored(ctx, gameID); ok {
+		c.remember(gameID, meta)
+		return meta, nil
 	}
 
 	c.fetches <- struct{}{}
@@ -96,27 +89,38 @@ func (c *metadataCache) fetch(ctx context.Context, gameID int) (client.GameMetad
 		return client.GameMetadata{}, err
 	}
 
-	c.store(path, meta)
+	c.store(ctx, gameID, meta)
 	c.remember(gameID, meta)
 	return meta, nil
 }
 
-func (c *metadataCache) store(path string, meta client.GameMetadata) {
-	data, err := json.Marshal(storedMetadata{Format: metadataFormat, Meta: meta})
+// stored reads what an earlier lookup recorded, when it is still worth
+// trusting: fresh enough, and written in the shape gogg now reads.
+func (c *metadataCache) stored(ctx context.Context, gameID int) (client.GameMetadata, bool) {
+	record, err := db.GetGameMetadata(ctx, gameID)
+	if err != nil || record == nil {
+		return client.GameMetadata{}, false
+	}
+	if record.Format != metadataFormat || time.Since(record.FetchedAt) >= metadataMaxAge {
+		return client.GameMetadata{}, false
+	}
+
+	var meta client.GameMetadata
+	if json.Unmarshal(record.Data, &meta) != nil {
+		return client.GameMetadata{}, false
+	}
+	return meta, true
+}
+
+// store records a lookup for the runs to come. A lookup that cannot be
+// recorded is still an answer, so failing to store is only logged.
+func (c *metadataCache) store(ctx context.Context, gameID int, meta client.GameMetadata) {
+	data, err := json.Marshal(meta)
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(c.dir, 0o755); err != nil {
-		log.Debug().Err(err).Msg("Could not create the metadata cache directory")
-		return
-	}
-	temp := path + ".part"
-	if err := os.WriteFile(temp, data, 0o644); err != nil {
-		log.Debug().Err(err).Msg("Could not cache metadata")
-		return
-	}
-	if err := os.Rename(temp, path); err != nil {
-		_ = os.Remove(temp)
+	if err := db.PutGameMetadata(ctx, gameID, metadataFormat, data); err != nil {
+		log.Debug().Err(err).Int("gameID", gameID).Msg("Could not store metadata")
 	}
 }
 
@@ -126,7 +130,7 @@ func (c *metadataCache) store(path string, meta client.GameMetadata) {
 // lookup came back with nothing, under the same condition.
 func (c *metadataCache) load(gameID int, stillWanted func(int) bool, deliver func(client.GameMetadata), failed func()) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 		defer cancel()
 
 		meta, err := c.fetch(ctx, gameID)
@@ -144,8 +148,4 @@ func (c *metadataCache) load(gameID int, stillWanted func(int) bool, deliver fun
 			deliver(meta)
 		})
 	}()
-}
-
-func (c *metadataCache) pathFor(gameID int) string {
-	return filepath.Join(c.dir, fmt.Sprintf("%d.json", gameID))
 }

@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/stretchr/testify/require"
 )
@@ -92,17 +94,134 @@ func offMain(t *testing.T, body func()) {
 }
 
 // Opening a picture on its own fetches the rendition GOG serves large.
-func TestShowPicture_FetchesTheLargeRendition(t *testing.T) {
+func TestShowPictures_FetchesTheLargeRendition(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 	base, asked := pictureServer(t)
 
 	dir := t.TempDir()
-	showPicture(test.NewWindow(nil),
-		galleryPicture{ThumbnailURL: base + "/thumb_112.jpg", LargeURL: base + "/large_748.jpg"},
-		newCoverCache(dir))
+	showPictures(test.NewWindow(nil), []galleryPicture{
+		{ThumbnailURL: base + "/thumb_112.jpg", LargeURL: base + "/large_748.jpg"},
+	}, 0, newCoverCache(dir))
 
 	require.Eventually(t, func() bool { return cachedFiles(dir) == 1 }, 5*time.Second, 20*time.Millisecond)
 	require.True(t, asked.contains("_748.jpg"))
 	require.False(t, asked.contains("_112.jpg"), "the thumbnail is already on screen")
+}
+
+// picturesFor builds a gallery's worth of pictures pointing at the server.
+func picturesFor(base string, n int) []galleryPicture {
+	made := make([]galleryPicture, 0, n)
+	for i := 0; i < n; i++ {
+		made = append(made, galleryPicture{
+			ThumbnailURL: base + "/thumb" + string(rune('a'+i)) + "_112.jpg",
+			LargeURL:     base + "/large" + string(rune('a'+i)) + "_748.jpg",
+		})
+	}
+	return made
+}
+
+// gatedPictureServer records what is asked of it at once but answers nothing
+// until the test is over. What the dialog fetches is observable without a
+// picture ever landing in a widget mid-test, on a goroutine of its own.
+func gatedPictureServer(t *testing.T) (string, *pathLog) {
+	t.Helper()
+	asked := &pathLog{}
+	gate := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.add(r.URL.Path)
+		<-gate
+		_, _ = w.Write(onePixelPNG)
+	}))
+	t.Cleanup(srv.Close)
+	// Registered after Close, so the gate opens first and Close can finish.
+	t.Cleanup(func() { close(gate) })
+	return srv.URL, asked
+}
+
+// The dialog moves through the pictures without closing: the arrows either
+// side, and the arrow keys, both step along; the ends hold rather than wrap.
+func TestShowPictures_MovesLeftAndRight(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	base, asked := gatedPictureServer(t)
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	dir := t.TempDir()
+	showPictures(win, picturesFor(base, 3), 1, newCoverCache(dir))
+
+	overlay := win.Canvas().Overlays().Top()
+	require.NotNil(t, overlay)
+	viewers := widgetsOfType[*pictureViewer](overlay)
+	require.Len(t, viewers, 1, "the dialog body takes the keys")
+	viewer := viewers[0]
+
+	counter := func() string {
+		for _, label := range labelTexts(overlay) {
+			if strings.Contains(label, "/") {
+				return label
+			}
+		}
+		return ""
+	}
+	require.Equal(t, "2 / 3", counter(), "the dialog opens on the picture that was tapped")
+
+	viewer.TypedKey(&fyne.KeyEvent{Name: fyne.KeyRight})
+	require.Equal(t, "3 / 3", counter())
+	// The middle and its neighbours load as they are looked at.
+	require.Eventually(t, func() bool { return asked.contains("largec_748.jpg") },
+		5*time.Second, 20*time.Millisecond)
+
+	viewer.TypedKey(&fyne.KeyEvent{Name: fyne.KeyRight})
+	require.Equal(t, "3 / 3", counter(), "the end holds rather than wraps")
+
+	viewer.TypedKey(&fyne.KeyEvent{Name: fyne.KeyLeft})
+	viewer.TypedKey(&fyne.KeyEvent{Name: fyne.KeyLeft})
+	require.Equal(t, "1 / 3", counter())
+	viewer.TypedKey(&fyne.KeyEvent{Name: fyne.KeyLeft})
+	require.Equal(t, "1 / 3", counter(), "the start holds too")
+}
+
+// A picture on show can be kept: Save writes the bytes GOG served, once they
+// have landed.
+func TestShowPictures_OffersSave(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	base, _ := gatedPictureServer(t)
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	showPictures(win, picturesFor(base, 2), 0, newCoverCache(t.TempDir()))
+
+	overlay := win.Canvas().Overlays().Top()
+	require.NotNil(t, overlay)
+
+	save := buttonWithLabel(overlay, "Save...")
+	require.NotNil(t, save, "the picture can be kept")
+	require.True(t, save.Disabled(), "there is nothing to save until the picture lands")
+}
+
+func TestSuggestedPictureName(t *testing.T) {
+	require.Equal(t, "shot_748.jpg", suggestedPictureName("https://images.gog.com/abc/shot_748.jpg?namespace=x"))
+	require.Equal(t, "picture.jpg", suggestedPictureName(""), "a nameless address still saves as something")
+}
+
+// One picture has nowhere to go, so the ways to go are not offered.
+func TestShowPictures_OnePictureOffersNoTravel(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	base, _ := pictureServer(t)
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	showPictures(win, picturesFor(base, 1), 0, newCoverCache(t.TempDir()))
+
+	overlay := win.Canvas().Overlays().Top()
+	require.NotNil(t, overlay)
+	for _, label := range widgetsOfType[*widget.Label](overlay) {
+		if strings.Contains(label.Text, " / ") {
+			require.False(t, label.Visible(), "a counter with one page is noise")
+		}
+	}
 }

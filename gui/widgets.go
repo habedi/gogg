@@ -30,6 +30,11 @@ func showCopied(near fyne.CanvasObject, message string) {
 	time.AfterFunc(copiedShownFor, func() { fyne.Do(popup.Hide) })
 }
 
+// fileDialogSize is the room every file and folder dialog opens with. Fyne's
+// default shows barely a few rows of files; this gives the listing real room,
+// and Fyne clamps it to the window when the window is smaller.
+var fileDialogSize = fyne.NewSize(920, 700)
+
 // emptyState is what a pane, a list, or a tab shows when there is nothing in
 // it: an icon, a heading, a line about what would fill it, and where there is
 // something to do about it, a button. One shape for all of them, so an empty

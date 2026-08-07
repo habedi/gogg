@@ -110,7 +110,7 @@ func SettingsTabUI(win fyne.Window, onSignOut func()) fyne.CanvasObject {
 			validateSoundPath(path)
 		}, win)
 		fd.SetFilter(storage.NewExtensionFileFilter([]string{".mp3", ".wav", ".ogg"}))
-		fd.Resize(fyne.NewSize(920, 700))
+		fd.Resize(fileDialogSize)
 		fd.Show()
 	})
 
