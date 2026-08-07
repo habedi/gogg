@@ -18,7 +18,7 @@ func TestNewGameCell_ShowsTitleAndSelection(t *testing.T) {
 	sel.set(1, true)
 
 	cell := newGameCell().(*gameCell)
-	bindGameCell(cell, db.Game{ID: 1, Title: "Selected Game"}, sel, nil, nil)
+	bindGameCell(cell, db.Game{ID: 1, Title: "Selected Game"}, sel, nil, nil, nil)
 
 	require.Equal(t, "Selected Game", cell.title.Text)
 	require.True(t, cell.check.Checked)
@@ -34,8 +34,8 @@ func TestBindGameCell_RecyclingDoesNotLeakSelection(t *testing.T) {
 	sel.set(1, true)
 
 	cell := newGameCell().(*gameCell)
-	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, sel, nil, nil)
-	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil)
+	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, sel, nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil, nil)
 
 	require.True(t, sel.has(1), "recycling must not deselect the game the cell used to show")
 	require.False(t, sel.has(2))
@@ -51,32 +51,34 @@ func TestGameCell_RefusesACoverForAGameItNoLongerShows(t *testing.T) {
 	cell := newGameCell().(*gameCell)
 	sel := newGameSelection()
 
-	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, sel, nil, nil)
+	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, sel, nil, nil, nil)
 	require.True(t, cell.showing(1))
 
-	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil)
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil, nil)
 	require.False(t, cell.showing(1), "the answer for game 1 is no longer wanted")
 	require.True(t, cell.showing(2))
 }
 
-func TestLibraryTab_CanSwitchToTheGrid(t *testing.T) {
+// Covers are how a person recognises their games, so a fresh library opens on
+// the grid; the toggle offers the list and the way back.
+func TestLibraryTab_OpensOnTheGridAndCanSwitchToTheList(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
 	lt, _ := newLibraryFixture(t, 3)
 
-	toggle := buttonWithLabel(lt.content, "Grid View")
-	require.NotNil(t, toggle, "the library must offer the cover grid")
-	require.Empty(t, widgetsOfType[*widget.GridWrap](lt.content))
-
-	toggle.OnTapped()
+	toggle := iconButtonWithTip(lt.content, tipShowList)
+	require.NotNil(t, toggle, "a fresh library opens on the covers")
 	grids := widgetsOfType[*widget.GridWrap](lt.content)
 	require.Len(t, grids, 1)
 	require.Equal(t, 3, grids[0].Length())
-	require.Equal(t, "List View", toggle.Text, "the button offers the way back")
 
 	toggle.OnTapped()
 	require.Empty(t, widgetsOfType[*widget.GridWrap](lt.content))
+	require.Equal(t, tipShowCovers, toggle.tip, "the button offers the way back")
+
+	toggle.OnTapped()
+	require.Len(t, widgetsOfType[*widget.GridWrap](lt.content), 1)
 }
 
 // The chosen view is how the library looks next time it opens.
@@ -85,9 +87,10 @@ func TestLibraryTab_RemembersTheChosenView(t *testing.T) {
 	defer app.Quit()
 
 	lt, _ := newLibraryFixture(t, 2)
-	buttonWithLabel(lt.content, "Grid View").OnTapped()
+	iconButtonWithTip(lt.content, tipShowList).OnTapped()
 
-	require.True(t, app.Preferences().Bool(prefGridView))
+	require.False(t, app.Preferences().BoolWithFallback(prefGridView, true),
+		"choosing the list is remembered")
 }
 
 // Whichever view is showing, the same games are listed.
@@ -96,7 +99,6 @@ func TestLibraryTab_GridFollowsTheSearch(t *testing.T) {
 	defer app.Quit()
 
 	lt, _ := newLibraryFixture(t, 3)
-	buttonWithLabel(lt.content, "Grid View").OnTapped()
 
 	grid := widgetsOfType[*widget.GridWrap](lt.content)[0]
 	require.Equal(t, 3, grid.Length())
@@ -142,7 +144,6 @@ func TestLibraryTab_SelectingInTheGridShowsTheGame(t *testing.T) {
 	defer app.Quit()
 
 	lt, _ := newLibraryFixture(t, 3)
-	buttonWithLabel(lt.content, "Grid View").OnTapped()
 
 	grid := widgetsOfType[*widget.GridWrap](lt.content)[0]
 	require.NotNil(t, grid.OnSelected, "the grid must report what was clicked")
@@ -171,15 +172,15 @@ func TestBindGameCell_KeepsArtworkWhenTheGameHasNotChanged(t *testing.T) {
 	cell := newGameCell().(*gameCell)
 	game := db.Game{ID: 1, Title: "One"}
 
-	bindGameCell(cell, game, sel, nil, nil)
+	bindGameCell(cell, game, sel, nil, nil, nil)
 	artwork := image.NewRGBA(image.Rect(0, 0, 4, 4))
 	cell.cover.Image = artwork
 	cell.cover.Resource = nil
 
-	bindGameCell(cell, game, sel, nil, nil)
+	bindGameCell(cell, game, sel, nil, nil, nil)
 	require.Equal(t, artwork, cell.cover.Image, "the same game keeps the artwork already on screen")
 
-	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil)
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil, nil)
 	require.Nil(t, cell.cover.Image, "a different game starts from the placeholder")
 	require.NotNil(t, cell.cover.Resource)
 }
@@ -197,12 +198,12 @@ func TestBindGameCell_CarriesTheSameBadgesAsARow(t *testing.T) {
 	t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
 
 	cell := newGameCell().(*gameCell)
-	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil)
+	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil, nil)
 	require.True(t, cell.badges.downloaded.Visible(), "a downloaded game is marked in the grid too")
 	require.True(t, cell.badges.update.Visible())
 	require.Equal(t, "2", cell.badges.update.Text)
 
-	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, newGameSelection(), nil, nil)
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, newGameSelection(), nil, nil, nil)
 	require.False(t, cell.badges.downloaded.Visible(), "and one that is not, is not")
 	require.False(t, cell.badges.update.Visible())
 }

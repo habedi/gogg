@@ -65,6 +65,17 @@ func widgetsOfType[T any](root fyne.CanvasObject) []T {
 	return found
 }
 
+// iconButtonWithTip finds an icon button by what it tells the user on hover,
+// which is the only words an icon button has.
+func iconButtonWithTip(root fyne.CanvasObject, tip string) *iconButton {
+	for _, button := range widgetsOfType[*iconButton](root) {
+		if button.tip == tip {
+			return button
+		}
+	}
+	return nil
+}
+
 func buttonWithLabel(root fyne.CanvasObject, label string) *widget.Button {
 	for _, button := range widgetsOfType[*widget.Button](root) {
 		if button.Text == label {

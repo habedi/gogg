@@ -296,7 +296,7 @@ func TestLibrary_SaysWhileItIsCheckingDownloads(t *testing.T) {
 		lt, _ := newLibraryFixture(t, 3)
 
 		held := holdStatusWork(t)
-		test.Tap(buttonWithLabel(lt.content, "Refresh"))
+		test.Tap(iconButtonWithTip(lt.content, tipRefresh))
 		refreshes.finish()
 
 		require.Contains(t, labelTexts(lt.content), "Checking downloads...")

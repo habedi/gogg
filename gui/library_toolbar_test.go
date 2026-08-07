@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The export formats are offered in a menu dropped from the Export button.
+// Sorting and exporting wait in a menu dropped from the toolbar's last button.
 // Positioning it from the button's place inside its own container put the menu
 // at the top of the window, hundreds of points from the button it belongs to.
-func TestLibraryTab_ExportMenuDropsFromItsButton(t *testing.T) {
+func TestLibraryTab_MoreMenuDropsFromItsButton(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
@@ -25,19 +25,26 @@ func TestLibraryTab_ExportMenuDropsFromItsButton(t *testing.T) {
 		win.SetContent(lt.content)
 		win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
 
-		export := buttonWithLabel(lt.content, "Export")
-		require.NotNil(t, export, "the library has to offer an export")
-		test.Tap(export)
+		more := iconButtonWithTip(lt.content, tipMore)
+		require.NotNil(t, more, "the library has to offer sorting and exporting")
+		test.Tap(more)
 
 		menu, ok := win.Canvas().Focused().(*widget.PopUpMenu)
-		require.True(t, ok, "tapping Export has to open its menu")
+		require.True(t, ok, "tapping the button has to open its menu")
 
-		button := fyne.CurrentApp().Driver().AbsolutePositionForObject(export)
+		labels := make([]string, 0, len(lt.moreMenu().Items))
+		for _, item := range lt.moreMenu().Items {
+			labels = append(labels, item.Label)
+		}
+		require.Contains(t, labels, "Export Game List as CSV")
+		require.Contains(t, labels, "Export Full Catalogue as JSON")
+
+		button := fyne.CurrentApp().Driver().AbsolutePositionForObject(more)
 		require.InDelta(t, button.X, menu.Position().X, float64(theme.Padding()),
 			"the menu has to line up with the button")
 		require.GreaterOrEqual(t, menu.Position().Y+menu.Size().Height, button.Y,
 			"the menu has to reach the button it dropped from")
-		require.LessOrEqual(t, menu.Position().Y, button.Y+export.Size().Height,
+		require.LessOrEqual(t, menu.Position().Y, button.Y+more.Size().Height,
 			"and must not float below it")
 	})
 }
@@ -78,7 +85,7 @@ func TestLibraryTab_RefreshKeepsTheSearch(t *testing.T) {
 		lt, _ := newLibraryFixture(t, 3)
 		lt.searchEntry.SetText("Game 1")
 
-		test.Tap(buttonWithLabel(lt.content, "Refresh"))
+		test.Tap(iconButtonWithTip(lt.content, tipRefresh))
 		require.Equal(t, "Game 1", lt.searchEntry.Text, "the search has to survive the refresh")
 
 		refreshes.finish()
@@ -110,23 +117,41 @@ func TestLibraryTab_EmptyLibraryRefreshesOnceAtATime(t *testing.T) {
 	})
 }
 
-// The toolbar's two toggles sit side by side, so they have to be written the
-// same way. The view button names what pressing it will do, and the sort button
-// named the order it was already in.
-func TestLibraryTab_TheToolbarTogglesNameWhatTheyDo(t *testing.T) {
+// The toggles name what choosing them will do, not the state they are in: one
+// naming the state and its neighbour naming the action reads as a
+// contradiction.
+func TestLibraryTab_TheTogglesNameWhatTheyDo(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
 	offMain(t, func() {
 		lt, _ := newLibraryFixture(t, 3)
 
-		sort := buttonWithLabel(lt.content, "Sort Z-A")
-		require.NotNil(t, sort, "sorted A to Z, the button offers Z to A")
-		require.NotNil(t, buttonWithLabel(lt.content, "Grid View"),
-			"showing the list, the button offers the grid")
+		require.NotNil(t, iconButtonWithTip(lt.content, tipShowList),
+			"showing the covers, the button offers the list")
 
-		test.Tap(sort)
-		require.Equal(t, "Sort A-Z", sort.Text, "and back again")
+		sort := lt.moreMenu().Items[0]
+		require.Equal(t, "Sort Z-A", sort.Label, "sorted A to Z, the menu offers Z to A")
+		sort.Action()
+
+		require.Equal(t, "Sort A-Z", lt.moreMenu().Items[0].Label, "and back again")
+		require.Equal(t, "Game 3", lt.listed()[0].Title, "and the list follows the order")
+	})
+}
+
+// The toolbar's icon buttons each say what they do on hover; Filters keeps its
+// word because it is the one whose meaning no icon carries.
+func TestLibraryTab_ToolbarOffersEveryTool(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+
+		for _, tip := range []string{tipCollections, tipRefresh, tipShowList, tipMore} {
+			require.NotNil(t, iconButtonWithTip(lt.content, tip), "no button says %q", tip)
+		}
+		require.NotNil(t, buttonWithLabel(lt.content, "Filters"))
 	})
 }
 

@@ -44,25 +44,76 @@ func captureNotifications(t *testing.T) *notificationRecorder {
 	return recorder
 }
 
-// A download finishes long after you have looked away from the window.
-func TestNotifyDownloadFinished(t *testing.T) {
+// A download finishes long after you have looked away from the window. A batch
+// of one is named; a batch of many is counted, failures and all.
+func TestNotifyBatchFinished(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 	recorder := captureNotifications(t)
 
-	notifyDownloadFinished("Baldur's Gate")
+	notifyBatchFinished(1, 0, "Baldur's Gate")
+	notifyBatchFinished(12, 1, "The Last One")
+	notifyBatchFinished(0, 2, "The Failed One")
 
-	require.Len(t, recorder.all(), 1)
+	require.Len(t, recorder.all(), 3)
 	require.Contains(t, recorder.all()[0], "Baldur's Gate")
+	require.Contains(t, recorder.all()[1], "12 games downloaded, 1 failed")
+	require.NotContains(t, recorder.all()[1], "The Last One",
+		"a batch is counted, not named after its last game")
+	require.Contains(t, recorder.all()[2], "2 downloads failed")
 }
 
-func TestNotifyDownloadFinished_RespectsThePreference(t *testing.T) {
+// A batch speaks once, when its last download lands, however each one ended.
+func TestNoteFinished_SpeaksOnceForTheBatch(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+	first := &DownloadTask{ID: 1, Status: binding.NewString()}
+	second := &DownloadTask{ID: 2, Status: binding.NewString()}
+	first.SetState(StateDownloading)
+	second.SetState(StateDownloading)
+	require.NoError(t, dm.AddTask(first))
+	require.NoError(t, dm.AddTask(second))
+
+	first.SetState(StateCompleted)
+	_, _, last := dm.noteFinished(StateCompleted)
+	require.False(t, last, "the second download is still on its way")
+
+	second.SetState(StateError)
+	done, failed, lastNow := dm.noteFinished(StateError)
+	require.True(t, lastNow)
+	require.Equal(t, 1, done)
+	require.Equal(t, 1, failed)
+
+	_, _, again := dm.noteFinished(StateCancelled)
+	require.False(t, again, "an announced batch is not announced again")
+}
+
+// Each of the first tabs sits on Ctrl+1 through Ctrl+9.
+func TestTabShortcuts_PutTabsOnCtrlDigits(t *testing.T) {
+	var selected []int
+	shortcuts := tabShortcuts(5, func(i int) { selected = append(selected, i) })
+
+	require.Len(t, shortcuts, 5)
+	require.Equal(t, fyne.Key1, shortcuts[0].Shortcut.KeyName)
+	require.Equal(t, fyne.KeyModifierControl, shortcuts[0].Shortcut.Modifier)
+
+	for _, shortcut := range shortcuts {
+		shortcut.Action()
+	}
+	require.Equal(t, []int{0, 1, 2, 3, 4}, selected)
+
+	require.Len(t, tabShortcuts(12, func(int) {}), 9, "there are only nine digit keys")
+}
+
+func TestNotifyBatchFinished_RespectsThePreference(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 	app.Preferences().SetBool(prefNotifications, false)
 	recorder := captureNotifications(t)
 
-	notifyDownloadFinished("Baldur's Gate")
+	notifyBatchFinished(1, 0, "Baldur's Gate")
 
 	require.Empty(t, recorder.all())
 }

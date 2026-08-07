@@ -122,19 +122,23 @@ func (c *metadataCache) store(path string, meta client.GameMetadata) {
 
 // load looks a game up off the UI thread and delivers on it. stillWanted is
 // asked whether the answer is still for the game on screen: the user may have
-// clicked on by the time GOG answers.
-func (c *metadataCache) load(gameID int, stillWanted func(int) bool, deliver func(client.GameMetadata)) {
+// clicked on by the time GOG answers. failed, when given, is told that the
+// lookup came back with nothing, under the same condition.
+func (c *metadataCache) load(gameID int, stillWanted func(int) bool, deliver func(client.GameMetadata), failed func()) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		meta, err := c.fetch(ctx, gameID)
-		if err != nil {
-			log.Debug().Err(err).Int("gameID", gameID).Msg("No store information")
-			return
-		}
 		runOnMain(func() {
 			if stillWanted != nil && !stillWanted(gameID) {
+				return
+			}
+			if err != nil {
+				log.Debug().Err(err).Int("gameID", gameID).Msg("No store information")
+				if failed != nil {
+					failed()
+				}
 				return
 			}
 			deliver(meta)

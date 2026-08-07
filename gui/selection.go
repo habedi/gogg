@@ -73,26 +73,67 @@ func bindCheck(check *widget.Check, checked bool, onChanged func(bool)) {
 }
 
 // statusBadges are the marks a game carries wherever it is listed: whether it
-// has been downloaded, and how many files an update would change. The list and
-// the grid show the same ones, so they are built and filled in one place.
+// has been downloaded, how many files an update would change, and how far along
+// a download running right now is. The list and the grid show the same ones, so
+// they are built and filled in one place.
 type statusBadges struct {
 	downloaded *widget.Icon
 	update     *iconButton
+	// progress is the download happening now, shown where the game is listed
+	// rather than only in the Downloads tab.
+	progress *progressBadge
+}
+
+// progressBadge is a progress bar that asks only for the width a list row can
+// spare. Containers that have more to give, like a grid cell, still stretch it.
+type progressBadge struct {
+	widget.ProgressBar
+}
+
+// progressBadgeWidth is the least width the bar asks for in a list row.
+const progressBadgeWidth float32 = 96
+
+func newProgressBadge() *progressBadge {
+	bar := &progressBadge{}
+	// The bar is the message; a percentage in every row is noise.
+	bar.TextFormatter = func() string { return "" }
+	bar.ExtendBaseWidget(bar)
+	return bar
+}
+
+func (p *progressBadge) MinSize() fyne.Size {
+	size := p.ProgressBar.MinSize()
+	size.Width = progressBadgeWidth
+	return size
 }
 
 func newStatusBadges() *statusBadges {
 	badges := &statusBadges{
-		downloaded: widget.NewIcon(theme.ConfirmIcon()),
-		update:     newIconButton(theme.DownloadIcon(), "What this update changes", nil),
+		downloaded: widget.NewIcon(theme.NewSuccessThemedResource(theme.ConfirmIcon())),
+		update:     newIconButton(theme.NewWarningThemedResource(theme.DownloadIcon()), "What this update changes", nil),
+		progress:   newProgressBadge(),
 	}
 	badges.downloaded.Hide()
 	badges.update.Hide()
+	badges.progress.Hide()
 	return badges
 }
 
 // show marks a game with what is known about it. Tapping the update badge lists
-// what has changed.
-func (b *statusBadges) show(gameID int) {
+// what has changed. dm may be nil, in which case no download can be running.
+func (b *statusBadges) show(gameID int, dm *DownloadManager) {
+	if task := dm.runningTaskFor(gameID); task != nil {
+		// While its files are on their way, the game is its progress: the other
+		// marks describe a state it is about to leave.
+		b.downloaded.Hide()
+		b.update.Hide()
+		b.progress.Bind(task.Progress)
+		b.progress.Show()
+		return
+	}
+	b.progress.Unbind()
+	b.progress.Hide()
+
 	if !isGameDownloadedCached(gameID) {
 		b.downloaded.Hide()
 		b.update.Hide()
@@ -150,12 +191,15 @@ func (r *gameRow) CreateRenderer() fyne.WidgetRenderer {
 	leading := container.NewHBox(r.check, r.thumbnail, r.badges.downloaded, r.badges.update)
 	// The title is the centre of a border layout, so it is given whatever width
 	// the leading controls leave and ellipsises only when it truly runs out.
-	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, leading, nil, r.title))
+	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, leading, r.badges.progress, r.title))
 }
 
-// bindGameRow fills a recycled row with a game. onToggle runs when the row's
-// checkbox is changed by the user.
-func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, covers *coverCache, onToggle func()) {
+// bindGameRow fills a recycled row with a game. dm says whether a download is
+// running for it, and onToggle runs when the row's checkbox is changed by the
+// user.
+func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, covers *coverCache,
+	dm *DownloadManager, onToggle func(),
+) {
 	r, ok := row.(*gameRow)
 	if !ok {
 		return
@@ -175,7 +219,7 @@ func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, covers
 
 	r.title.SetText(game.Title)
 	r.loadThumbnail(game, covers, sameGame)
-	r.badges.show(game.ID)
+	r.badges.show(game.ID, dm)
 }
 
 // How much room the list of changes may take before it starts scrolling.

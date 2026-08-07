@@ -22,13 +22,25 @@ var notify = func(title, content string) {
 	fyne.CurrentApp().SendNotification(fyne.NewNotification(title, content))
 }
 
-// notifyDownloadFinished tells the user a download is done. Downloads outlast
-// the user's attention, so this is how they find out without watching.
-func notifyDownloadFinished(gameTitle string) {
+// notifyBatchFinished tells the user their downloads are done, once: thirty
+// games landing one by one is one piece of news, not thirty. Downloads outlast
+// the user's attention, so this is how they find out without watching. title
+// names the game when the whole batch was one.
+func notifyBatchFinished(done, failed int, title string) {
 	if !fyne.CurrentApp().Preferences().BoolWithFallback(prefNotifications, true) {
 		return
 	}
-	notify("Download complete", fmt.Sprintf("%s finished downloading.", gameTitle))
+	switch {
+	case done == 1 && failed == 0:
+		notify("Download complete", fmt.Sprintf("%s finished downloading.", title))
+	case done == 0:
+		notify("Downloads failed", fmt.Sprintf("%d %s failed.", failed, downloadsWord(failed)))
+	case failed > 0:
+		notify("Downloads finished", fmt.Sprintf("%d %s downloaded, %d failed.",
+			done, gamesWord(done), failed))
+	default:
+		notify("Downloads finished", fmt.Sprintf("%d %s downloaded.", done, gamesWord(done)))
+	}
 }
 
 // libraryShortcut is a key combination and what it does.
@@ -49,6 +61,26 @@ func libraryShortcuts(focusSearch, refreshCatalogue func()) []libraryShortcut {
 			Action:   refreshCatalogue,
 		},
 	}
+}
+
+// tabShortcuts puts each of the first count tabs on Ctrl+1 through Ctrl+9, so
+// moving between them does not need the mouse.
+func tabShortcuts(count int, selectTab func(int)) []libraryShortcut {
+	keys := []fyne.KeyName{fyne.Key1, fyne.Key2, fyne.Key3, fyne.Key4, fyne.Key5,
+		fyne.Key6, fyne.Key7, fyne.Key8, fyne.Key9}
+	if count > len(keys) {
+		count = len(keys)
+	}
+
+	shortcuts := make([]libraryShortcut, 0, count)
+	for i := 0; i < count; i++ {
+		index := i
+		shortcuts = append(shortcuts, libraryShortcut{
+			Shortcut: &desktop.CustomShortcut{KeyName: keys[i], Modifier: fyne.KeyModifierControl},
+			Action:   func() { selectTab(index) },
+		})
+	}
+	return shortcuts
 }
 
 // registerShortcuts wires the shortcuts onto a canvas.

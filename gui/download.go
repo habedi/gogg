@@ -278,6 +278,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		if err != nil {
 			task.SetState(StateError)
 			_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
+			announceIfLast(dm, StateError, q.game.Title)
 			return
 		}
 
@@ -304,6 +305,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 			}
 			_ = task.FileStatus.Set("")
 			_ = task.Details.Set("")
+			announceIfLast(dm, task.State(), q.game.Title)
 			return
 		}
 
@@ -312,8 +314,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		_ = task.Details.Set("")
 		_ = task.Progress.Set(1.0)
 		_ = task.FileStatus.Set("")
-		go PlayNotificationSound()
-		notifyDownloadFinished(q.game.Title)
+		announceIfLast(dm, StateCompleted, q.game.Title)
 		// Persist download info for future update checks.
 		info := struct {
 			Language    string `json:"language"`
@@ -340,13 +341,31 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		}
 
 		if q.keepLatestFlag {
-			if err := guiPruneOldVersions(q.downloadPath, parsedGameData.Title, q.rommLayoutFlag, q.platformName); err != nil {
-				log.Warn().Err(err).Msg("Failed to prune old versions (GUI)")
+			removed, pruneErr := guiPruneOldVersions(q.downloadPath, parsedGameData.Title, q.rommLayoutFlag, q.platformName)
+			if pruneErr != nil {
+				log.Warn().Err(pruneErr).Msg("Failed to prune old versions (GUI)")
+			}
+			if len(removed) > 0 {
+				log.Info().Strs("files", removed).Msg("Removed older installer versions")
+				_ = task.Status.Set(fmt.Sprintf(
+					"Download completed. Files are stored in: %s. Removed %d older installer %s.",
+					targetDir, len(removed), filesWord(len(removed))))
 			}
 		}
 	}()
 
 	return nil
+}
+
+// announceIfLast plays the sound and shows the notification once the last
+// in-flight download has landed, speaking for the whole batch.
+func announceIfLast(dm *DownloadManager, state int, title string) {
+	done, failed, last := dm.noteFinished(state)
+	if !last {
+		return
+	}
+	go PlayNotificationSound()
+	notifyBatchFinished(done, failed, title)
 }
 
 var guiVersionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
@@ -397,7 +416,10 @@ func guiCompareVersions(a, b []int) int {
 	return 0
 }
 
-func guiPruneOldVersions(rootPath, title string, romm bool, platformName string) error {
+// guiPruneOldVersions deletes older versions of installers a download has just
+// replaced. It reports what it removed, because deleting files behind someone's
+// back is how trust in a downloader ends.
+func guiPruneOldVersions(rootPath, title string, romm bool, platformName string) (removed []string, err error) {
 	// Determine roots to scan
 	var roots []string
 	if romm {
@@ -453,11 +475,16 @@ func guiPruneOldVersions(rootPath, title string, romm bool, platformName string)
 				}
 			}
 			for _, p := range paths {
-				if p != best {
-					_ = os.Remove(p)
+				if p == best {
+					continue
 				}
+				if rmErr := os.Remove(p); rmErr != nil {
+					err = errors.Join(err, rmErr)
+					continue
+				}
+				removed = append(removed, p)
 			}
 		}
 	}
-	return nil
+	return removed, err
 }

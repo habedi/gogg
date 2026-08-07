@@ -119,11 +119,30 @@ func TestMetadataCache_LoadDeliversToTheSelectedGame(t *testing.T) {
 	cache := newMetadataCache(t.TempDir())
 
 	var delivered atomic.Int64
-	cache.load(7, func(int) bool { return true }, func(client.GameMetadata) { delivered.Add(1) })
+	cache.load(7, func(int) bool { return true }, func(client.GameMetadata) { delivered.Add(1) }, nil)
 	require.Eventually(t, func() bool { return delivered.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
 
 	var stale atomic.Int64
-	cache.load(7, func(int) bool { return false }, func(client.GameMetadata) { stale.Add(1) })
+	cache.load(7, func(int) bool { return false }, func(client.GameMetadata) { stale.Add(1) }, nil)
+	require.Never(t, func() bool { return stale.Load() > 0 }, 300*time.Millisecond, 20*time.Millisecond)
+}
+
+// A lookup that comes back with nothing says so, unless the user has clicked
+// on to another game in the meantime.
+func TestMetadataCache_LoadReportsAFailedLookup(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	srv, _ := metadataAPI(t)
+	t.Setenv("GOGG_API_BASE", srv.URL)
+
+	cache := newMetadataCache(t.TempDir())
+
+	var failed atomic.Int64
+	cache.load(999, func(int) bool { return true }, func(client.GameMetadata) {}, func() { failed.Add(1) })
+	require.Eventually(t, func() bool { return failed.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	var stale atomic.Int64
+	cache.load(999, func(int) bool { return false }, func(client.GameMetadata) {}, func() { stale.Add(1) })
 	require.Never(t, func() bool { return stale.Load() > 0 }, 300*time.Millisecond, 20*time.Millisecond)
 }
 

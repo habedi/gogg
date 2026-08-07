@@ -44,7 +44,7 @@ func TestGuiPruneOldVersions_RemovesOlderVersionsInSameFolder(t *testing.T) {
 		"some-game/windows/setup_game_1.2.10.exe",
 	)
 
-	if err := guiPruneOldVersions(root, "Some Game", false, "windows"); err != nil {
+	if _, err := guiPruneOldVersions(root, "Some Game", false, "windows"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,7 +59,7 @@ func TestGuiPruneOldVersions_KeepsOtherPlatforms(t *testing.T) {
 		"some-game/linux/setup_game_1.2.4.sh",
 	)
 
-	if err := guiPruneOldVersions(root, "Some Game", false, "all"); err != nil {
+	if _, err := guiPruneOldVersions(root, "Some Game", false, "all"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,7 +76,7 @@ func TestGuiPruneOldVersions_KeepsOtherPlatformsWhenFlattened(t *testing.T) {
 		"some-game/setup_game_1.2.4.sh",
 	)
 
-	if err := guiPruneOldVersions(root, "Some Game", false, "all"); err != nil {
+	if _, err := guiPruneOldVersions(root, "Some Game", false, "all"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -90,7 +90,7 @@ func TestGuiPruneOldVersions_KeepsDLCInstallers(t *testing.T) {
 		"some-game/dlcs/the-dlc/windows/setup_game_2.0.0.exe",
 	)
 
-	if err := guiPruneOldVersions(root, "Some Game", false, "windows"); err != nil {
+	if _, err := guiPruneOldVersions(root, "Some Game", false, "windows"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,7 +110,7 @@ func TestGuiPruneOldVersions_RommLayoutKeepsEachPlatform(t *testing.T) {
 		"windows/some-game/setup_game_1.2.4.exe",
 	)
 
-	if err := guiPruneOldVersions(root, "Some Game", true, "all"); err != nil {
+	if _, err := guiPruneOldVersions(root, "Some Game", true, "all"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,4 +119,22 @@ func TestGuiPruneOldVersions_RommLayoutKeepsEachPlatform(t *testing.T) {
 		"linux/some-game/setup_game_1.2.4.sh",
 	)
 	assertGone(t, root, "windows/some-game/setup_game_1.2.3.exe")
+}
+
+func TestGuiPruneOldVersions_ReportsWhatItRemoved(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root,
+		"some-game/setup_game_1.0.0.exe",
+		"some-game/setup_game_2.0.0.exe",
+	)
+
+	removed, err := guiPruneOldVersions(root, "Some Game", false, "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(removed) != 1 || filepath.Base(removed[0]) != "setup_game_1.0.0.exe" {
+		t.Errorf("expected the report to name the removed file, got %v", removed)
+	}
+	assertExists(t, root, "some-game/setup_game_2.0.0.exe")
 }

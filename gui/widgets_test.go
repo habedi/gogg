@@ -113,7 +113,7 @@ func TestEmptyStates_AllSayItTheSameWay(t *testing.T) {
 
 	empty := map[string]fyne.CanvasObject{
 		"signed out":       signedOut.content,
-		"no downloads yet": DownloadsTabUI(&DownloadManager{Tasks: binding.NewUntypedList()}),
+		"no downloads yet": DownloadsTabUI(test.NewWindow(nil), &DownloadManager{Tasks: binding.NewUntypedList()}),
 		"nothing selected": signedIn.pane.content,
 	}
 
@@ -164,11 +164,11 @@ func TestIconOnlyButtons_AllSayWhatTheyDo(t *testing.T) {
 		t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
 
 		row := newGameRow().(*gameRow)
-		bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil)
+		bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil, nil)
 
 		for what, ui := range map[string]fyne.CanvasObject{
 			"the library":  lt.content,
-			"a download":   DownloadsTabUI(lt.dm),
+			"a download":   DownloadsTabUI(test.NewWindow(nil), lt.dm),
 			"a game's row": row,
 		} {
 			for _, button := range widgetsOfType[*widget.Button](ui) {

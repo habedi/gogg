@@ -127,7 +127,7 @@ func TestDownloadsTab_SaysWhenThereIsNothingToShow(t *testing.T) {
 
 	offMain(t, func() {
 		dm := &DownloadManager{Tasks: binding.NewUntypedList()}
-		ui := DownloadsTabUI(dm)
+		ui := DownloadsTabUI(test.NewWindow(nil), dm)
 		require.Contains(t, labelTexts(ui), "No downloads yet")
 
 		queued := &DownloadTask{
@@ -192,7 +192,7 @@ func TestDownloadsTab_ReordersWhenADownloadFinishes(t *testing.T) {
 
 	offMain(t, func() {
 		dm := &DownloadManager{Tasks: binding.NewUntypedList()}
-		ui := DownloadsTabUI(dm)
+		ui := DownloadsTabUI(test.NewWindow(nil), dm)
 
 		start := time.Now()
 		running := &DownloadTask{

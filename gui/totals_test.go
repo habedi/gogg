@@ -105,7 +105,7 @@ func TestDownloadsTabUI_ShowsTheAggregate(t *testing.T) {
 	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
 	require.NoError(t, dm.AddTask(progressingTask(t, StateDownloading, 1<<20, 4<<20, 1<<10)))
 
-	tab := DownloadsTabUI(dm)
+	tab := DownloadsTabUI(test.NewWindow(nil), dm)
 
 	var shown []string
 	for _, label := range widgetsOfType[*widget.Label](tab) {

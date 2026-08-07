@@ -65,7 +65,7 @@ func TestDownloadsTabUI_ListsEveryDownload(t *testing.T) {
 	require.NoError(t, dm.AddTask(progressingTask(t, StateDownloading, 1<<20, 4<<20, 1<<10)))
 	require.NoError(t, dm.AddTask(progressingTask(t, StateCancelled, 1<<20, 4<<20, 0)))
 
-	tab := DownloadsTabUI(dm)
+	tab := DownloadsTabUI(test.NewWindow(nil), dm)
 
 	lists := widgetsOfType[*widget.List](tab)
 	require.Len(t, lists, 1)
@@ -85,7 +85,7 @@ func TestDownloadsTabUI_BindsEveryKindOfRowWithoutPanicking(t *testing.T) {
 		require.NoError(t, dm.AddTask(task))
 	}
 
-	tab := DownloadsTabUI(dm)
+	tab := DownloadsTabUI(test.NewWindow(nil), dm)
 	lists := widgetsOfType[*widget.List](tab)
 	require.Len(t, lists, 1)
 	list := lists[0]
@@ -111,7 +111,7 @@ func TestDownloadsTabUI_ShowsRetryOnlyWhenItCanRepeatTheDownload(t *testing.T) {
 	require.NoError(t, dm.AddTask(retryable))
 	require.NoError(t, dm.AddTask(restored))
 
-	list := widgetsOfType[*widget.List](DownloadsTabUI(dm))[0]
+	list := widgetsOfType[*widget.List](DownloadsTabUI(test.NewWindow(nil), dm))[0]
 
 	// Which row is which is up to the order the tab shows them in, so the rows
 	// are read by the download they are for.

@@ -46,7 +46,7 @@ func libraryCollections() []sidebarRow {
 		{Title: "Downloaded", Icon: theme.ConfirmIcon(), Query: "downloaded:yes"},
 		{Title: "Not downloaded", Icon: theme.DownloadIcon(), Query: "downloaded:no"},
 		{Title: "Updates", Icon: theme.ViewRefreshIcon(), Query: "updates:yes", HideWhenEmpty: true},
-		{Title: "Favorites", Icon: theme.ConfirmIcon(), Query: "favorite:yes", HideWhenEmpty: true},
+		{Title: "Favorites", Icon: iconStarOutline, Query: "favorite:yes", HideWhenEmpty: true},
 		{Title: "Hidden", Icon: theme.VisibilityOffIcon(), Query: "hidden:yes", HideWhenEmpty: true},
 
 		{Title: "Platform", Header: true},

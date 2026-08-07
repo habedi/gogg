@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -27,10 +29,40 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// searchBox is the search entry, which also clears itself on Escape: the
+// fastest way out of a filter is the key that means "never mind".
+type searchBox struct {
+	widget.Entry
+}
+
+// What the toolbar's icon buttons say while the pointer rests on them. Named
+// once so the tests can find a button by what it tells the user.
+const (
+	tipCollections = "Show or hide the collections"
+	tipRefresh     = "Refresh the catalogue from GOG"
+	tipShowList    = "Show as a list"
+	tipShowCovers  = "Show as covers"
+	tipMore        = "Sort and export"
+)
+
+func newSearchBox() *searchBox {
+	box := &searchBox{}
+	box.ExtendBaseWidget(box)
+	return box
+}
+
+func (b *searchBox) TypedKey(event *fyne.KeyEvent) {
+	if event.Name == fyne.KeyEscape {
+		b.SetText("")
+		return
+	}
+	b.Entry.TypedKey(event)
+}
+
 // libraryTab holds all the components of the library tab UI.
 type libraryTab struct {
 	content     fyne.CanvasObject
-	searchEntry *widget.Entry
+	searchEntry *searchBox
 	// selected is the game shown in the details pane, driven by the list.
 	selected binding.Untyped
 	// split is the divider between the list and the details, remembered
@@ -45,7 +77,10 @@ type libraryTab struct {
 	// sidebar lists the collections beside the games, when it is shown.
 	sidebar *librarySidebar
 	// showCollections is the toolbar button that shows and hides them.
-	showCollections *widget.Button
+	showCollections *iconButton
+	// moreMenu builds what waits behind the toolbar's last button: the sort
+	// order and the exports.
+	moreMenu func() *fyne.Menu
 	// listed is what the search and the filters have left showing, and relist
 	// asks that question again after something they depend on has changed.
 	listed func() []db.Game
@@ -151,6 +186,29 @@ var statusWorker = func(work func() gameStatuses, apply func(gameStatuses)) {
 	}()
 }
 
+// searchDebounce is how long typing rests before the list is filtered again.
+// Filtering runs a query over the whole catalogue, and running it between two
+// keystrokes answers a question the user is still asking. Zero filters at
+// once, which the tests rely on.
+var searchDebounce = 200 * time.Millisecond
+
+// debounced hands back an OnChanged handler that runs fn on the main thread
+// once the changes have rested for delay. Each change restarts the clock. A
+// delay of zero runs fn at once, on the caller.
+func debounced(delay time.Duration, fn func()) func(string) {
+	var timer *time.Timer
+	return func(string) {
+		if delay <= 0 {
+			fn()
+			return
+		}
+		if timer != nil {
+			timer.Stop()
+		}
+		timer = time.AfterFunc(delay, func() { runOnMain(fn) })
+	}
+}
+
 // computeUpdateStatus works the statuses out and records them, for callers that
 // need the answer before they go on.
 func computeUpdateStatus(dm *DownloadManager, games []db.Game) {
@@ -248,7 +306,7 @@ func statusesFor(dm *DownloadManager, games []db.Game) gameStatuses {
 	return found
 }
 
-// hasGameUpdateCached now reads cache
+// hasGameUpdateCached answers from the status cache without touching the disk.
 func hasGameUpdateCached(gameID int) (bool, []string) {
 	st, ok := updateStatusCache[gameID]
 	if !ok {
@@ -293,7 +351,7 @@ func gamesWithUpdates(games []db.Game) []db.Game {
 	return pending
 }
 
-// isGameDownloadedCached uses cache
+// isGameDownloadedCached answers from the status cache without touching the disk.
 func isGameDownloadedCached(gameID int) bool {
 	st, ok := updateStatusCache[gameID]
 	if !ok {
@@ -465,6 +523,17 @@ func loadGameTags() {
 		return
 	}
 	gameTags = tags
+}
+
+// gameHasTag says whether a game carries a tag, read from the cache the
+// searches read.
+func gameHasTag(gameID int, tag string) bool {
+	for _, held := range gameTags[gameID] {
+		if held == tag {
+			return true
+		}
+	}
+	return false
 }
 
 // anyChoice is what a select says when it is not filtering on anything.
@@ -647,7 +716,6 @@ func languageCodesOffered() []string {
 	return codes
 }
 
-// LibraryTabUI modifications: remove tag editor and apply initial speed limit.
 // LibraryTabUI builds the catalogue tab. onLogin is invoked when a signed-out
 // user asks to log in.
 func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager, onLogin func()) *libraryTab {
@@ -663,7 +731,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			"Log in to GOG to see the games you own.", loginBtn)
 		return &libraryTab{
 			content:     content,
-			searchEntry: widget.NewEntry(),
+			searchEntry: newSearchBox(),
 			selected:    binding.NewUntyped(),
 			refresh:     func() {},
 			gallery:     newGameGallery(nil, win),
@@ -676,6 +744,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	allGames, _ := db.GetCatalogue()
 	loadGameTags()
+	// Set when this library is replaced. Answers that were on their way to it
+	// are dropped rather than delivered to a pane nothing shows anymore.
+	var closed atomic.Bool
 	gamesListBinding := binding.NewUntypedList()
 	var sidebar *librarySidebar
 	selectedGameBinding := binding.NewUntyped()
@@ -683,7 +754,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	gameCountLabel := widget.NewLabel("")
 
-	searchEntry := widget.NewEntry()
+	searchEntry := newSearchBox()
 	// The box takes the same filters the collections are made of, and nothing
 	// else on screen says so.
 	searchEntry.SetPlaceHolder("Search titles, or filter: downloaded:no platform:linux")
@@ -723,6 +794,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		}
 		return games
 	}
+
+	// A search that matched nothing left a blank list, which reads as a library
+	// that has not loaded rather than as an answer.
+	noMatches := emptyState(theme.SearchIcon(), "No games match",
+		"Nothing in the catalogue fits this search.",
+		widget.NewButton("Clear Search", func() { searchEntry.SetText("") }))
+	// showGames puts the right view in the list pane. It is assigned once the
+	// widgets it switches between exist.
+	var showGames func()
 
 	// updateDisplayedGames decides which games are listed. Searching, sorting
 	// and filtering do not change a game's status, so this does no I/O.
@@ -766,6 +846,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		} else {
 			clearSearchBtn.Show()
 		}
+		if showGames != nil {
+			showGames()
+		}
 	}
 
 	// recomputeStatuses refreshes the cached download and update status for the
@@ -777,6 +860,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		statusWorker(
 			func() gameStatuses { return statusesFor(dm, games) },
 			func(found gameStatuses) {
+				if closed.Load() {
+					return
+				}
 				applyStatuses(found)
 				if sidebar != nil && sidebar.content.Visible() {
 					sidebar.refresh(allGames)
@@ -788,7 +874,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			})
 	}
 
-	searchEntry.OnChanged = func(s string) { updateDisplayedGames() }
+	// Typing is followed at a small distance: each keystroke restarts the
+	// clock, and the list is filtered once the typing rests.
+	searchEntry.OnChanged = debounced(searchDebounce, updateDisplayedGames)
 
 	displayedForGrid := func() []db.Game { return displayedGames() }
 
@@ -804,7 +892,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			if !ok {
 				return
 			}
-			bindGameCell(cell, games[id], sel, covers, func() { afterSelectionChange() })
+			bindGameCell(cell, games[id], sel, covers, dm, func() { afterSelectionChange() })
 		},
 	)
 
@@ -817,7 +905,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			if !ok {
 				return
 			}
-			bindGameRow(obj, game, sel, covers, func() { afterSelectionChange() })
+			bindGameRow(obj, game, sel, covers, dm, func() { afterSelectionChange() })
 		},
 	)
 	gameGridWidget.OnSelected = func(id widget.GridWrapItemID) {
@@ -840,36 +928,64 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	}
 
 	// A download finishing changes what a game is, so everything that says what
-	// a game is has to follow it: the collections count the statuses, and the
-	// list may be filtered by them.
-	dm.Tasks.AddListener(binding.NewDataListener(func() {
-		computeUpdateStatus(dm, gamesWithTasks(dm, allGames))
-		if sidebar != nil && sidebar.content.Visible() {
-			sidebar.refresh(allGames)
+	// a game is has to follow it: the collections count the statuses, the list
+	// may be filtered by them, and the rows carry the badges. Working the
+	// statuses out reads the filesystem, so it goes to the worker rather than
+	// holding up the thread this listener fires on.
+	followDownloads := binding.NewDataListener(func() {
+		if closed.Load() {
+			return
 		}
-		updateDisplayedGames()
-		if refreshUpdatesSummary != nil {
-			refreshUpdatesSummary()
-		}
-		gameListWidget.Refresh()
-	}))
+		touched := gamesWithTasks(dm, allGames)
+		statusWorker(
+			func() gameStatuses { return statusesFor(dm, touched) },
+			func(found gameStatuses) {
+				if closed.Load() {
+					return
+				}
+				applyStatuses(found)
+				if sidebar != nil && sidebar.content.Visible() {
+					sidebar.refresh(allGames)
+				}
+				updateDisplayedGames()
+				if refreshUpdatesSummary != nil {
+					refreshUpdatesSummary()
+				}
+				gameListWidget.Refresh()
+			})
+	})
+	// The list of downloads changes when one is added; a download that finishes
+	// changes only its state. The badges follow both.
+	dm.Tasks.AddListener(followDownloads)
+	dm.states().AddListener(followDownloads)
 
-	showingGrid := prefs.Bool(prefGridView)
-	var viewBtn *widget.Button
-	showGames := func() {
+	// Covers are the way a person recognises their games, so they are the first
+	// thing a new library shows. Whoever chose the list keeps it.
+	showingGrid := prefs.BoolWithFallback(prefGridView, true)
+	var viewBtn *iconButton
+	showGames = func() {
 		if len(allGames) == 0 {
 			return
 		}
-		if showingGrid {
+		switch {
+		case len(displayedGames()) == 0:
+			listContent.Objects = []fyne.CanvasObject{noMatches}
+		case showingGrid:
 			listContent.Objects = []fyne.CanvasObject{gameGridWidget}
-			viewBtn.SetText("List View")
-		} else {
+		default:
 			listContent.Objects = []fyne.CanvasObject{gameListWidget}
-			viewBtn.SetText("Grid View")
+		}
+		// The button offers the view it would switch to.
+		if showingGrid {
+			viewBtn.SetIcon(theme.ListIcon())
+			viewBtn.tip = tipShowList
+		} else {
+			viewBtn.SetIcon(theme.GridIcon())
+			viewBtn.tip = tipShowCovers
 		}
 		listContent.Refresh()
 	}
-	viewBtn = widget.NewButtonWithIcon("Grid View", theme.ViewFullScreenIcon(), func() {
+	viewBtn = newIconButton(theme.ListIcon(), tipShowList, func() {
 		showingGrid = !showingGrid
 		prefs.SetBool(prefGridView, showingGrid)
 		showGames()
@@ -878,12 +994,17 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// Both the toolbar and the empty-library placeholder offer a refresh, and
 	// they start the same job, so pressing either has to close both while it
 	// runs. Only one of them exists at a time, hence the checks for nil.
-	var refreshBtn, refreshNowBtn *widget.Button
+	var refreshBtn *iconButton
+	var refreshNowBtn *widget.Button
 	setRefreshEnabled := func(enabled bool) {
-		for _, button := range []*widget.Button{refreshBtn, refreshNowBtn} {
-			if button == nil {
-				continue
-			}
+		buttons := make([]fyne.Disableable, 0, 2)
+		if refreshBtn != nil {
+			buttons = append(buttons, refreshBtn)
+		}
+		if refreshNowBtn != nil {
+			buttons = append(buttons, refreshNowBtn)
+		}
+		for _, button := range buttons {
 			if enabled {
 				button.Enable()
 				continue
@@ -910,7 +1031,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			"Refresh to fetch the games you own from GOG.", refreshNowBtn))
 	} else {
 		listContent.Add(gameListWidget)
-		showGames()
+		// Filled before showGames looks, or an unfiltered library reads as a
+		// search that matched nothing.
+		updateDisplayedGames()
 	}
 	// Load any status cached by an earlier session before recomputing, so stale
 	// entries cannot overwrite fresh ones.
@@ -919,47 +1042,50 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	// The search box is left as it is: emptying it threw away the filter, or the
 	// collection, the user was looking at.
-	refreshBtn = widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), startRefresh)
+	refreshBtn = newIconButton(theme.ViewRefreshIcon(), tipRefresh, startRefresh)
 
-	var exportBtn *widget.Button
-	exportBtn = widget.NewButtonWithIcon("Export", theme.DocumentSaveIcon(), func() {
-		popup := widget.NewPopUpMenu(fyne.NewMenu("",
-			fyne.NewMenuItem("Export Game List as CSV", func() { ExportCatalogueAction(win, "csv") }),
-			fyne.NewMenuItem("Export Full Catalogue as JSON", func() { ExportCatalogueAction(win, "json") }),
-		), win.Canvas())
-		// Dropped from the button itself: where a button sits inside its own
-		// container is not where it is on the canvas, and taking the one for the
-		// other put this menu at the top of the window.
-		popup.ShowAtRelativePosition(fyne.NewPos(0, exportBtn.Size().Height), exportBtn)
-	})
-
-	// Named for what pressing it does, like the view button beside it: one
-	// button naming the state and its neighbour naming the action reads as a
+	// Named for what choosing it does, like the view button beside it: one
+	// entry naming the state and its neighbour naming the action reads as a
 	// contradiction.
-	var sortBtn *widget.Button
 	sortLabel := func() string {
 		if isSortAscending {
 			return "Sort Z-A"
 		}
 		return "Sort A-Z"
 	}
-	sortBtn = widget.NewButton(sortLabel(), func() {
-		isSortAscending = !isSortAscending
-		sortBtn.SetText(sortLabel())
-		updateDisplayedGames()
-		gameListWidget.Refresh()
+	// Sorting and exporting are reached for rarely, so they wait in a menu
+	// rather than widening the toolbar for everyone. The menu is built afresh
+	// each time it opens, so the sort entry names the order it would switch to.
+	moreMenu := func() *fyne.Menu {
+		return fyne.NewMenu("",
+			fyne.NewMenuItem(sortLabel(), func() {
+				isSortAscending = !isSortAscending
+				updateDisplayedGames()
+				gameListWidget.Refresh()
+			}),
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("Export Game List as CSV", func() { ExportCatalogueAction(win, "csv") }),
+			fyne.NewMenuItem("Export Full Catalogue as JSON", func() { ExportCatalogueAction(win, "json") }),
+		)
+	}
+	var moreBtn *iconButton
+	moreBtn = newIconButton(theme.MoreHorizontalIcon(), tipMore, func() {
+		popup := widget.NewPopUpMenu(moreMenu(), win.Canvas())
+		// Dropped from the button itself: where a button sits inside its own
+		// container is not where it is on the canvas, and taking the one for the
+		// other put this menu at the top of the window.
+		popup.ShowAtRelativePosition(fyne.NewPos(0, moreBtn.Size().Height), moreBtn)
 	})
 
 	// The button is made here so the toolbar can hold it; what it does is wired
 	// once the collections it shows exist.
-	collectionsBtn := widget.NewButtonWithIcon("Collections", theme.ListIcon(), nil)
-	filtersBtn := newFiltersButton(searchEntry, updateDisplayedGames)
-	// Compact toolbar now
+	collectionsBtn := newIconButton(theme.MenuIcon(), tipCollections, nil)
+	filtersBtn := newFiltersButton(&searchEntry.Entry, updateDisplayedGames)
 	// The buttons scroll rather than forcing a minimum width on the window; the
-	// counts stay pinned to the right.
+	// update summary stays pinned to the right.
 	toolbarButtons := container.NewHScroll(
-		container.NewHBox(collectionsBtn, refreshBtn, exportBtn, viewBtn, sortBtn,
-			filtersBtn, updateAllBtn))
+		container.NewHBox(collectionsBtn, refreshBtn, viewBtn,
+			filtersBtn, updateAllBtn, moreBtn))
 	toolbar := container.NewBorder(nil, nil, nil,
 		container.NewHBox(updatesLabel, gameCountLabel), toolbarButtons)
 	selectionLabel := widget.NewLabel("")
@@ -977,7 +1103,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	clearSelectionBtn := widget.NewButton("Clear Selection", func() {
 		applyBulkSelection(sel.clear)
 	})
-	selectionControls := container.NewHBox(selectAllBtn, clearSelectionBtn, layout.NewSpacer(), selectionLabel)
+	selectionControls := container.NewHBox(selectAllBtn, clearSelectionBtn,
+		layout.NewSpacer(), selectionLabel)
 
 	leftTopContainer := container.NewVBox(searchEntry, selectionControls, widget.NewSeparator())
 	listPane := container.NewBorder(leftTopContainer, toolbar, nil, nil, listContent)
@@ -1011,7 +1138,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	detailsBox := container.NewVBox()
 	pane := createDetailsPane(win, authService, dm, selectedGameBinding,
-		sel, func() []db.Game { return allGames }, detailsBox, covers)
+		sel, func() []db.Game { return allGames }, detailsBox, covers,
+		func() {
+			// A mark moves games between collections and may take the game
+			// off the list, so both follow it.
+			if sidebar != nil && sidebar.content.Visible() {
+				sidebar.refresh(allGames)
+			}
+			updateDisplayedGames()
+		})
 	form := pane.form
 
 	afterSelectionChange = func() {
@@ -1063,6 +1198,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		gameRaw, _ := selectedGameBinding.Get()
 		if gameRaw == nil {
 			fillStoreHeader(pane, nil)
+			pane.storeStatus.Hide()
+			pane.favorite.Hide()
+			pane.hide.Hide()
 			pane.gallery.show(nil, 0)
 			pane.body.Hide()
 			pane.empty.Show()
@@ -1073,20 +1211,31 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		game := gameRaw.(db.Game)
 		pane.empty.Hide()
 		pane.title.SetText(game.Title)
+		pane.refreshMarks(game)
+		pane.favorite.Show()
+		pane.hide.Show()
 		// The facts gogg already holds show at once; what GOG's store adds
 		// arrives when it arrives.
 		fillDetails(pane, game, dm, nil)
 		fillStoreHeader(pane, nil)
 		showGallery(pane.gallery, game, nil)
+		pane.storeStatus.SetText("Fetching store details...")
+		pane.storeStatus.Show()
 		stillShowing := func() bool {
+			if closed.Load() {
+				return false
+			}
 			current, _ := selectedGameBinding.Get()
 			shown, ok := current.(db.Game)
 			return ok && shown.ID == game.ID
 		}
 		metadata.load(game.ID, func(int) bool { return stillShowing() }, func(meta client.GameMetadata) {
+			pane.storeStatus.Hide()
 			fillDetails(pane, game, dm, &meta)
 			fillStoreHeader(pane, &meta)
 			showGallery(pane.gallery, game, meta.Screenshots)
+		}, func() {
+			pane.storeStatus.SetText("No store details for this game.")
 		})
 
 		form.narrowTo(game)
@@ -1131,10 +1280,12 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		listed:          displayedGames,
 		sidebar:         sidebar,
 		showCollections: collectionsBtn,
+		moreMenu:        moreMenu,
 		relist:          updateDisplayedGames,
 		pane:            pane,
 		dm:              dm,
 		close: func() {
+			closed.Store(true)
 			catalogueUpdated.RemoveListener(catalogueListener)
 			updateSettingsChanged.RemoveListener(settingsListener)
 		},
@@ -1196,8 +1347,15 @@ type detailsPane struct {
 	title *CopyableLabel
 	// storeHeader is the description, shown on the overview.
 	storeHeader *fyne.Container
+	// storeStatus says where the description is: being fetched, or not to be
+	// had. It is hidden once the description itself can speak.
+	storeStatus *widget.Label
 	// facts is everything gogg knows about the game.
 	facts *fyne.Container
+	// favorite and hide mark the shown game with the tags the collections
+	// collect; refreshMarks brings their icons in line with the game's tags.
+	favorite, hide *iconButton
+	refreshMarks   func(db.Game)
 	// body holds everything about a game, and is hidden when none is selected.
 	body *fyne.Container
 	// empty takes its place then, saying what would fill the pane.
@@ -1213,13 +1371,60 @@ type detailsPane struct {
 // and pressing Download happen in the same place.
 func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadManager,
 	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
-	detailsBox *fyne.Container, covers *coverCache,
+	detailsBox *fyne.Container, covers *coverCache, onTagsChanged func(),
 ) *detailsPane {
 	form := createDownloadForm(win, authService, dm, selectedGame, sel, catalogue)
 
 	title := NewCopyableLabel("Select a game from the list")
 	title.TextStyle = fyne.TextStyle{Bold: true}
+	// The title is the headline of the pane, so it is set in headline type.
+	title.SizeName = theme.SizeNameSubHeadingText
 	title.Truncation = fyne.TextTruncateEllipsis
+
+	// The marks a game can carry, beside its name where they read as facts
+	// about it: a favorite star, and the way to hide it from the list.
+	favBtn := newIconButton(iconStarOutline, "Add to favorites", nil)
+	hideBtn := newIconButton(theme.VisibilityOffIcon(), "Hide this game", nil)
+	refreshMarks := func(game db.Game) {
+		if gameHasTag(game.ID, db.TagFavorite) {
+			favBtn.SetIcon(iconStarFilled)
+			favBtn.tip = "Remove from favorites"
+		} else {
+			favBtn.SetIcon(iconStarOutline)
+			favBtn.tip = "Add to favorites"
+		}
+		if gameHasTag(game.ID, db.TagHidden) {
+			hideBtn.SetIcon(theme.VisibilityIcon())
+			hideBtn.tip = "Show this game in the list again"
+		} else {
+			hideBtn.SetIcon(theme.VisibilityOffIcon())
+			hideBtn.tip = "Hide this game"
+		}
+	}
+	toggleTag := func(tag string) {
+		gameRaw, _ := selectedGame.Get()
+		game, ok := gameRaw.(db.Game)
+		if !ok {
+			return
+		}
+		var err error
+		if gameHasTag(game.ID, tag) {
+			err = db.RemoveTag(context.Background(), game.ID, tag)
+		} else {
+			err = db.AddTag(context.Background(), game.ID, tag)
+		}
+		if err != nil {
+			showErrorDialog(win, "Could not mark the game", err)
+			return
+		}
+		loadGameTags()
+		refreshMarks(game)
+		if onTagsChanged != nil {
+			onTagsChanged()
+		}
+	}
+	favBtn.OnTapped = func() { toggleTag(db.TagFavorite) }
+	hideBtn.OnTapped = func() { toggleTag(db.TagHidden) }
 
 	// The game's own artwork and the pictures from its store page are shown
 	// together, the artwork first.
@@ -1229,12 +1434,19 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 	// stays empty for games it no longer describes.
 	storeHeader := container.NewStack()
 
+	// Until then, the pane says the lookup is running rather than sitting
+	// silent: a description that never comes and one still on its way look the
+	// same otherwise.
+	storeStatus := widget.NewLabel("")
+	storeStatus.TextStyle = fyne.TextStyle{Italic: true}
+	storeStatus.Hide()
+
 	// The overview is the game and what fetching it would take: the pictures,
 	// what the store says, the options a download uses, and the ways out to the
 	// web. The facts are a tab of their own, being reference rather than
 	// something to read through.
 	overview := container.NewVScroll(container.NewVBox(
-		gallery, storeHeader, widget.NewSeparator(), form.options,
+		gallery, storeStatus, storeHeader, widget.NewSeparator(), form.options,
 		widget.NewSeparator(), form.links,
 	))
 	tabs := container.NewAppTabs(
@@ -1247,7 +1459,9 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 	actions := container.NewVBox(widget.NewSeparator(), form.actions)
 	body := container.NewBorder(nil, actions, nil, nil, tabs)
 
-	header := container.NewVBox(title, widget.NewSeparator())
+	header := container.NewVBox(
+		container.NewBorder(nil, nil, nil, container.NewHBox(favBtn, hideBtn), title),
+		widget.NewSeparator())
 
 	// With no game picked out, the pane says what would fill it rather than
 	// leaving half the window blank under a line of text.
@@ -1255,15 +1469,19 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 		"Pick one from the list to see what it is and to download it.", nil)
 
 	return &detailsPane{
-		content:     container.NewBorder(header, nil, nil, nil, container.NewStack(body, nothing)),
-		empty:       nothing,
-		form:        form,
-		gallery:     gallery,
-		title:       title,
-		storeHeader: storeHeader,
-		facts:       detailsBox,
-		body:        body,
-		tabs:        tabs,
+		content:      container.NewBorder(header, nil, nil, nil, container.NewStack(body, nothing)),
+		empty:        nothing,
+		form:         form,
+		gallery:      gallery,
+		title:        title,
+		favorite:     favBtn,
+		hide:         hideBtn,
+		refreshMarks: refreshMarks,
+		storeHeader:  storeHeader,
+		storeStatus:  storeStatus,
+		facts:        detailsBox,
+		body:         body,
+		tabs:         tabs,
 	}
 }
 
@@ -1453,10 +1671,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	}
 }
 
-// FIX tag buttons capture
-// Adjust tag editing to use proper closure - already handled by tt variable
-
-// Helper functions re-added after refactor removal
+// getGameDownloadDirectory says where a game's files landed, from the download
+// history first and the remembered download root as a fallback.
 func getGameDownloadDirectory(dm *DownloadManager, game db.Game) (string, bool) {
 	if path, ok := getLastCompletedDownloadDir(dm, game.ID); ok {
 		return path, true

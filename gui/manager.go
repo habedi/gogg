@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"sort"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
@@ -105,6 +107,37 @@ type DownloadManager struct {
 	totalsBinding binding.String
 	statesOnce    sync.Once
 	statesBinding binding.Int
+
+	// How the downloads since the last quiet moment ended, counted so the
+	// batch can be announced as one piece of news when the last one lands.
+	finishedOK, finishedFailed int
+}
+
+// noteFinished records how one download ended and answers with what to
+// announce: nothing while others are still on their way, and the whole batch
+// once the last one lands. Cancelled downloads are not news the user needs
+// breaking to them, but they still close a batch out.
+func (dm *DownloadManager) noteFinished(state int) (done, failed int, last bool) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	switch state {
+	case StateCompleted:
+		dm.finishedOK++
+	case StateError:
+		dm.finishedFailed++
+	}
+
+	all, _ := dm.Tasks.Get()
+	for _, raw := range all {
+		if task, ok := raw.(*DownloadTask); ok && stillGoing(task) {
+			return 0, 0, false
+		}
+	}
+
+	done, failed = dm.finishedOK, dm.finishedFailed
+	dm.finishedOK, dm.finishedFailed = 0, 0
+	return done, failed, done+failed > 0
 }
 
 // states counts the times a download has moved between running and finished.
@@ -184,7 +217,8 @@ func (dm *DownloadManager) retry(task *DownloadTask) error {
 	return nil
 }
 
-// removeTask drops a task from the list.
+// removeTask drops a task from the list. The list is told after the lock is
+// let go, for the reason AddTask gives.
 func (dm *DownloadManager) removeTask(task *DownloadTask) {
 	dm.mu.Lock()
 	all, _ := dm.Tasks.Get()
@@ -194,8 +228,8 @@ func (dm *DownloadManager) removeTask(task *DownloadTask) {
 			kept = append(kept, raw)
 		}
 	}
-	_ = dm.Tasks.Set(kept)
 	dm.mu.Unlock()
+	_ = dm.Tasks.Set(kept)
 	dm.PersistHistory()
 }
 
@@ -448,7 +482,7 @@ func downloadRowHeights() (compact, full float32) {
 	return compact, full
 }
 
-func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
+func DownloadsTabUI(win fyne.Window, dm *DownloadManager) fyne.CanvasObject {
 	compactHeight, fullHeight := downloadRowHeights()
 
 	// The list is drawn from a snapshot, because the order downloads matter in
@@ -559,7 +593,7 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 	header := container.NewPadded(totalsLabel)
 	dm.refreshTotals()
 
-	clearAllBtn := widget.NewButton("Clear All Finished", func() {
+	clearFinished := func() {
 		dm.mu.Lock()
 		currentTasks, _ := dm.Tasks.Get()
 		keptTasks := make([]interface{}, 0)
@@ -569,14 +603,68 @@ func DownloadsTabUI(dm *DownloadManager) fyne.CanvasObject {
 				keptTasks = append(keptTasks, task)
 			}
 		}
-		_ = dm.Tasks.Set(keptTasks)
 		dm.mu.Unlock()
+		// Told after letting go of the lock, for the reason AddTask gives.
+		_ = dm.Tasks.Set(keptTasks)
 		dm.PersistHistory()
 		dm.refreshTotals()
+	}
+	clearAllBtn := widget.NewButton("Clear All Finished", func() {
+		finished := 0
+		for _, task := range dm.tasksSnapshot() {
+			if !stillGoing(task) {
+				finished++
+			}
+		}
+		if finished == 0 {
+			return
+		}
+		// The history is also the record of where downloads went, so taking all
+		// of it is asked about rather than done.
+		dialog.ShowConfirm("Clear All Finished",
+			fmt.Sprintf("Remove %d finished %s from the list?", finished, downloadsWord(finished)),
+			func(confirmed bool) {
+				if confirmed {
+					clearFinished()
+				}
+			}, win)
 	})
 	bottomBar := container.NewHBox(layout.NewSpacer(), clearAllBtn)
 
 	return container.NewBorder(header, bottomBar, nil, nil, body)
+}
+
+// runningTaskFor is the download on its way for a game, nil when there is none.
+// Queued downloads count: to the person looking at the list, waiting to start
+// is a download on its way. Safe to call on a nil manager.
+func (dm *DownloadManager) runningTaskFor(gameID int) *DownloadTask {
+	if dm == nil {
+		return nil
+	}
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	all, _ := dm.Tasks.Get()
+	for _, raw := range all {
+		if task, ok := raw.(*DownloadTask); ok && task.ID == gameID && stillGoing(task) {
+			return task
+		}
+	}
+	return nil
+}
+
+// inFlightCount is how many downloads are running or waiting in the queue: the
+// number a person glancing at the Downloads tab wants to know.
+func (dm *DownloadManager) inFlightCount() int {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	all, _ := dm.Tasks.Get()
+	count := 0
+	for _, raw := range all {
+		if task, ok := raw.(*DownloadTask); ok && stillGoing(task) {
+			count++
+		}
+	}
+	return count
 }
 
 func (dm *DownloadManager) activeCount() int {
@@ -640,6 +728,8 @@ func (dm *DownloadManager) cancelQueued(task *DownloadTask) {
 	task.SetState(StateCancelled)
 	_ = task.Status.Set("Cancelled")
 	dm.PersistHistory()
+	// Taking the last waiting download out closes the batch out too.
+	announceIfLast(dm, StateCancelled, task.Title)
 }
 
 func (dm *DownloadManager) QueueOrStart(q queuedDownload) error {
@@ -709,8 +799,9 @@ func (dm *DownloadManager) startNextIfAvailable() {
 			}
 			filtered = append(filtered, tRaw)
 		}
-		_ = dm.Tasks.Set(filtered)
 		dm.mu.Unlock()
+		// Told after letting go of the lock, for the reason AddTask gives.
+		_ = dm.Tasks.Set(filtered)
 		_ = executeDownload(dm, next)
 	}
 }

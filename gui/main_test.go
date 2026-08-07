@@ -10,5 +10,8 @@ import (
 // it, and lands in the next one.
 func TestMain(m *testing.M) {
 	statusWorker = func(work func() gameStatuses, apply func(gameStatuses)) { apply(work()) }
+	// Searches filter as they are typed. A test types once and looks at once,
+	// so waiting out the debounce would only make every test slower.
+	searchDebounce = 0
 	os.Exit(m.Run())
 }

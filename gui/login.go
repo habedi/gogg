@@ -64,11 +64,18 @@ func ShowLoginDialog(win fyne.Window, loginer GogLoginer, onSuccess func()) {
 		}
 	})
 
+	// The dialog stays open until the login works: a bad paste costs one more
+	// try, not redoing all three steps from a fresh dialog.
 	submitBtn := widget.NewButtonWithIcon("Log In", theme.LoginIcon(), func() {
 		pasted := address.Text
-		dlg.Hide()
 		runLoginAttempt(win, "Exchanging the authorization code for an access token.",
-			func() error { return loginWithPastedCode(loginer, pasted) }, onSuccess)
+			func() error { return loginWithPastedCode(loginer, pasted) },
+			func() {
+				dlg.Hide()
+				if onSuccess != nil {
+					onSuccess()
+				}
+			})
 	})
 	submitBtn.Importance = widget.HighImportance
 

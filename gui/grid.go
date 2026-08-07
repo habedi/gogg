@@ -5,6 +5,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -57,21 +58,26 @@ func cropArtwork(img image.Image) image.Image {
 type gameCell struct {
 	widget.BaseWidget
 
-	gameID int
-	check  *widget.Check
-	title  *widget.Label
-	cover  *canvas.Image
-	badges *statusBadges
+	gameID    int
+	check     *widget.Check
+	title     *widget.Label
+	platforms *widget.Label
+	cover     *canvas.Image
+	badges    *statusBadges
 }
 
 func newGameCell() fyne.CanvasObject {
 	cell := &gameCell{
-		check:  widget.NewCheck("", nil),
-		title:  widget.NewLabel("Game Title"),
-		cover:  canvas.NewImageFromResource(theme.FileImageIcon()),
-		badges: newStatusBadges(),
+		check:     widget.NewCheck("", nil),
+		title:     widget.NewLabel("Game Title"),
+		platforms: widget.NewLabel("Windows"),
+		cover:     canvas.NewImageFromResource(theme.FileImageIcon()),
+		badges:    newStatusBadges(),
 	}
 	cell.title.Truncation = fyne.TextTruncateEllipsis
+	cell.title.TextStyle = fyne.TextStyle{Bold: true}
+	cell.platforms.Truncation = fyne.TextTruncateEllipsis
+	cell.platforms.Importance = widget.LowImportance
 	cell.cover.FillMode = canvas.ImageFillContain
 	// GridWrap sizes every cell from this template, so the artwork asks for the
 	// room it needs rather than collapsing to an icon.
@@ -82,24 +88,47 @@ func newGameCell() fyne.CanvasObject {
 }
 
 func (c *gameCell) CreateRenderer() fyne.WidgetRenderer {
-	caption := container.NewBorder(nil, nil, c.check,
+	titleRow := container.NewBorder(nil, nil, c.check,
 		container.NewHBox(c.badges.downloaded, c.badges.update), c.title)
+	// A download in flight draws its bar across the cell, where the eye already
+	// is; the platforms sit under the title, quieter than it.
+	caption := container.NewVBox(c.badges.progress, titleRow, c.platforms)
 	return widget.NewSimpleRenderer(container.NewBorder(nil, caption, nil, nil, c.cover))
+}
+
+// platformCaption names the platforms a game offers, for the line under its
+// title in the grid.
+func platformCaption(game db.Game) string {
+	facts := factsOf(game)
+	names := make([]string, 0, len(facts.platforms))
+	for _, platform := range facts.platforms {
+		names = append(names, platformInWords(platform))
+	}
+	return strings.Join(names, " · ")
 }
 
 // showing reports whether this cell is still displaying the given game.
 func (c *gameCell) showing(gameID int) bool { return c.gameID == gameID }
 
 // bindGameCell points a recycled cell at a game. covers may be nil, in which
-// case no artwork is requested.
-func bindGameCell(cell *gameCell, game db.Game, sel *gameSelection, covers *coverCache, onToggle func()) {
+// case no artwork is requested; dm says whether a download is running for it.
+func bindGameCell(cell *gameCell, game db.Game, sel *gameSelection, covers *coverCache,
+	dm *DownloadManager, onToggle func(),
+) {
 	// Anything that refreshes the grid rebinds every visible cell. Only a cell
 	// that has been pointed at a different game needs its artwork replaced;
 	// throwing it away on every refresh makes the whole grid blink.
 	sameGame := cell.gameID == game.ID
 	cell.gameID = game.ID
 	cell.title.SetText(game.Title)
-	cell.badges.show(game.ID)
+	cell.badges.show(game.ID, dm)
+
+	if caption := platformCaption(game); caption == "" {
+		cell.platforms.Hide()
+	} else {
+		cell.platforms.SetText(caption)
+		cell.platforms.Show()
+	}
 
 	bindCheck(cell.check, sel.has(game.ID), func(checked bool) {
 		sel.set(game.ID, checked)

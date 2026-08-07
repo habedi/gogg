@@ -1,9 +1,12 @@
 package gui
 
 import (
+	"fmt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/theme"
 	"github.com/habedi/gogg/auth"
 )
@@ -38,13 +41,15 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 
 	content := buildMainContent(myWindow, version, authService, dm, loginer)
 
-	registerShortcuts(myWindow.Canvas(), libraryShortcuts(
+	shortcuts := libraryShortcuts(
 		func() {
 			content.tabs.SelectIndex(0)
 			myWindow.Canvas().Focus(content.library.searchEntry)
 		},
 		func() { content.library.refresh() },
-	))
+	)
+	shortcuts = append(shortcuts, tabShortcuts(len(content.tabs.Items), content.tabs.SelectIndex)...)
+	registerShortcuts(myWindow.Canvas(), shortcuts)
 
 	// Remember where the user left the window.
 	myWindow.SetOnClosed(func() {
@@ -109,19 +114,37 @@ func buildMainContent(win fyne.Window, version string, authService *auth.Service
 
 	settingsTab = container.NewTabItemWithIcon(sectionSettings, theme.SettingsIcon(),
 		SettingsTabUI(win, func() { onSignOut() }))
+	downloadsTab := container.NewTabItemWithIcon(sectionDownloads, theme.DownloadIcon(),
+		DownloadsTabUI(win, dm))
 	content.tabs = container.NewAppTabs(
 		catalogueTab,
-		container.NewTabItemWithIcon(sectionDownloads, theme.DownloadIcon(), DownloadsTabUI(dm)),
+		downloadsTab,
 		container.NewTabItemWithIcon(sectionFileHashes, theme.DocumentIcon(), FileTabUI(win)),
 		settingsTab,
 		container.NewTabItemWithIcon(sectionAbout, theme.HelpIcon(), ShowAboutUI(version)),
 	)
 	content.tabs.SetTabLocation(container.TabLocationTop)
 	content.tabs.OnSelected = func(tab *container.TabItem) {
-		if tab.Text == sectionCatalogue {
+		if tab == catalogueTab {
 			win.Canvas().Focus(content.library.searchEntry)
 		}
 	}
+
+	// The tab says how many downloads are on their way, so someone browsing the
+	// catalogue does not have to open it to know something is happening.
+	retitleDownloads := func() {
+		title := sectionDownloads
+		if n := dm.inFlightCount(); n > 0 {
+			title = fmt.Sprintf("%s (%d)", sectionDownloads, n)
+		}
+		if downloadsTab.Text != title {
+			downloadsTab.Text = title
+			content.tabs.Refresh()
+		}
+	}
+	countDownloads := binding.NewDataListener(retitleDownloads)
+	dm.Tasks.AddListener(countDownloads)
+	dm.states().AddListener(countDownloads)
 
 	return content
 }

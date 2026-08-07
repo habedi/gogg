@@ -59,9 +59,11 @@ func newLibraryFixtureInWindow(t *testing.T, games int) (*libraryTab, string, fy
 	t.Cleanup(func() { cacheRoot = original })
 
 	// No test may reach the real store API. A test that cares what was asked
-	// for sets GOGG_API_BASE itself before calling this.
+	// for sets GOGG_API_BASE itself before calling this. The default store
+	// answers nothing until the test is over: an answer landing mid-test
+	// writes to the pane on its own goroutine while the test is reading it.
 	if os.Getenv("GOGG_API_BASE") == "" {
-		t.Setenv("GOGG_API_BASE", storeStub(t, nil))
+		t.Setenv("GOGG_API_BASE", hangingStoreStub(t))
 	}
 
 	updateStatusCache = make(map[int]updateStatus)
@@ -69,7 +71,11 @@ func newLibraryFixtureInWindow(t *testing.T, games int) (*libraryTab, string, fy
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	return LibraryTabUI(win, nil, dm, func() {}), root, win
+	lt := LibraryTabUI(win, nil, dm, func() {})
+	// Closed before the store stub lets its answers go, so nothing is
+	// delivered to widgets the next test cannot see.
+	t.Cleanup(lt.close)
+	return lt, root, win
 }
 
 // Which games are shown depends on the search term; whether a game is
@@ -104,6 +110,22 @@ func storeStub(t *testing.T, asked *pathLog) string {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// hangingStoreStub is a store that holds every answer until the test is over,
+// then says not found. Nothing can land in the details pane while the test
+// runs, and what lands after it is delivered to widgets nothing reads anymore.
+func hangingStoreStub(t *testing.T) string {
+	t.Helper()
+	gate := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-gate
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	// Registered after Close, so the gate opens first and Close can finish.
+	t.Cleanup(func() { close(gate) })
 	return srv.URL
 }
 
@@ -153,7 +175,7 @@ func TestLibrary_RefreshReadsTheCatalogueAgain(t *testing.T) {
 		lt.searchEntry.SetText("platform:windows")
 
 		parses := countParses(t)
-		test.Tap(buttonWithLabel(lt.content, "Refresh"))
+		test.Tap(iconButtonWithTip(lt.content, tipRefresh))
 		refreshes.finish()
 		lt.searchEntry.SetText("platform:windows ")
 
@@ -170,6 +192,120 @@ func TestLibraryTab_SearchBoxSaysItTakesFilters(t *testing.T) {
 
 	require.Contains(t, lt.searchEntry.PlaceHolder, "platform:",
 		"the search box has to hint at what else it takes")
+}
+
+// A search that matched nothing left a blank list, which read as a library
+// that had not loaded rather than as an answer.
+func TestLibrary_SearchWithNoMatchesSaysSo(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 2)
+
+		lt.searchEntry.SetText("nothing named this")
+		require.Contains(t, labelTexts(lt.content), "No games match")
+
+		test.Tap(buttonWithLabel(lt.content, "Clear Search"))
+		require.NotContains(t, labelTexts(lt.content), "No games match")
+		require.Len(t, lt.listed(), 2)
+	})
+}
+
+// The search runs when the typing rests, not between two keystrokes.
+func TestDebounced_RunsOnceTheChangesRest(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	var runs atomic.Int64
+	handler := debounced(30*time.Millisecond, func() { runs.Add(1) })
+
+	handler("g")
+	handler("ga")
+	handler("gam")
+	require.Zero(t, runs.Load(), "a keystroke alone must not run the search")
+
+	require.Eventually(t, func() bool { return runs.Load() == 1 },
+		5*time.Second, 10*time.Millisecond)
+	require.Never(t, func() bool { return runs.Load() > 1 },
+		200*time.Millisecond, 20*time.Millisecond)
+}
+
+// Escape is the way out of a filter: it clears the box and brings the whole
+// catalogue back.
+func TestSearchBox_EscapeClearsTheSearch(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 3)
+	lt.searchEntry.SetText("Game 1")
+	require.Len(t, lt.listed(), 1)
+
+	lt.searchEntry.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+
+	require.Empty(t, lt.searchEntry.Text)
+	require.Len(t, lt.listed(), 3, "clearing the search brings everything back")
+}
+
+// A zero delay runs at once, on the caller: the tests type and look in the
+// same breath.
+func TestDebounced_ZeroDelayRunsAtOnce(t *testing.T) {
+	var runs atomic.Int64
+	handler := debounced(0, func() { runs.Add(1) })
+
+	handler("g")
+	require.Equal(t, int64(1), runs.Load())
+}
+
+// Working out what a download changed reads the filesystem, which is not work
+// for whichever thread the change landed on.
+func TestLibrary_DownloadChangesGoThroughTheStatusWorker(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	var calls atomic.Int64
+	original := statusWorker
+	statusWorker = func(work func() gameStatuses, apply func(gameStatuses)) {
+		calls.Add(1)
+		apply(work())
+	}
+	t.Cleanup(func() { statusWorker = original })
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 1)
+		before := calls.Load()
+
+		task := &DownloadTask{
+			ID: 1, InstanceID: time.Now(), Title: "Game 1",
+			Status: binding.NewString(), Details: binding.NewString(),
+			Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+		}
+		require.NoError(t, lt.dm.AddTask(task))
+
+		require.Greater(t, calls.Load(), before,
+			"the scan for what the download changed must go through the worker")
+	})
+}
+
+// The pane said nothing while GOG was being asked, so a description still on
+// its way and a game with no description looked the same.
+func TestDetailsPane_SaysTheStoreIsBeingAsked(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	// The fixture's store holds its answer, so the note stays while the test
+	// looks at it.
+	lt, _ := newLibraryFixture(t, 1)
+
+	offMain(t, func() {
+		require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1"}))
+		require.True(t, lt.pane.storeStatus.Visible())
+		require.Equal(t, "Fetching store details...", lt.pane.storeStatus.Text)
+
+		require.NoError(t, lt.selected.Set(nil))
+		require.False(t, lt.pane.storeStatus.Visible(),
+			"clicking away takes the note with it")
+	})
 }
 
 // newLibraryFixtureShown is a library that is what its window is showing.

@@ -77,6 +77,43 @@ func TestFillFromClipboard_EmptyClipboardKeepsWhatIsThere(t *testing.T) {
 	require.Equal(t, "already typed", entry.Text)
 }
 
+// gatedLoginer holds every login attempt until the test lets it through.
+type gatedLoginer struct {
+	gate chan struct{}
+}
+
+func (g *gatedLoginer) LoginWithCode(string) error {
+	<-g.gate
+	return nil
+}
+
+// The dialog stays open while the exchange runs: closing it on the way out
+// meant a bad paste cost the user all three steps.
+func TestShowLoginDialog_StaysOpenUntilTheLoginWorks(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	gate := make(chan struct{})
+	done := make(chan struct{})
+	ShowLoginDialog(win, &gatedLoginer{gate: gate}, func() { close(done) })
+
+	loginDialog := win.Canvas().Overlays().Top()
+	require.NotNil(t, loginDialog)
+	address := widgetsOfType[*widget.Entry](loginDialog)[0]
+	address.SetText("https://embed.gog.com/on_login_success?origin=client&code=abc123")
+
+	test.Tap(buttonWithLabel(loginDialog, "Log In"))
+
+	require.GreaterOrEqual(t, len(win.Canvas().Overlays().List()), 2,
+		"the login dialog stays under the progress dialog while the exchange runs")
+
+	// Let the login finish; onSuccess fires after everything else it does.
+	close(gate)
+	<-done
+}
+
 // Signing in from a terminal is not something a GUI user should have to do, so
 // the library offers the login itself.
 func TestLibraryTabUI_OffersLoginWhenSignedOut(t *testing.T) {
