@@ -12,15 +12,15 @@ permissions:
 jobs:
 
   build-windows:
-    name: Build Windows Binary
+    name: Build Windows binary
     runs-on: windows-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           lfs: true
 
-      - name: Setup MSYS2 Environment
+      - name: Setup MSYS2 environment
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -32,30 +32,30 @@ jobs:
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-freeglut
 
-      - name: Run Tests
+      - name: Run tests
         shell: msys2 {0}
         run: |
           make test
 
-      - name: Build Windows Binary
+      - name: Build Windows binary
         shell: msys2 {0}
         run: |
           make release GOGG_BINARY=gogg.exe
 
-      - name: Upload Windows Artifact
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: gogg-windows-amd64
           path: bin/gogg.exe
 
   build-linux:
-    name: Build Linux Binary
+    name: Build Linux binary
     runs-on: ubuntu-latest
     env:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           lfs: true
@@ -65,30 +65,30 @@ jobs:
         with:
           go-version: stable
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           make install-deps
 
-      - name: Run Tests
+      - name: Run tests
         run: |
           make test
 
-      - name: Build Linux Binary
+      - name: Build Linux binary
         run: |
           make release
 
-      - name: Upload Linux Artifact
+      - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: gogg-linux-amd64
           path: bin/gogg
 
   build-macos:
-    name: Build macOS Binary
+    name: Build macOS binary
     runs-on: macos-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           lfs: true
@@ -98,32 +98,32 @@ jobs:
         with:
           go-version: stable
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           brew install make pkg-config glfw
 
-      - name: Run Tests
+      - name: Run tests
         run: |
           make test
 
-      - name: Build macOS Binary
+      - name: Build macOS binary
         run: |
           make release-macos
 
-      - name: Upload macOS Artifact
+      - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: gogg-macos-arm64
           path: bin/gogg
 
   build-linux-arm64:
-    name: Build Linux Binary (ARM64)
+    name: Build Linux binary (ARM64)
     runs-on: ubuntu-24.04-arm
     env:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           lfs: true
@@ -133,35 +133,35 @@ jobs:
         with:
           go-version: stable
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           make install-deps
 
-      - name: Run Tests
+      - name: Run tests
         run: |
           make test
 
-      - name: Build Linux ARM64 Binary
+      - name: Build Linux ARM64 binary
         run: |
           make release
 
-      - name: Upload Linux ARM64 Artifact
+      - name: Upload Linux ARM64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: gogg-linux-arm64
           path: bin/gogg
 
   build-windows-arm64:
-    name: Build Windows Binary (ARM64)
+    name: Build Windows binary (ARM64)
     runs-on: windows-11-arm
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           lfs: true
 
-      - name: Setup MSYS2 Environment
+      - name: Setup MSYS2 environment
         uses: msys2/setup-msys2@v2
         with:
           msystem: CLANGARM64
@@ -173,17 +173,17 @@ jobs:
             mingw-w64-clang-aarch64-pkg-config
             mingw-w64-clang-aarch64-freeglut
 
-      - name: Run Tests
+      - name: Run tests
         shell: msys2 {0}
         run: |
           make test
 
-      - name: Build Windows ARM64 Binary
+      - name: Build Windows ARM64 binary
         shell: msys2 {0}
         run: |
           make release GOGG_BINARY=gogg.exe
 
-      - name: Upload Windows ARM64 Artifact
+      - name: Upload Windows ARM64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: gogg-windows-arm64
@@ -197,17 +197,17 @@ jobs:
       packages: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Log in to the GitHub Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Metadata (Tags and Labels) for Docker
+      - name: Extract metadata (tags and labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -217,7 +217,7 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
 
-      - name: Build and Push Docker Image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -231,40 +231,40 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download Windows Artifact
+      - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: gogg-windows-amd64
           path: ./dist/windows
 
-      - name: Download Linux Artifact
+      - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
           name: gogg-linux-amd64
           path: ./dist/linux
 
-      - name: Download macOS Artifact
+      - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
           name: gogg-macos-arm64
           path: ./dist/macos
 
-      - name: Download Linux ARM64 Artifact
+      - name: Download Linux ARM64 artifact
         uses: actions/download-artifact@v4
         with:
           name: gogg-linux-arm64
           path: ./dist/linux-arm64
 
-      - name: Download Windows ARM64 Artifact
+      - name: Download Windows ARM64 artifact
         uses: actions/download-artifact@v4
         with:
           name: gogg-windows-arm64
           path: ./dist/windows-arm64
 
-      - name: List Downloaded Files (for debugging)
+      - name: List downloaded files (for debugging)
         run: ls -R ./dist
 
-      - name: Create Archives for Each Platform
+      - name: Create archives for each platform
         run: |
           cd dist/windows && zip -r9 ../gogg-windows-amd64.zip gogg.exe && cd ../..
           cd dist/linux && zip -r9 ../gogg-linux-amd64.zip gogg && cd ../..
@@ -272,10 +272,10 @@ jobs:
           cd dist/linux-arm64 && zip -r9 ../gogg-linux-arm64.zip gogg && cd ../..
           cd dist/windows-arm64 && zip -r9 ../gogg-windows-arm64.zip gogg.exe && cd ../..
 
-      - name: List Archives (for debugging)
+      - name: List archives (for debugging)
         run: ls -l dist/gogg-*.zip
 
-      - name: Create GitHub Release
+      - name: Create GitHub release
         uses: ncipollo/release-action@v1
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         with:
