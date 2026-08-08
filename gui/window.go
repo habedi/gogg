@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"github.com/habedi/gogg/auth"
 )
@@ -34,7 +35,7 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 	myApp.Settings().SetTheme(CreateThemeFromPreferences())
 
 	myWindow := myApp.NewWindow(appName)
-	dm := NewDownloadManager()
+	dm := NewDownloadManager(authService)
 	prefs := myApp.Preferences()
 
 	state := loadWindowState(prefs)
@@ -56,6 +57,25 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 	myWindow.SetOnClosed(func() {
 		saveWindowState(prefs, windowStateOnClose(prefs, myWindow.Canvas().Size(),
 			content.tabs.Selected().Text, content.library.split))
+	})
+
+	// Closing with downloads still running would stop them, so it is asked
+	// about rather than done. Their bytes and a Resume survive either way,
+	// but a window that vanishes mid download surprises people.
+	myWindow.SetCloseIntercept(func() {
+		if n := dm.inFlightCount(); n > 0 {
+			dialog.ShowConfirm("Quit gogg?",
+				fmt.Sprintf("%d %s still running. They will stop, and you can resume them next time. Quit anyway?",
+					n, downloadsWord(n)),
+				func(confirmed bool) {
+					if confirmed {
+						dm.PersistHistory()
+						myWindow.Close()
+					}
+				}, myWindow)
+			return
+		}
+		myWindow.Close()
 	})
 
 	myWindow.SetContent(installTipLayer(myWindow.Canvas(), content.tabs))

@@ -36,6 +36,11 @@ const (
 	// partial files stay, and Resume picks up where they end. Added after the
 	// others because the values are written into the history file.
 	StatePaused
+	// StateInterrupted is a download that was still running or queued when
+	// gogg last closed or crashed. Its bytes are on disk, so retrying it
+	// resumes rather than restarts. Appended last, again because the value
+	// goes into the history file.
+	StateInterrupted
 )
 
 type DownloadTask struct {
@@ -104,12 +109,76 @@ type PersistentDownloadTask struct {
 	Title        string    `json:"title"`
 	StatusText   string    `json:"status_text"`
 	DownloadPath string    `json:"download_path"`
+	// Request is everything a retry or a resume needs to run the download
+	// again, kept so those work after gogg has been closed and reopened. It
+	// is absent for downloads from a version before this was recorded, and
+	// for entries that carry nothing to repeat.
+	Request *persistentRequest `json:"request,omitempty"`
+}
+
+// persistentRequest is a queuedDownload without the pieces that cannot be
+// written to a file: the auth service is put back from the manager when the
+// download is loaded.
+type persistentRequest struct {
+	Game             db.Game  `json:"game"`
+	DownloadPath     string   `json:"download_path"`
+	Language         string   `json:"language"`
+	PlatformName     string   `json:"platform_name"`
+	Languages        []string `json:"languages,omitempty"`
+	Platforms        []string `json:"platforms,omitempty"`
+	ExtrasFlag       bool     `json:"extras,omitempty"`
+	DLCFlag          bool     `json:"dlcs,omitempty"`
+	ResumeFlag       bool     `json:"resume,omitempty"`
+	FlattenFlag      bool     `json:"flatten,omitempty"`
+	SkipPatchesFlag  bool     `json:"skip_patches,omitempty"`
+	KeepLatestFlag   bool     `json:"keep_latest,omitempty"`
+	RomMLayoutFlag   bool     `json:"romm_layout,omitempty"`
+	LutrisLayoutFlag bool     `json:"lutris_layout,omitempty"`
+	NumThreads       int      `json:"threads,omitempty"`
+	Connections      int      `json:"connections,omitempty"`
+}
+
+// toPersistent captures a request for the history file, or nil when there is
+// no game to run again.
+func (q queuedDownload) toPersistent() *persistentRequest {
+	if q.game.ID == 0 {
+		return nil
+	}
+	return &persistentRequest{
+		Game: q.game, DownloadPath: q.downloadPath,
+		Language: q.language, PlatformName: q.platformName,
+		Languages: q.languages, Platforms: q.platforms,
+		ExtrasFlag: q.extrasFlag, DLCFlag: q.dlcFlag, ResumeFlag: q.resumeFlag,
+		FlattenFlag: q.flattenFlag, SkipPatchesFlag: q.skipPatchesFlag,
+		KeepLatestFlag: q.keepLatestFlag, RomMLayoutFlag: q.rommLayoutFlag,
+		LutrisLayoutFlag: q.lutrisLayoutFlag,
+		NumThreads:       q.numThreads, Connections: q.connections,
+	}
+}
+
+// toQueued turns a stored request back into one that can run, with the auth
+// service the manager holds put back in.
+func (r *persistentRequest) toQueued(authService *auth.Service) queuedDownload {
+	return queuedDownload{
+		authService: authService,
+		game:        r.Game, downloadPath: r.DownloadPath,
+		language: r.Language, platformName: r.PlatformName,
+		languages: r.Languages, platforms: r.Platforms,
+		extrasFlag: r.ExtrasFlag, dlcFlag: r.DLCFlag, resumeFlag: r.ResumeFlag,
+		flattenFlag: r.FlattenFlag, skipPatchesFlag: r.SkipPatchesFlag,
+		keepLatestFlag: r.KeepLatestFlag, rommLayoutFlag: r.RomMLayoutFlag,
+		lutrisLayoutFlag: r.LutrisLayoutFlag,
+		numThreads:       r.NumThreads, connections: r.Connections,
+	}
 }
 
 type DownloadManager struct {
-	mu            sync.RWMutex
-	Tasks         binding.UntypedList
-	historyPath   fyne.URI
+	mu          sync.RWMutex
+	Tasks       binding.UntypedList
+	historyPath fyne.URI
+	// authService is put back into downloads restored from the history file,
+	// so they can be retried or resumed after gogg has been reopened.
+	authService   *auth.Service
 	queue         []queuedDownload
 	totalsOnce    sync.Once
 	totalsBinding binding.String
@@ -222,7 +291,7 @@ type queuedDownload struct {
 	connections      int
 }
 
-func NewDownloadManager() *DownloadManager {
+func NewDownloadManager(authService *auth.Service) *DownloadManager {
 	a := fyne.CurrentApp()
 	historyURI, err := storage.Child(a.Storage().RootURI(), "download_history.json")
 	if err != nil {
@@ -232,6 +301,7 @@ func NewDownloadManager() *DownloadManager {
 	dm := &DownloadManager{
 		Tasks:       binding.NewUntypedList(),
 		historyPath: historyURI,
+		authService: authService,
 	}
 
 	dm.loadHistory()
@@ -253,7 +323,7 @@ func (t *DownloadTask) canRetry() bool {
 		return false
 	}
 	state := t.State()
-	return state == StateError || state == StateCancelled
+	return state == StateError || state == StateCancelled || state == StateInterrupted
 }
 
 // pause stops a running download, keeping what has arrived for the resume.
@@ -286,12 +356,18 @@ func (dm *DownloadManager) resumePaused(task *DownloadTask) error {
 	return nil
 }
 
-// retry starts a failed or cancelled download again, replacing its entry.
+// retry starts a failed, cancelled, or interrupted download again, replacing
+// its entry. An interrupted one has bytes on disk, so its retry forces resume
+// on to carry on from them rather than start over.
 func (dm *DownloadManager) retry(task *DownloadTask) error {
 	if !task.canRetry() {
 		return errors.New("this download cannot be retried")
 	}
-	if err := dm.QueueOrStart(task.request); err != nil {
+	request := task.request
+	if task.State() == StateInterrupted {
+		request.resumeFlag = true
+	}
+	if err := dm.QueueOrStart(request); err != nil {
 		return err
 	}
 	dm.removeTask(task)
@@ -361,6 +437,11 @@ func (dm *DownloadManager) loadHistory() {
 			FileStatus:   binding.NewString(),
 			CancelFunc:   nil,
 		}
+		// The stored request is what lets a retry or a resume run after a
+		// restart; without the auth service put back, it could not reach GOG.
+		if pTask.Request != nil {
+			task.request = pTask.Request.toQueued(dm.authService)
+		}
 		task.SetState(pTask.State)
 		uiTasks = append(uiTasks, task)
 	}
@@ -386,16 +467,32 @@ func (dm *DownloadManager) PersistHistory() {
 
 	for _, taskRaw := range allTasks {
 		task := taskRaw.(*DownloadTask)
-		if state := task.State(); state == StateCompleted || state == StateCancelled ||
-			state == StateError || state == StatePaused {
+		state := task.State()
+		request := task.request.toPersistent()
+
+		// A download still running or queued when this is written did not
+		// finish on purpose: gogg is closing or has crashed. It is recorded
+		// as interrupted so it comes back with a Retry, and only when its
+		// request survived to make that retry possible.
+		if stillGoing(task) {
+			if request == nil {
+				continue
+			}
+			persistentTasks = append(persistentTasks, PersistentDownloadTask{
+				ID: task.ID, InstanceID: task.InstanceID, State: StateInterrupted,
+				Title: task.Title, StatusText: "Interrupted",
+				DownloadPath: task.DownloadPath, Request: request,
+			})
+			continue
+		}
+
+		switch state {
+		case StateCompleted, StateCancelled, StateError, StatePaused, StateInterrupted:
 			status, _ := task.Status.Get()
 			persistentTasks = append(persistentTasks, PersistentDownloadTask{
-				ID:           task.ID,
-				InstanceID:   task.InstanceID,
-				State:        state,
-				Title:        task.Title,
-				StatusText:   status,
-				DownloadPath: task.DownloadPath,
+				ID: task.ID, InstanceID: task.InstanceID, State: state,
+				Title: task.Title, StatusText: status,
+				DownloadPath: task.DownloadPath, Request: request,
 			})
 		}
 	}
@@ -645,11 +742,17 @@ func DownloadsTabUI(win fyne.Window, dm *DownloadManager) fyne.CanvasObject {
 				actionBtn.SetText("Paused")
 				actionBtn.OnTapped = nil
 				actionBtn.Disable()
-			case StateCancelled, StateError:
+			case StateCancelled, StateError, StateInterrupted:
 				clearBtn.Show()
 				if task.canRetry() {
 					actionBtn.SetIcon(theme.ViewRefreshIcon())
-					actionBtn.SetText("Retry")
+					// An interrupted download still has its bytes on disk, so
+					// carrying on is what retrying it does; the word says so.
+					if task.State() == StateInterrupted {
+						actionBtn.SetText("Resume")
+					} else {
+						actionBtn.SetText("Retry")
+					}
 					actionBtn.OnTapped = func() {
 						if err := dm.retry(task); err != nil {
 							log.Error().Err(err).Str("game", task.Title).Msg("Failed to retry download")

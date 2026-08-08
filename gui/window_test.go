@@ -43,7 +43,7 @@ func TestMainContent_BuildsAndSurvivesTheUsualPath(t *testing.T) {
 	})
 
 	offMain(t, func() {
-		content := buildMainContent(win, "1.2.3", nil, NewDownloadManager(), nil)
+		content := buildMainContent(win, "1.2.3", nil, NewDownloadManager(nil), nil)
 		library = content.library
 		win.SetContent(content.tabs)
 		win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))

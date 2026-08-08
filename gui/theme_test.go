@@ -149,3 +149,20 @@ func TestThemeShapes(t *testing.T) {
 	require.Equal(t, theme.DefaultTheme().Size(theme.SizeNamePadding), gogg.Size(theme.SizeNamePadding),
 		"everything not named keeps the default")
 }
+
+// Surfaces have to lift off the page: an entry or a card that sits at nearly
+// the page's own darkness reads as part of the background. This holds the
+// elevation gap open, which the dark theme had lost.
+func TestThemeSurfaces(t *testing.T) {
+	dark := theme.VariantDark
+	gogg := &GoggTheme{Theme: theme.DefaultTheme(), variant: &dark}
+	background := gogg.Color(theme.ColorNameBackground, dark)
+	inputBackground := gogg.Color(theme.ColorNameInputBackground, dark)
+
+	require.GreaterOrEqual(t, contrast(inputBackground, background), 1.3,
+		"a raised field has to be seen sitting above the page")
+
+	button := gogg.Color(theme.ColorNameButton, dark)
+	require.GreaterOrEqual(t, contrast(button, background), 1.3,
+		"a plain button has to be seen sitting above the page too")
+}

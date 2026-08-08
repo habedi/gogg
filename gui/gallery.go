@@ -284,6 +284,16 @@ func (i *galleryImage) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(container.NewStack(i.border, i.picture))
 }
 
+// Refresh repaints the backdrop behind the picture in the current theme's
+// colors. The fill was captured once at construction, which left the viewer
+// white when it was built before the dark theme took hold; reading the
+// color on every refresh keeps the letterbox in step with the theme.
+func (i *galleryImage) Refresh() {
+	i.border.FillColor = theme.Color(theme.ColorNameBackground)
+	i.border.Refresh()
+	i.BaseWidget.Refresh()
+}
+
 func (i *galleryImage) Tapped(_ *fyne.PointEvent) {
 	if i.onTap != nil {
 		i.onTap()
@@ -307,7 +317,7 @@ func (i *galleryImage) setPicture(data []byte, faded bool) {
 	if !faded {
 		i.picture.Image = nil
 		i.picture.Resource = fyne.NewStaticResource("picture", data)
-		i.picture.Refresh()
+		i.Refresh()
 		return
 	}
 
@@ -317,11 +327,11 @@ func (i *galleryImage) setPicture(data []byte, faded bool) {
 	}
 	i.picture.Resource = nil
 	i.picture.Image = cropArtwork(decoded)
-	i.picture.Refresh()
+	i.Refresh()
 }
 
 func (i *galleryImage) clear() {
 	i.picture.Image = nil
 	i.picture.Resource = nil
-	i.picture.Refresh()
+	i.Refresh()
 }

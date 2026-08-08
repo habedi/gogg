@@ -33,6 +33,9 @@ Gogg has real users. The following must stay backward compatible:
 - Files written next to downloads (`metadata.json`, `download_info.json`, `files.json`): fields may be added,
   not removed or renamed.
 - Persisted enum values (such as download states in the history file): append new values, never renumber.
+  `StateInterrupted` was appended after `StatePaused` for this reason. The history file also stores each
+  download's request, so a retry or a resume works after gogg has been closed and reopened; a download still
+  running when gogg stops is written as interrupted and comes back with a Resume.
 
 ## Writing Style
 

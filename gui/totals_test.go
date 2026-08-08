@@ -138,3 +138,33 @@ func TestDownloadsHeadline_SpeaksWhenNothingRuns(t *testing.T) {
 	})
 	require.Equal(t, "2 finished · 1 paused · 1 failed", resting)
 }
+
+// A download running in passes counts bytes across the whole job in the
+// header, not one pass at a time: the second pass carries on from where the
+// first left off instead of resetting to its own small total.
+func TestProgressUpdater_CountsAcrossPasses(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+	task := progressingTask(t, StatePreparing, 0, 0, 0)
+	require.NoError(t, dm.AddTask(task))
+
+	// The second of two passes: the first pass's 4000 bytes are behind it,
+	// and the whole job is 10000.
+	updater := &progressUpdater{
+		task: task, dm: dm,
+		fileBytes:    make(map[string]int64),
+		fileProgress: make(map[string]struct{ current, total int64 }),
+		progressBase: 0.4, progressSpan: 0.6,
+		overallBase: 4000, overallTotal: 10000,
+	}
+
+	_, err := updater.Write([]byte(`{"type":"start","overall_total":6000}` + "\n" +
+		`{"type":"file_progress","file":"b","current":1500,"total":6000}` + "\n"))
+	require.NoError(t, err)
+
+	downloaded, total, _ := task.ProgressBytes()
+	require.Equal(t, int64(10000), total, "the header shows the whole job, not the pass")
+	require.Equal(t, int64(5500), downloaded, "the prior pass's bytes are carried into the count")
+}

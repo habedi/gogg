@@ -57,6 +57,12 @@ type progressUpdater struct {
 	// how much of the bar it may fill. Zero span means the whole bar.
 	progressBase float64
 	progressSpan float64
+	// The header counts bytes, and it counts across every pass, not one at a
+	// time: overallBase is the bytes the passes before this one already
+	// brought, and overallTotal the size of the whole job. Zero overallTotal
+	// means a single pass, where the pass total is the whole of it.
+	overallBase  int64
+	overallTotal int64
 	// finishing notes that every byte of this pass has landed.
 	finishing bool
 }
@@ -126,9 +132,15 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 }
 
 // publishTotals mirrors this download's progress onto the task and refreshes
-// the aggregate line above the download list.
+// the aggregate line above the download list. When the job runs in passes, it
+// reports the bytes and the total for the whole job rather than the pass in
+// hand, so the header counts up once instead of resetting each pass.
 func (pu *progressUpdater) publishTotals() {
-	pu.task.SetProgressBytes(pu.downloadedBytes, pu.totalBytes, int64(pu.averageSpeed()))
+	downloaded, total := pu.downloadedBytes, pu.totalBytes
+	if pu.overallTotal > 0 {
+		downloaded, total = pu.overallBase+pu.downloadedBytes, pu.overallTotal
+	}
+	pu.task.SetProgressBytes(downloaded, total, int64(pu.averageSpeed()))
 	if pu.dm != nil {
 		pu.dm.refreshTotals()
 	}
@@ -170,7 +182,11 @@ func (pu *progressUpdater) updateSpeedAndETA() {
 	pu.lastUpdateTime = now
 	pu.lastBytes = pu.downloadedBytes
 
-	_ = pu.task.Details.Set(transferSummary(avgSpeed, pu.totalBytes-pu.downloadedBytes))
+	remaining := pu.totalBytes - pu.downloadedBytes
+	if pu.overallTotal > 0 {
+		remaining = pu.overallTotal - (pu.overallBase + pu.downloadedBytes)
+	}
+	_ = pu.task.Details.Set(transferSummary(avgSpeed, remaining))
 }
 
 // transferSummary is the line under a running download: how fast it is going
@@ -277,6 +293,9 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 	// Registered before returning so that the queue counts this download as
 	// active right away instead of once the goroutine below gets scheduled.
 	_ = dm.AddTask(task)
+	// Written to the history now, not only when it ends, so a crash mid
+	// download still leaves an interrupted record to retry from next time.
+	dm.PersistHistory()
 
 	go func() {
 		defer func() {
@@ -310,7 +329,32 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		}
 
 		passes := len(languages) * len(platforms)
+
+		// The whole job's size is worked out up front, and each pass's own
+		// size with it, so the header can count bytes across every pass
+		// rather than resetting when a pass ends. A size that cannot be
+		// estimated leaves overallTotal zero, and the header falls back to
+		// counting the pass in hand.
+		var overallTotal int64
+		passSizes := make([]int64, 0, passes)
+		for _, language := range languages {
+			for _, platform := range platforms {
+				size, estErr := parsedGameData.EstimateStorageSize(language, platform, q.extrasFlag, q.dlcFlag)
+				if estErr != nil {
+					overallTotal = 0
+					passSizes = nil
+					break
+				}
+				passSizes = append(passSizes, size)
+				overallTotal += size
+			}
+			if passSizes == nil {
+				break
+			}
+		}
+
 		pass := 0
+		var overallBase int64
 		for _, language := range languages {
 			for _, platform := range platforms {
 				updater := &progressUpdater{
@@ -320,6 +364,11 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 					fileProgress: make(map[string]struct{ current, total int64 }),
 					progressBase: float64(pass) / float64(passes),
 					progressSpan: 1 / float64(passes),
+					overallBase:  overallBase,
+					overallTotal: overallTotal,
+				}
+				if overallTotal > 0 {
+					overallBase += passSizes[pass]
 				}
 				err = client.DownloadGameFiles(
 					ctx, token.AccessToken, parsedGameData, q.downloadPath,

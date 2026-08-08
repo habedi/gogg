@@ -9,6 +9,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
@@ -273,4 +274,23 @@ func shotPictures(n int) []galleryPicture {
 		})
 	}
 	return pictures
+}
+
+// The picture viewer's backdrop follows the theme rather than freezing at
+// whatever it was when the widget was built: in the dark theme it is dark,
+// not the white it used to show.
+func TestGalleryImage_BackdropFollowsTheTheme(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	dark := theme.VariantDark
+	a.Settings().SetTheme(&GoggTheme{Theme: theme.DefaultTheme(), variant: &dark})
+
+	img := newGalleryImage(fyne.NewSize(100, 100), nil)
+	img.Refresh()
+
+	r, g, b, _ := img.border.FillColor.RGBA()
+	require.Less(t, r>>8, uint32(0x40), "the backdrop is dark in the dark theme")
+	require.Less(t, g>>8, uint32(0x40))
+	require.Less(t, b>>8, uint32(0x40))
+	require.Equal(t, theme.Color(theme.ColorNameBackground), img.border.FillColor)
 }

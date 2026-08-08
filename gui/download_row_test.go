@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
+	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
 
@@ -146,7 +147,7 @@ func TestPersistHistory_KeepsTheMostRecentDownloads(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	dm := NewDownloadManager()
+	dm := NewDownloadManager(nil)
 	start := time.Now()
 	for i := 0; i < historyKept+50; i++ {
 		task := &DownloadTask{
@@ -160,7 +161,7 @@ func TestPersistHistory_KeepsTheMostRecentDownloads(t *testing.T) {
 
 	dm.PersistHistory()
 
-	reopened, err := NewDownloadManager().Tasks.Get()
+	reopened, err := NewDownloadManager(nil).Tasks.Get()
 	require.NoError(t, err)
 	require.Len(t, reopened, historyKept, "the history has to stop growing at some point")
 	require.Equal(t, fmt.Sprintf("Game %d", historyKept+49), reopened[0].(*DownloadTask).Title,
@@ -220,5 +221,105 @@ func TestDownloadsTab_ReordersWhenADownloadFinishes(t *testing.T) {
 
 		require.Equal(t, "finished", titleAt(t, list, 0),
 			"once it is done it takes its place among the finished, newest first")
+	})
+}
+
+// A download still running when gogg stops comes back as interrupted, with
+// its request intact so it can be resumed after a restart.
+func TestPersistHistory_InterruptedDownloadSurvivesAndResumes(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dm := NewDownloadManager(stubAuthService())
+	require.NoError(t, dm.Tasks.Set(nil)) // start from an empty history, whatever a prior test left
+	running := &DownloadTask{
+		ID: 7, Title: "Big Game", InstanceID: time.Now(),
+		Status: binding.NewString(), Details: binding.NewString(),
+		Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+		DownloadPath: "/games/big-game",
+		request: queuedDownload{
+			authService:  stubAuthService(),
+			game:         db.Game{ID: 7, Title: "Big Game", Data: "{}"},
+			downloadPath: "/games", language: "en", platformName: "windows",
+			numThreads: 4, connections: 2,
+		},
+	}
+	running.SetState(StateDownloading)
+	require.NoError(t, dm.Tasks.Append(running))
+
+	dm.PersistHistory()
+
+	// A fresh manager, as after a restart, reads the history back.
+	reopened := NewDownloadManager(stubAuthService())
+	tasks, err := reopened.Tasks.Get()
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+
+	restored := tasks[0].(*DownloadTask)
+	require.Equal(t, StateInterrupted, restored.State(),
+		"a download that was running is interrupted, not lost")
+	require.True(t, restored.canRetry(), "and it carries the request a resume needs")
+	require.Equal(t, 7, restored.request.game.ID)
+	require.Equal(t, 2, restored.request.connections, "every download option survives the round trip")
+}
+
+// A completed or failed download keeps its own state across a restart, not
+// the interrupted one.
+func TestPersistHistory_FinishedStatesAreUnchanged(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dm := NewDownloadManager(stubAuthService())
+	require.NoError(t, dm.Tasks.Set(nil)) // start from an empty history
+	for _, tc := range []struct {
+		id    int
+		state int
+	}{{1, StateCompleted}, {2, StateError}, {3, StatePaused}} {
+		task := &DownloadTask{
+			ID: tc.id, Title: fmt.Sprintf("Game %d", tc.id), InstanceID: time.Now().Add(time.Duration(tc.id) * time.Second),
+			Status: binding.NewString(), Details: binding.NewString(),
+			Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+			request: queuedDownload{game: db.Game{ID: tc.id, Data: "{}"}},
+		}
+		task.SetState(tc.state)
+		require.NoError(t, dm.Tasks.Append(task))
+	}
+	dm.PersistHistory()
+
+	tasks, _ := NewDownloadManager(stubAuthService()).Tasks.Get()
+	byID := map[int]int{}
+	for _, raw := range tasks {
+		task := raw.(*DownloadTask)
+		byID[task.ID] = task.State()
+	}
+	require.Equal(t, StateCompleted, byID[1])
+	require.Equal(t, StateError, byID[2])
+	require.Equal(t, StatePaused, byID[3], "a paused download stays paused, not interrupted")
+}
+
+// An interrupted download's row offers Resume: its bytes are on disk, so
+// carrying on is what the button does.
+func TestDownloadsTab_InterruptedRowOffersResume(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+		ui := DownloadsTabUI(test.NewWindow(nil), dm)
+
+		interrupted := &DownloadTask{
+			ID: 7, Title: "Big Game", InstanceID: time.Now(),
+			Status: binding.NewString(), Details: binding.NewString(),
+			Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+			request: queuedDownload{game: db.Game{ID: 7, Data: "{}"}},
+		}
+		interrupted.SetState(StateInterrupted)
+		require.NoError(t, dm.AddTask(interrupted))
+
+		list := widgetsOfType[*widget.List](ui)[0]
+		row := list.CreateItem()
+		list.UpdateItem(0, row)
+		require.Equal(t, "Resume", row.(*downloadRow).actionBtn.Text,
+			"an interrupted download carries on rather than restarts")
 	})
 }

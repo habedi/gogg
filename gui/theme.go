@@ -113,20 +113,37 @@ func (t *GoggTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.C
 		if !dark {
 			return rgb(0x1C, 0x1B, 0x1F)
 		}
+	case theme.ColorNameBackground:
+		// A moderately dark page, not a near-black one. Cards separate
+		// themselves with a drop shadow, and a black shadow shows on a page
+		// this dark but vanishes on a near-black one; the earlier, darker
+		// page was why panels lost their edges. Interactive surfaces sit a
+		// clear step above this, so they still read as raised.
+		if dark {
+			return rgb(0x1B, 0x1C, 0x20)
+		}
+	case theme.ColorNameInputBackground, theme.ColorNameButton:
+		// Entries, selects, and the plain buttons share one tone, a clear
+		// step up from the page, so they read as raised fields rather than
+		// patches of the same dark. The gap is held open by TestThemeSurfaces.
+		if dark {
+			return rgb(0x33, 0x34, 0x3B)
+		}
 	case theme.ColorNameSeparator:
 		// Fyne's own separators are black on near-black in the dark theme
 		// and barely-there gray in the light one; these stay quiet but can
 		// be seen, and TestThemeBorders holds them to it.
 		if dark {
-			return rgb(0x57, 0x57, 0x5E)
+			return rgb(0x5A, 0x5A, 0x62)
 		}
 		return rgb(0xBF, 0xBF, 0xC6)
 	case theme.ColorNameInputBorder:
-		// The box around an entry has to say where the box is. Fyne's dark
-		// default sits at 1.5:1 against the background, which is the "hard
-		// to see" the borders were accused of.
+		// The outline of a field carries its definition, since a fill a step
+		// off the page is subtle on its own. Fyne's dark default sat at
+		// 1.5:1 against the background; this reads clearly against both the
+		// page and the field's own fill, which TestThemeBorders checks.
 		if dark {
-			return rgb(0x6E, 0x6E, 0x76)
+			return rgb(0x8A, 0x8A, 0x92)
 		}
 		return rgb(0x76, 0x76, 0x80)
 	}
