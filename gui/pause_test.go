@@ -97,6 +97,7 @@ func TestDownload_PauseKeepsTheBytesAndResumeFinishes(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(root, "pausable", "windows", "setup.exe"))
 	require.NoError(t, err)
 	require.Equal(t, body, data, "the resumed download finishes the same file")
+	awaitSettled(t, dm, 21)
 }
 
 // A paused card offers Resume; one restored from history, whose request did

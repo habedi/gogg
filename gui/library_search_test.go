@@ -70,7 +70,7 @@ func newLibraryFixtureInWindow(t *testing.T, games int) (*libraryTab, string, fy
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	lt := LibraryTabUI(win, nil, dm, openStores(), func() {})
+	lt := LibraryTabUI(win, stubAuthService(), dm, openStores(), func() {})
 	// Closed before the store stub lets its answers go, so nothing is
 	// delivered to widgets the next test cannot see.
 	t.Cleanup(lt.close)

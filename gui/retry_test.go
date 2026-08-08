@@ -115,6 +115,7 @@ func TestExecuteDownload_RemembersTheRequest(t *testing.T) {
 	require.Len(t, tasks, 1)
 	require.Equal(t, request.game.ID, tasks[0].(*DownloadTask).request.game.ID)
 	require.Equal(t, request.downloadPath, tasks[0].(*DownloadTask).request.downloadPath)
+	awaitSettled(t, dm, 4)
 }
 
 // A download cancelled while it was still waiting in the queue has to be

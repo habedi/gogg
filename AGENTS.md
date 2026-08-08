@@ -215,6 +215,9 @@ the suite race-free:
   `iconButtonWithTip`, `labelTexts`); list rows are exercised by calling `list.UpdateItem` with a fresh row.
 - Never call `binding.UntypedList.Set` or `Append` while holding `DownloadManager.mu`; listeners run inline in
   tests and ask the manager for what it holds.
+- A test that starts a real download ends with `awaitSettled` (in `queue_test.go`), not with a wait on the
+  task's state. The state changes before the goroutine's announcement and slot release, so a state wait lets
+  the goroutine outlive the test and read seams, such as `notify`, that the next test rewrites.
 
 ## Change Design Checklist
 

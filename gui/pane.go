@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -379,6 +380,20 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		showSizeEstimate(win, estimates, total)
 	})
 
+	savesBtn := newIconButton(theme.DocumentSaveIcon(), tipBackupSaves, func() {
+		gameRaw, _ := selectedGame.Get()
+		if gameRaw == nil {
+			return
+		}
+		if downloadPathEntry.Text == "" {
+			showErrorDialog(win, "Cannot back up saves", errors.New("download path cannot be empty"))
+			return
+		}
+		game := gameRaw.(db.Game)
+		outputDir := filepath.Join(downloadPathEntry.Text, "saves", client.SanitizePath(game.Title))
+		backupSaves(win, authService, game, outputDir)
+	})
+
 	// Named rather than left in the button, because Enter on the list starts
 	// the same download the button does.
 	startDownload := func() {
@@ -433,7 +448,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		actions: container.NewHBox(
 			fixedSize(storeBtn, paneCompactSize), fixedSize(gogdbBtn, paneCompactSize),
 			layout.NewSpacer(),
-			estimateBtn, fixedSize(downloadBtn, paneActionSize)),
+			estimateBtn, savesBtn, fixedSize(downloadBtn, paneActionSize)),
 		showStore: func(url string) {
 			storeURL = url
 			if url == "" {
@@ -507,7 +522,7 @@ var (
 	paneActionSize = fyne.NewSize(200, 36)
 	// paneCompactSize fits a short word: the web links share the action row
 	// with the download button, and every point they take is the pane's.
-	paneCompactSize = fyne.NewSize(88, 36)
+	paneCompactSize = fyne.NewSize(68, 36)
 )
 
 // fixedSize gives a widget a size of its own, whatever it is put inside.

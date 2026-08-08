@@ -29,6 +29,22 @@ func (stubRefresher) PerformTokenRefresh(_ string) (string, string, int64, error
 	return "access", "refresh", 3600, nil
 }
 
+// awaitSettled waits for a download's goroutine to fully unwind, not merely
+// for its task to reach a final state: the announcement and the slot release
+// come after the state change, and a goroutine that outlives its test reads
+// seams the next test rewrites.
+func awaitSettled(t *testing.T, dm *DownloadManager, gameIDs ...int) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		for _, id := range gameIDs {
+			if dm.slotHeld(id) {
+				return false
+			}
+		}
+		return true
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
 func stubAuthService() *auth.Service {
 	return auth.NewService(
 		&stubTokenStore{token: &db.Token{
@@ -89,7 +105,11 @@ func TestStartNextIfAvailable_RespectsMaxConcurrent(t *testing.T) {
 			defer dm.mu.RUnlock()
 			tasks, _ := dm.Tasks.Get()
 			for _, raw := range tasks {
-				switch raw.(*DownloadTask).State() {
+				task := raw.(*DownloadTask)
+				if dm.slotHeld(task.ID) {
+					return false
+				}
+				switch task.State() {
 				case StateCompleted, StateCancelled, StateError:
 				default:
 					return false
@@ -156,6 +176,7 @@ func TestExecuteDownload_CoversEveryTickedChoice(t *testing.T) {
 	task := tasks[0]
 	require.Eventually(t, func() bool { return task.State() == StateCompleted },
 		5*time.Second, 10*time.Millisecond)
+	awaitSettled(t, dm, 12)
 
 	info, err := os.ReadFile(filepath.Join(root, client.SanitizePath("Every Way"), "download_info.json"))
 	require.NoError(t, err)

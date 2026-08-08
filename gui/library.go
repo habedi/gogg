@@ -36,6 +36,7 @@ const (
 	tipShowCovers  = "Show as covers"
 	tipMore        = "Sort and export"
 	tipEstimate    = "Estimate the download size"
+	tipBackupSaves = "Back up the game's cloud saves"
 )
 
 func newSearchBox() *searchBox {
