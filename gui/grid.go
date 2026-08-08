@@ -146,6 +146,12 @@ func bindGameCell(cell *gameCell, game db.Game, rb rowBinding) {
 			onToggle()
 		}
 	})
+	// A game with nothing to download cannot be picked for one.
+	if rb.state != nil && !rb.state.downloadable(game) {
+		cell.check.Disable()
+	} else {
+		cell.check.Enable()
+	}
 
 	if sameGame && cell.cover.Image != nil {
 		return // already showing this game's artwork

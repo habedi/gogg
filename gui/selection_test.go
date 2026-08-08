@@ -292,3 +292,24 @@ func topOverlay(t *testing.T) fyne.CanvasObject {
 	}
 	return nil
 }
+
+// A game with nothing to download cannot be ticked for one, in the list as
+// in the grid, and the state helper says which is which.
+func TestListRow_CheckboxDisabledForUnDownloadableGame(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	state := newLibraryState()
+	online := db.Game{ID: 1, Title: "Online", Data: `{"title":"Online","downloads":[],"extras":[],"dlcs":[]}`}
+	withFiles := db.Game{ID: 2, Title: "Has Files", Data: richGameData}
+
+	require.False(t, state.downloadable(online), "an online-only title is not downloadable")
+	require.True(t, state.downloadable(withFiles))
+
+	row := newGameRow().(*gameRow)
+	bindGameRow(row, online, rowBinding{sel: newGameSelection(), state: state})
+	require.True(t, row.check.Disabled(), "the list row disables its checkbox for a game with no files")
+
+	bindGameRow(row, withFiles, rowBinding{sel: newGameSelection(), state: state})
+	require.False(t, row.check.Disabled())
+}

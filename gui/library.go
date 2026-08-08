@@ -579,7 +579,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		gameGridWidget.Refresh()
 	}
 	selectAllBtn := widget.NewButton("Select All Shown", func() {
-		applyBulkSelection(func() { sel.selectAll(displayedGames()) })
+		// Only games there is something to download: ticking one you cannot
+		// download is a choice that leads nowhere.
+		applyBulkSelection(func() {
+			for _, game := range displayedGames() {
+				if state.downloadable(game) {
+					sel.set(game.ID, true)
+				}
+			}
+		})
 	})
 	clearSelectionBtn := widget.NewButton("Clear Selection", func() {
 		applyBulkSelection(sel.clear)

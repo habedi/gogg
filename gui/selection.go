@@ -229,6 +229,12 @@ func bindGameRow(row fyne.CanvasObject, game db.Game, rb rowBinding) {
 			onToggle()
 		}
 	})
+	// A game with nothing to download cannot be picked for one.
+	if rb.state != nil && !rb.state.downloadable(game) {
+		r.check.Disable()
+	} else {
+		r.check.Enable()
+	}
 
 	r.title.SetText(game.Title)
 	r.loadThumbnail(game, covers, sameGame)

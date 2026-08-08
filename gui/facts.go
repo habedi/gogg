@@ -54,6 +54,13 @@ func (s *libraryState) forgetParsed() {
 	s.catalogueSizes = make(map[int]int64)
 }
 
+// downloadable reports whether GOG serves any installer files for a game.
+// One it does not, such as an online, Galaxy-only title, cannot be
+// downloaded, so it cannot be selected for one either.
+func (s *libraryState) downloadable(game db.Game) bool {
+	return len(s.factsOf(game).platforms) > 0
+}
+
 // catalogueSize is a game's size for filtering: the largest single-platform
 // install it offers, in any language, extras and DLCs counted. It does not
 // read the download-form settings, so filtering by size is about the game

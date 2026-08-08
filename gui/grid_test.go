@@ -242,3 +242,21 @@ func TestGameCell_SaysWhenAGameHasNoDownloads(t *testing.T) {
 	require.Contains(t, cell.platforms.Text, "Windows")
 	require.False(t, cell.platforms.TextStyle.Italic)
 }
+
+// A game with nothing to download cannot be ticked for one: its checkbox is
+// disabled in the grid, and enabled again for a game with files.
+func TestGameCell_CheckboxDisabledForUnDownloadableGame(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	state := newLibraryState()
+	cell := newGameCell().(*gameCell)
+
+	bindGameCell(cell, db.Game{ID: 1, Title: "Online", Data: `{"title":"Online","downloads":[],"extras":[],"dlcs":[]}`},
+		rowBinding{sel: newGameSelection(), state: state})
+	require.True(t, cell.check.Disabled(), "a game with no files cannot be selected")
+
+	bindGameCell(cell, db.Game{ID: 2, Title: "Has Files", Data: richGameData},
+		rowBinding{sel: newGameSelection(), state: state})
+	require.False(t, cell.check.Disabled(), "a game with files can be selected")
+}

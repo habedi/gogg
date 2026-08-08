@@ -40,7 +40,7 @@ func newLibraryFixtureInWindow(t *testing.T, games int) (*libraryTab, string, fy
 		ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339),
 	}))
 
-	blob := `{"title":"G","downloads":[],"extras":[],"dlcs":[]}`
+	blob := `{"title":"G","downloads":[["English",{"windows":[{"manualUrl":"/w","name":"setup.exe","size":"1 GB"}]}]],"extras":[],"dlcs":[]}`
 	root := t.TempDir()
 	for i := 1; i <= games; i++ {
 		title := fmt.Sprintf("Game %d", i)
