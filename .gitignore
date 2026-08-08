@@ -65,8 +65,8 @@ tmp/
 *.sqlite
 
 # Dependency lock files (uncomment to ignore)
-poetry.lock
-uv.lock
+#poetry.lock
+#uv.lock
 
 # Golang specific
 *.out
