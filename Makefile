@@ -187,3 +187,11 @@ test-fuzz: ## Run fuzz tests
 	$(ECHO) "Running fuzz tests (short)"
 	@$(GO) test ./client -run=^$$ -fuzz=FuzzParseSizeString -fuzztime=10s
 	@$(GO) test ./client -run=^$$ -fuzz=FuzzParseGameData -fuzztime=10s
+
+.PHONY: dev-shell
+dev-shell: ## Enter the Nix development shell (needs Nix with flakes)
+	@if ! command -v nix &> /dev/null; then \
+	   echo "nix not found. Install it from https://nixos.org/download/"; \
+	   exit 1; \
+	fi
+	@nix develop
