@@ -54,7 +54,7 @@ func newSimpleServer(t *testing.T, body []byte) *httptest.Server {
 		switch r.Method {
 		case http.MethodGet:
 			if r.Header.Get("Authorization") == "" {
-				// findFileLocation GET — return 200 with no body to signal no redirect
+				// The findFileLocation GET: 200 with no body signals no redirect.
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -79,7 +79,7 @@ func gameWithURL(title, rawURL string) Game {
 }
 
 func TestDownloadGameFiles_ResumePartFileAlreadyComplete(t *testing.T) {
-	// .part file already has all the bytes — HEAD returns same Content-Length.
+	// The .part file already has all the bytes; HEAD returns the same Content-Length.
 	// DownloadGameFiles must rename it and return nil without making a GET.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {
@@ -87,7 +87,7 @@ func TestDownloadGameFiles_ResumePartFileAlreadyComplete(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		// GET for findFileLocation — 200, no redirect
+		// The GET for findFileLocation: 200, no redirect.
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -128,7 +128,7 @@ func TestDownloadGameFiles_RommLayout(t *testing.T) {
 }
 
 func TestDownloadGameFiles_FlattenFlag(t *testing.T) {
-	// flatten=true omits the platform subdir — file lands directly under game dir.
+	// flatten=true omits the platform subdirectory: the file lands directly under the game directory.
 	server := newSimpleServer(t, []byte("x"))
 	defer server.Close()
 
@@ -181,7 +181,7 @@ func TestDownloadGameFiles_RedirectURL(t *testing.T) {
 }
 
 func TestDownloadGameFiles_RedirectMissingLocation(t *testing.T) {
-	// Server returns 301 with no Location header — findFileLocation returns an error.
+	// The server returns 301 with no Location header; findFileLocation returns an error.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMovedPermanently) // 301 with no Location
 	}))

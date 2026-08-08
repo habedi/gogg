@@ -14,7 +14,7 @@ import (
 func TestDownloadCmd_MissingDirNoConfig(t *testing.T) {
 	// When downloadDir is omitted and no config download_dir is set, the command
 	// must print an error and not panic.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty config dir — no config.json
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // an empty config dir, so no config.json
 	authService := auth.NewService(nil, nil)
 	cmd := downloadCmd(authService)
 	cmd.SetArgs([]string{"1234567890"}) // gameID only, no dir

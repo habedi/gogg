@@ -22,14 +22,47 @@ Priorities, in order:
 - Do not add features, error handling, or abstractions beyond what is needed for the current task.
 - Keep external dependencies minimal: do not add new `go.mod` entries without prior discussion.
 
+## Backward Compatibility
+
+Gogg has real users. The following must stay backward compatible:
+
+- CLI command names, flag names, and exit codes.
+- The config file format read from `~/.config/gogg/config.json`.
+- The SQLite schema: changes must be additive (new tables or columns with sensible zero values), so a
+  database from an older version keeps working. A catalogue refresh must never drop data other tables hold.
+- Files written next to downloads (`metadata.json`, `download_info.json`, `files.json`): fields may be added,
+  not removed or renamed.
+- Persisted enum values (such as download states in the history file): append new values, never renumber.
+
 ## Writing Style
 
 - Use Oxford commas in inline lists: "a, b, and c" not "a, b, c".
-- Do not use em dashes. Restructure the sentence, or use a colon or semicolon instead.
+- Do not use em dashes, in documentation or in code comments. Restructure the sentence, or use a colon or
+  semicolon instead.
 - Avoid colorful adjectives and adverbs. Write "rate limiter" not "smart rate limiter".
-- Use noun phrases for checklist items, not imperative verbs. Write "rate limit enforcement" not "enforce rate limits".
-- Headings in Markdown files must be in title case: "Build from Source" not "Build from source". Minor words (a, an, the, and, but, or, for, in, on,
-  at, to, by, of, is, are, was, were, be) stay lowercase unless they are the first word.
+- Prefer noun phrases for checklist items over imperative verbs. Write "rate limit enforcement" not "enforce
+  rate limits".
+- Headings in Markdown files must be in title case: "Build from Source" not "Build from source". Minor words
+  stay lowercase unless they are the first word: the articles (a, an, the), the coordinating conjunctions (and,
+  but, or, nor, so, yet, for), and the short prepositions (in, on, at, to, by, of, up, as, from, with, into,
+  over). The prepositions are named because "from" has to be lowercase for "Build from Source" to be correct.
+- Do not bold the lead-in of a list item. Write "Unit tests: ..." not "**Unit tests**: ...".
+- Use sentence case for the lead-in of a list item. Write "Seed selection: ..." not "Seed Selection: ...".
+  Proper nouns keep their capitals.
+- Capitalize only the first part of a hyphenated compound: "Owned-game Listing" in a heading, "Owned-game" at
+  the start of a sentence, and "owned-game listing" elsewhere. Never write "Owned-Game".
+- Start each sentence with a capital letter, capitalize proper nouns (Go, Fyne, GOG, SQLite), and leave common
+  nouns lowercase in the middle of a sentence.
+- Write correct and complete sentences.
+- Avoid made-up words.
+- Do not use a colon in place of a verb. Three uses are fine: joining two clauses inside a complete sentence
+  (the replacement the em-dash rule above calls for), introducing the gloss of a list item, and introducing an
+  enumeration, whether as a list or inline ("Targets: `make test`, `make lint`, ..."). What a colon must not do
+  is turn a sentence into a label and a definition: write "Fetches file metadata, then streams bytes with a
+  progress wrapper" rather than "Download pipeline: fetches file metadata". That shape belongs to a list item,
+  and carrying it into prose (a doc comment summary, a paragraph) leaves a fragment where a sentence was
+  required.
+- Use participial phrases and abbreviations scarcely.
 
 ## Repository Layout
 
@@ -37,13 +70,19 @@ Priorities, in order:
 - `cmd/`: Cobra command definitions (`cli.go`, `download.go`, `catalogue.go`, `login.go`, `version.go`, `file.go`,
   `gui.go`). Each command wires flags and calls into `client/` or `db/`.
 - `client/`: GOG API client; contains `login.go` (OAuth via chromedp), `games.go` (owned-game listing),
-  `catalogue.go` (sync), `download.go` (file downloads with progress), `data.go` (data parsing),
-  and `rate_limiter.go` (request throttling).
+  `catalogue.go` (sync), `products.go` (owned-products listing with artwork and purchase order),
+  `download.go` (file downloads with progress and the `files.json` manifest), `prune.go` (old-installer removal),
+  `metadata.go` (store-page lookups), `data.go` (data parsing), and `rate_limiter.go` (request throttling).
 - `auth/`: Authentication service and interfaces wrapping GOG OAuth token lifecycle.
-- `db/`: GORM/SQLite persistence; contains `db.go` (connection setup), `game.go` (game model), `token.go` (token model),
-  and `repository.go` (data access layer).
-- `gui/`: Fyne desktop GUI — `window.go` (main window), `widgets.go` (custom widgets), `theme.go`, `sound.go`,
-  `shared.go`.
+- `db/`: GORM/SQLite persistence; contains `db.go` (connection setup), `game.go` (game model), `token.go` (token
+  model), `tag.go` (user marks such as favorite and hidden), `metadata.go` (stored store-page lookups), and
+  `repository.go` (the repository interfaces and their GORM implementations).
+- `gui/`: Fyne desktop GUI. The larger concerns each have a file: `window.go` (tabs and assembly), `library.go`
+  (the catalogue tab), `pane.go` (details pane and download form), `status.go` (`libraryState` and update
+  detection), `facts.go` (search facts and caches), `filters.go` (filter dialog), `history.go` (download-directory
+  lookups), `updates.go` (version diffing), `manager.go` and `download.go` (download queue and execution),
+  `metadata.go` and `covers.go` (store lookups and artwork), `stores.go` (the repositories the GUI is handed),
+  `sidebar.go`, `gallery.go`, `grid.go`, `selection.go`, `settings.go`, `widgets.go`, and `theme.go`.
 - `scripts/`: Shell scripts for integration testing and Docker entrypoint.
 - `.github/workflows/`: CI workflows for tests and releases.
 - `Makefile`: All developer tasks (build, test, lint, format, release).
@@ -59,6 +98,19 @@ Gogg is organized into four layers that should not have upward dependencies:
 3. `cmd/`: Cobra command handlers; orchestrates `client/` and `db/` calls, formats output.
 4. `gui/`: Fyne desktop interface; calls into `client/` and `db/` the same way `cmd/` does.
 
+### Boundaries Worth Keeping
+
+- The GUI reaches the database only through the repository interfaces in `db/repository.go`, bundled into the
+  `stores` struct built by `openStores()` in `gui/stores.go`. That function is the one place in the GUI that
+  reads the global handle; do not add another.
+- `client.DownloadGameFiles` takes a `DownloadOptions` struct. Extend the struct rather than the parameter list.
+- The GUI's per-library knowledge (statuses, parsed facts, sizes, tags, and genres) lives in `libraryState`,
+  owned by the library tab. Do not add package-level mutable state to `gui/`; the package vars that remain are
+  test seams, assets, and signal bindings.
+- List rows and grid cells are bound through the `rowBinding` bundle. New per-row knowledge goes in there.
+- Progress flows from `client/` to both frontends as JSON lines over an `io.Writer` (`ProgressUpdate`). The CLI
+  and the GUI parse the same stream; changes to it must be additive.
+
 ### Authentication Flow
 
 Login is handled by `client/login.go` using chromedp to drive a headless browser through GOG's OAuth flow.
@@ -67,7 +119,10 @@ Tokens are stored via `db/token.go` and retrieved by `auth/services.go` for subs
 ### Download Pipeline
 
 `client/download.go` fetches file metadata, checks for existing partial downloads, and streams bytes with a
-`progressbar` wrapper. Resumption is done via HTTP range requests.
+`progressbar` wrapper. Resumption is done via HTTP range requests against `.part` files that are renamed into
+place on completion. Transient failures (5xx, 429, and dropped connections) are retried with backoff; refusals
+such as 404 are not. Every completed download records exact byte sizes, streaming MD5 checksums, and timestamps
+in `files.json` beside `metadata.json`.
 
 ### Build Tags
 
@@ -124,7 +179,33 @@ Good first tasks:
 - Every new exported function or API-facing behavior must ship with at least one test that exercises it, including
   error paths where applicable.
 - Tests that make HTTP calls must use a test HTTP server (`httptest.NewServer`) rather than the real GOG API.
+  In `gui/` this includes setting `GOGG_API_BASE` before building any library fixture; a fixture without it can
+  reach the real store from a background lookup.
 - No public-facing behavior change is complete without a test covering the new or changed behavior.
+- Run the race detector on anything that touches goroutines: `go test -race -count=1` on the affected packages,
+  more than once. Several past bugs only surfaced on the second or third run.
+- Slow-by-design behavior has a test seam: `statusWorker`, `parseGameData`, `notify`, `searchDebounce`,
+  `metadataSweepPause` in `gui/`, and `client.RetryDelay`. Set them in `TestMain` or per test rather than
+  sleeping the real delays out.
+
+### GUI Test Rules
+
+The Fyne test driver runs `fyne.Do` inline on the calling goroutine, so background deliveries that are
+serialized onto the main thread in production run concurrently with the test body in tests. The rules that keep
+the suite race-free:
+
+- A background answer must not be able to land in a widget mid-test. Fixtures use `hangingStoreStub`, which
+  holds every response until cleanup; a test that needs answers uses its own gated server and steps it.
+- Cleanup order matters with gated servers: register `srv.Close` before the gate close, so the gate opens first
+  and `Close` can finish. A `defer srv.Close()` above a gate cleanup deadlocks.
+- Every library or cache a test builds must be closed on cleanup (`lt.close`, `cache.close`), or its goroutines
+  outlive the test and touch the next test's database and widgets.
+- Tests that set a binding and then read the result run their body through `offMain`; Fyne only queues binding
+  listeners when the caller is the main goroutine.
+- Assert on rendered widgets by walking with the helpers in `walk_test.go` (`buttonWithLabel`,
+  `iconButtonWithTip`, `labelTexts`); list rows are exercised by calling `list.UpdateItem` with a fresh row.
+- Never call `binding.UntypedList.Set` or `Append` while holding `DownloadManager.mu`; listeners run inline in
+  tests and ask the manager for what it holds.
 
 ## Change Design Checklist
 

@@ -218,7 +218,7 @@ func TestRefreshCatalogue_SkipsGameWithoutTitle(t *testing.T) {
 
 func TestRefreshCatalogue_FetchGameDataError(t *testing.T) {
 	// When fetching details for a game returns an error, the worker logs a warning
-	// and returns nil — RefreshCatalogue should still succeed.
+	// and returns nil; RefreshCatalogue should still succeed.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/user/data/games":
@@ -336,7 +336,7 @@ func TestRefreshCatalogue_VersionChange_NewGame(t *testing.T) {
 	defer server.Close()
 	t.Setenv("GOGG_EMBED_BASE", server.URL)
 
-	repo := newStubRepo() // empty — game 10 is brand new
+	repo := newStubRepo() // empty; game 10 is brand new
 	changes, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
 	require.NoError(t, err)
 	require.Len(t, changes, 1)
