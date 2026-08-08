@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -96,13 +98,29 @@ type coverCache struct {
 	dir     string
 	client  *http.Client
 	fetches chan struct{}
+	// ctx ends the fetches when the cache closes, and wg is how close waits
+	// for the ones already in flight, deliveries included. A delivery that
+	// outlives its owner lands in widgets someone else is using by then.
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+}
+
+// close stops new fetches and waits out the in-flight ones. After it
+// returns, no delivery of this cache will touch a widget again.
+func (c *coverCache) close() {
+	c.cancel()
+	c.wg.Wait()
 }
 
 func newCoverCache(dir string) *coverCache {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &coverCache{
 		dir:     dir,
 		client:  &http.Client{Timeout: 30 * time.Second},
 		fetches: make(chan struct{}, coverFetchers),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -172,7 +190,11 @@ func (c *coverCache) download(url string) ([]byte, error) {
 	c.fetches <- struct{}{}
 	defer func() { <-c.fetches }()
 
-	resp, err := c.client.Get(url)
+	req, err := http.NewRequestWithContext(c.ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch cover: %w", err)
+	}
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch cover: %w", err)
 	}
@@ -196,7 +218,9 @@ func (c *coverCache) download(url string) ([]byte, error) {
 // stillWanted is asked whether the answer is still for the game the caller is
 // showing: grid cells are recycled while a fetch is in flight.
 func (c *coverCache) load(game db.Game, kind coverKind, stillWanted func(gameID int) bool, deliver func([]byte, coverSource)) {
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		data, source, err := c.fetch(game, kind)
 		if err != nil {
 			log.Debug().Err(err).Str("game", game.Title).Msg("No cover")
@@ -215,7 +239,9 @@ func (c *coverCache) load(game db.Game, kind coverKind, stillWanted func(gameID 
 // thread. stillWanted is asked whether the answer is still worth showing: the
 // user may have selected another game while it was in flight.
 func (c *coverCache) loadURL(url string, stillWanted func() bool, deliver func([]byte)) {
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		data, err := c.fetchURL(url)
 		if err != nil {
 			log.Debug().Err(err).Str("url", url).Msg("Could not fetch picture")

@@ -26,6 +26,17 @@ var onePixelPNG = []byte{
 	0x00, 0x00, 0x00, 0x00, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82,
 }
 
+// testCoverCache is a cover cache whose fetches are cancelled and waited out
+// when the test ends. A delivery that outlives its test lands in widgets the
+// next test is using; closing the cache is what makes the end of the test
+// mean the end of its background work.
+func testCoverCache(t *testing.T, dir string) *coverCache {
+	t.Helper()
+	cache := newCoverCache(dir)
+	t.Cleanup(cache.close)
+	return cache
+}
+
 func imageServer(t *testing.T) (*httptest.Server, func() int64) {
 	t.Helper()
 	var hits atomic.Int64
@@ -78,7 +89,7 @@ func TestCoverCache_FetchesOnceAndReusesTheFile(t *testing.T) {
 	defer app.Quit()
 	srv, hits := imageServer(t)
 
-	cache := newCoverCache(t.TempDir())
+	cache := testCoverCache(t, t.TempDir())
 	game := db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}
 
 	first, _, err := cache.fetch(game, coverBanner)
@@ -100,7 +111,7 @@ func TestCoverCache_KeepsCoversOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	game := db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}
 
-	_, _, err := newCoverCache(dir).fetch(game, coverBanner)
+	_, _, err := testCoverCache(t, dir).fetch(game, coverBanner)
 	require.NoError(t, err)
 
 	entries, err := os.ReadDir(dir)
@@ -108,7 +119,7 @@ func TestCoverCache_KeepsCoversOnDisk(t *testing.T) {
 	require.Len(t, entries, 1, "the cover is written for the next run")
 
 	// A cache built afresh, as after a restart, reuses what is already there.
-	served, _, err := newCoverCache(dir).fetch(game, coverBanner)
+	served, _, err := testCoverCache(t, dir).fetch(game, coverBanner)
 	require.NoError(t, err)
 	require.NotNil(t, served)
 }
@@ -117,7 +128,7 @@ func TestCoverCache_ReportsGamesWithNoCover(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	_, _, err := newCoverCache(t.TempDir()).fetch(db.Game{ID: 1, Title: "One", Data: "{}"}, coverBanner)
+	_, _, err := testCoverCache(t, t.TempDir()).fetch(db.Game{ID: 1, Title: "One", Data: "{}"}, coverBanner)
 	require.Error(t, err)
 }
 
@@ -130,7 +141,7 @@ func TestCoverCache_ReportsAFailedFetch(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	_, _, err := newCoverCache(dir).fetch(db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}, coverBanner)
+	_, _, err := testCoverCache(t, dir).fetch(db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}, coverBanner)
 	require.Error(t, err)
 
 	entries, _ := os.ReadDir(dir)
@@ -144,7 +155,7 @@ func TestCoverCache_LoadDeliversToTheCurrentGame(t *testing.T) {
 	defer app.Quit()
 	srv, _ := imageServer(t)
 
-	cache := newCoverCache(t.TempDir())
+	cache := testCoverCache(t, t.TempDir())
 	game := db.Game{ID: 1, Title: "One", Data: gameDataWithCover(srv.URL + "/bg.jpg")}
 
 	var delivered atomic.Int64

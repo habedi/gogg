@@ -70,7 +70,7 @@ func TestGameGallery_OpensOnTheGivenPicture(t *testing.T) {
 	var asked pathLog
 	base := storeStub(t, &asked)
 
-	gallery := newGameGallery(newCoverCache(t.TempDir()), test.NewWindow(nil))
+	gallery := newGameGallery(testCoverCache(t, t.TempDir()), test.NewWindow(nil))
 	pictures, selected := galleryPicturesFor(gameWithCover(base+"/cover"), shots(base, 4))
 	gallery.show(pictures, selected)
 
@@ -88,7 +88,7 @@ func TestGameGallery_ArrowKeysMoveThroughThePictures(t *testing.T) {
 	defer app.Quit()
 	base := storeStub(t, nil)
 
-	gallery := newGameGallery(newCoverCache(t.TempDir()), test.NewWindow(nil))
+	gallery := newGameGallery(testCoverCache(t, t.TempDir()), test.NewWindow(nil))
 	pictures, selected := galleryPicturesFor(gameWithCover(base+"/cover"), shots(base, 2))
 	gallery.show(pictures, selected)
 	require.Equal(t, 1, gallery.selected)
@@ -111,7 +111,7 @@ func TestGameGallery_TappingAThumbnailShowsIt(t *testing.T) {
 	defer app.Quit()
 	base := storeStub(t, nil)
 
-	gallery := newGameGallery(newCoverCache(t.TempDir()), test.NewWindow(nil))
+	gallery := newGameGallery(testCoverCache(t, t.TempDir()), test.NewWindow(nil))
 	pictures, selected := galleryPicturesFor(gameWithCover(base+"/cover"), shots(base, 4))
 	gallery.show(pictures, selected)
 
@@ -128,7 +128,7 @@ func TestGameGallery_HidesTheStripForASinglePicture(t *testing.T) {
 	defer app.Quit()
 	base := storeStub(t, nil)
 
-	gallery := newGameGallery(newCoverCache(t.TempDir()), test.NewWindow(nil))
+	gallery := newGameGallery(testCoverCache(t, t.TempDir()), test.NewWindow(nil))
 	gallery.show(galleryPicturesFor(gameWithCover(base+"/cover"), nil))
 	require.False(t, gallery.scroll.Visible())
 
@@ -142,7 +142,7 @@ func TestGameGallery_HidesItselfWithNoPictures(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	gallery := newGameGallery(newCoverCache(t.TempDir()), test.NewWindow(nil))
+	gallery := newGameGallery(testCoverCache(t, t.TempDir()), test.NewWindow(nil))
 	gallery.show(nil, 0)
 
 	require.False(t, gallery.viewer.Visible())
@@ -158,7 +158,7 @@ func TestGameGallery_DropsPicturesForThePreviousGame(t *testing.T) {
 	// arrives is answering the gallery as it was, not as it is.
 	base, release, dir := heldPictureServer(t)
 
-	gallery := newGameGallery(newCoverCache(dir), test.NewWindow(nil))
+	gallery := newGameGallery(testCoverCache(t, dir), test.NewWindow(nil))
 	gallery.show([]galleryPicture{{ThumbnailURL: base + "/one", LargeURL: base + "/one"}}, 0)
 	stale := gallery.thumbs[0]
 
@@ -228,7 +228,7 @@ func TestGameGallery_ArtworkFollowsThePaneWidth(t *testing.T) {
 	defer app.Quit()
 	base := storeStub(t, nil)
 
-	gallery := newGameGallery(newCoverCache(t.TempDir()), test.NewWindow(nil))
+	gallery := newGameGallery(testCoverCache(t, t.TempDir()), test.NewWindow(nil))
 	pictures, selected := galleryPicturesFor(gameWithCover(base+"/cover"), shots(base, 3))
 	gallery.show(pictures, selected)
 

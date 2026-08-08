@@ -784,6 +784,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		close: func() {
 			closed.Store(true)
 			metadata.close()
+			covers.close()
 			catalogueUpdated.RemoveListener(catalogueListener)
 			updateSettingsChanged.RemoveListener(settingsListener)
 		},

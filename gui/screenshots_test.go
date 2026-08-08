@@ -102,7 +102,7 @@ func TestShowPictures_FetchesTheLargeRendition(t *testing.T) {
 	dir := t.TempDir()
 	showPictures(test.NewWindow(nil), []galleryPicture{
 		{ThumbnailURL: base + "/thumb_112.jpg", LargeURL: base + "/large_748.jpg"},
-	}, 0, newCoverCache(dir))
+	}, 0, testCoverCache(t, dir))
 
 	require.Eventually(t, func() bool { return cachedFiles(dir) == 1 }, 5*time.Second, 20*time.Millisecond)
 	require.True(t, asked.contains("_748.jpg"))
@@ -149,7 +149,7 @@ func TestShowPictures_MovesLeftAndRight(t *testing.T) {
 	t.Cleanup(win.Close)
 
 	dir := t.TempDir()
-	showPictures(win, picturesFor(base, 3), 1, newCoverCache(dir))
+	showPictures(win, picturesFor(base, 3), 1, testCoverCache(t, dir))
 
 	overlay := win.Canvas().Overlays().Top()
 	require.NotNil(t, overlay)
@@ -192,7 +192,7 @@ func TestShowPictures_OffersSave(t *testing.T) {
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	showPictures(win, picturesFor(base, 2), 0, newCoverCache(t.TempDir()))
+	showPictures(win, picturesFor(base, 2), 0, testCoverCache(t, t.TempDir()))
 
 	overlay := win.Canvas().Overlays().Top()
 	require.NotNil(t, overlay)
@@ -215,7 +215,7 @@ func TestShowPictures_OnePictureOffersNoTravel(t *testing.T) {
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	showPictures(win, picturesFor(base, 1), 0, newCoverCache(t.TempDir()))
+	showPictures(win, picturesFor(base, 1), 0, testCoverCache(t, t.TempDir()))
 
 	overlay := win.Canvas().Overlays().Top()
 	require.NotNil(t, overlay)

@@ -70,7 +70,7 @@ Additionally, it allows users to perform the following actions:
 - Resume interrupted downloads and only download missing or newer files
 - Verify the integrity of downloaded files against the checksums GOG publishes
 - Arrange downloads in folder layouts that RomM and Lutris can use directly
-- Back up a game's GOG GALAXY cloud saves
+- Back up a game's GOG GALAXY cloud saves locally
 - Calculate the total size of the files to be downloaded (for storage planning)
 
 ---

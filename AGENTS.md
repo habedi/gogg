@@ -208,7 +208,9 @@ the suite race-free:
 - Cleanup order matters with gated servers: register `srv.Close` before the gate close, so the gate opens first
   and `Close` can finish. A `defer srv.Close()` above a gate cleanup deadlocks.
 - Every library or cache a test builds must be closed on cleanup (`lt.close`, `cache.close`), or its goroutines
-  outlive the test and touch the next test's database and widgets.
+  outlive the test and touch the next test's database and widgets. A cover cache in a test comes from
+  `testCoverCache`, which registers its close; `coverCache.close` cancels the fetches and waits out the
+  in-flight deliveries.
 - Tests that set a binding and then read the result run their body through `offMain`; Fyne only queues binding
   listeners when the caller is the main goroutine.
 - Assert on rendered widgets by walking with the helpers in `walk_test.go` (`buttonWithLabel`,
