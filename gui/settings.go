@@ -23,37 +23,41 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 	prefs := fyne.CurrentApp().Preferences()
 	a := fyne.CurrentApp()
 
-	// --- Theme Settings ---
+	// applyTheme rebuilds the theme after any appearance preference changes.
+	applyTheme := func() { a.Settings().SetTheme(CreateThemeFromPreferences()) }
+
+	// --- Appearance ---
 	themeRadio := widget.NewRadioGroup([]string{"System Default", "Light", "Dark"}, func(selected string) {
 		prefs.SetString("theme", selected)
-		a.Settings().SetTheme(CreateThemeFromPreferences())
+		applyTheme()
 	})
+	themeRadio.Horizontal = true
 	themeRadio.SetSelected(prefs.StringWithFallback("theme", "System Default"))
 
-	themeBox := container.NewVBox(widget.NewLabel("UI Theme"), themeRadio)
+	accentSelect := widget.NewSelect(accentNames, func(selected string) {
+		prefs.SetString(prefAccentColor, selected)
+		applyTheme()
+	})
+	accentSelect.SetSelected(prefs.StringWithFallback(prefAccentColor, accentNames[0]))
 
-	// --- Font Settings ---
-	fontOptions := []string{
-		"System Default",
-		"JetBrains Mono",
-		"JetBrains Mono Bold",
-	}
-	fontSelect := widget.NewSelect(fontOptions, func(selected string) {
+	fontSelect := widget.NewSelect([]string{"System Default", "JetBrains Mono", "JetBrains Mono Bold"}, func(selected string) {
 		prefs.SetString("fontName", selected)
-		a.Settings().SetTheme(CreateThemeFromPreferences())
+		applyTheme()
 	})
 	fontSelect.SetSelected(prefs.StringWithFallback("fontName", "System Default"))
 
 	fontSizeSelect := widget.NewSelect([]string{"Small", "Normal", "Large", "Extra Large"}, func(s string) {
 		prefs.SetString("fontSize", s)
-		a.Settings().SetTheme(CreateThemeFromPreferences())
+		applyTheme()
 	})
 	fontSizeSelect.SetSelected(prefs.StringWithFallback("fontSize", "Normal"))
 
-	fontBox := container.NewVBox(
-		widget.NewLabel("Font Family"), fontSelect,
-		widget.NewLabel("Font Size"), fontSizeSelect,
-	)
+	appearanceCard := widget.NewCard("Appearance", "", widget.NewForm(
+		widget.NewFormItem("Theme", themeRadio),
+		widget.NewFormItem("Accent Color", accentSelect),
+		widget.NewFormItem("Font Family", fontSelect),
+		widget.NewFormItem("Font Size", fontSizeSelect),
+	))
 
 	// --- Sound Settings ---
 	soundCheck := widget.NewCheck("Play sound on download completion", func(checked bool) {
@@ -72,6 +76,7 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 	sweepCheck.SetChecked(prefs.BoolWithFallback(prefMetadataSweep, true))
 
 	soundPathLabel := widget.NewLabel("")
+	soundPathLabel.Truncation = fyne.TextTruncateEllipsis
 	soundStatusLabel := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
 	validateSoundPath := func(path string) {
@@ -135,13 +140,17 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 		go PlayNotificationSound()
 	})
 
-	soundConfigBox := container.NewVBox(
-		widget.NewLabel("Current sound file:"),
-		soundPathLabel,
+	soundTip := widget.NewLabelWithStyle("Tip: Use short audio clips (2-5 seconds) for best results",
+		fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+	notificationsCard := widget.NewCard("Notifications", "", container.NewVBox(
+		notifyCheck,
+		soundCheck,
+		widget.NewSeparator(),
+		widget.NewForm(widget.NewFormItem("Sound File", soundPathLabel)),
 		soundStatusLabel,
-		widget.NewLabelWithStyle("Tip: Use short audio clips (2-5 seconds) for best results", fyne.TextAlignLeading, fyne.TextStyle{Italic: true}),
+		soundTip,
 		container.NewHBox(selectSoundBtn, resetSoundBtn, testSoundBtn),
-	)
+	))
 
 	// --- Download Limits ---
 	maxConcSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) {
@@ -185,7 +194,7 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 		prefs.SetInt(prefMaxSpeedKBps, val)
 		applySpeedLimit(val)
 	}
-	limitsBox := container.NewVBox(widget.NewLabel("Download Limits"), widget.NewForm(
+	downloadsCard := widget.NewCard("Downloads", "", widget.NewForm(
 		widget.NewFormItem("Max Concurrent", maxConcSelect),
 		widget.NewFormItem("Speed Limit (KB/s)", speedEntry),
 	))
@@ -195,8 +204,9 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 	// the settings rather than behind a button in the library toolbar. The
 	// library is told, because what it worked out under the old rules is no
 	// longer the answer.
-	updateChecks := make([]fyne.CanvasObject, 0, 5)
-	updateChecks = append(updateChecks, widget.NewLabel("Update Detection"))
+	updateChecks := make([]fyne.CanvasObject, 0, 6)
+	updateChecks = append(updateChecks, sweepCheck, widget.NewSeparator(),
+		widget.NewLabelWithStyle("Update detection", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	for _, option := range []struct {
 		label    string
 		pref     string
@@ -215,32 +225,26 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 		check.SetChecked(prefs.BoolWithFallback(key, option.fallback))
 		updateChecks = append(updateChecks, check)
 	}
-	updatesBox := container.NewVBox(updateChecks...)
+	libraryCard := widget.NewCard("Library", "", container.NewVBox(updateChecks...))
 
 	// --- Layout ---
+	// One card per concern, in the order of how often each is wanted:
+	// looks, then noise, then limits, then the library's bookkeeping, and
+	// the way out of the account last.
 	sections := []fyne.CanvasObject{
-		themeBox,
-		widget.NewSeparator(),
-		fontBox,
-		widget.NewSeparator(),
-		soundCheck,
-		notifyCheck,
-		sweepCheck,
-		soundConfigBox,
-		widget.NewSeparator(),
-		limitsBox,
-		widget.NewSeparator(),
-		updatesBox,
+		appearanceCard,
+		notificationsCard,
+		downloadsCard,
+		libraryCard,
 	}
 	if account := accountBox(win, st, onSignOut); account != nil {
-		sections = append(sections, widget.NewSeparator(), account)
+		sections = append(sections, account)
 	}
-	mainCard := widget.NewCard("Settings", "", container.NewVBox(sections...))
 
 	// The settings are taller than the window gogg opens at. Centred and fixed
 	// in place, the download limits sat below the bottom edge with no way to
 	// reach them, so the tab scrolls.
-	return container.NewVScroll(container.NewCenter(mainCard))
+	return container.NewVScroll(container.NewCenter(container.NewVBox(sections...)))
 }
 
 const prefMaxSpeedKBps = "download.maxSpeedKBps"
@@ -285,5 +289,5 @@ func accountBox(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObject 
 			}, win)
 	})
 
-	return container.NewVBox(widget.NewLabel("Account"), container.NewHBox(signOut))
+	return widget.NewCard("Account", "", container.NewHBox(signOut))
 }

@@ -46,10 +46,54 @@ func over(fill, background color.Color) color.Color {
 	return color.NRGBA{R: blend(fr, br), G: blend(fg, bg), B: blend(fb, bb), A: 0xff}
 }
 
-// Text must stay readable in both themes: on the plain background, on the
-// purple accent, and on a selected row. The 4.5 floor is WCAG AA for normal
-// text.
+// Text must stay readable in both themes and under every accent hue: on the
+// plain background, on the accent, and on a selected row. The 4.5 floor is
+// WCAG AA for normal text.
 func TestThemeContrast(t *testing.T) {
+	for _, hue := range accentNames {
+		for _, tc := range []struct {
+			name    string
+			variant fyne.ThemeVariant
+		}{
+			{"light", theme.VariantLight},
+			{"dark", theme.VariantDark},
+		} {
+			t.Run(hue+"_"+tc.name, func(t *testing.T) {
+				gogg := &GoggTheme{Theme: theme.DefaultTheme(), variant: &tc.variant, accent: accentByName(hue)}
+				pick := func(name fyne.ThemeColorName) color.Color {
+					// The variant argument is the system's; the forced variant
+					// must win regardless, so the opposite one is passed in.
+					opposite := theme.VariantLight
+					if tc.variant == theme.VariantLight {
+						opposite = theme.VariantDark
+					}
+					return gogg.Color(name, opposite)
+				}
+
+				background := pick(theme.ColorNameBackground)
+				foreground := pick(theme.ColorNameForeground)
+				primary := pick(theme.ColorNamePrimary)
+				onPrimary := pick(theme.ColorNameForegroundOnPrimary)
+				hyperlink := pick(theme.ColorNameHyperlink)
+				selection := pick(theme.ColorNameSelection)
+
+				require.GreaterOrEqual(t, contrast(foreground, background), 4.5,
+					"plain text on the plain background")
+				require.GreaterOrEqual(t, contrast(onPrimary, primary), 4.5,
+					"text on the accent, such as the download button's label")
+				require.GreaterOrEqual(t, contrast(hyperlink, background), 4.5,
+					"links on the plain background")
+				require.GreaterOrEqual(t, contrast(foreground, over(selection, background)), 4.5,
+					"text on a selected row, where the accent tint sits behind it")
+			})
+		}
+	}
+}
+
+// Borders and separators are not text, but they still have to be seen: 3.0
+// is the WCAG floor for component boundaries, and separators stay above a
+// softer floor that keeps them visible without shouting.
+func TestThemeBorders(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		variant fyne.ThemeVariant
@@ -59,33 +103,30 @@ func TestThemeContrast(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gogg := &GoggTheme{Theme: theme.DefaultTheme(), variant: &tc.variant}
-			pick := func(name fyne.ThemeColorName) color.Color {
-				// The variant argument is the system's; the forced variant
-				// must win regardless, so the opposite one is passed in.
-				opposite := theme.VariantLight
-				if tc.variant == theme.VariantLight {
-					opposite = theme.VariantDark
-				}
-				return gogg.Color(name, opposite)
-			}
+			background := gogg.Color(theme.ColorNameBackground, tc.variant)
+			inputBackground := gogg.Color(theme.ColorNameInputBackground, tc.variant)
+			border := gogg.Color(theme.ColorNameInputBorder, tc.variant)
+			separator := gogg.Color(theme.ColorNameSeparator, tc.variant)
 
-			background := pick(theme.ColorNameBackground)
-			foreground := pick(theme.ColorNameForeground)
-			primary := pick(theme.ColorNamePrimary)
-			onPrimary := pick(theme.ColorNameForegroundOnPrimary)
-			hyperlink := pick(theme.ColorNameHyperlink)
-			selection := pick(theme.ColorNameSelection)
-
-			require.GreaterOrEqual(t, contrast(foreground, background), 4.5,
-				"plain text on the plain background")
-			require.GreaterOrEqual(t, contrast(onPrimary, primary), 4.5,
-				"text on the accent, such as the download button's label")
-			require.GreaterOrEqual(t, contrast(hyperlink, background), 4.5,
-				"links on the plain background")
-			require.GreaterOrEqual(t, contrast(foreground, over(selection, background)), 4.5,
-				"text on a selected row, where the accent tint sits behind it")
+			require.GreaterOrEqual(t, contrast(border, background), 3.0,
+				"an input's outline against the page")
+			require.GreaterOrEqual(t, contrast(border, inputBackground), 3.0,
+				"and against the input's own fill")
+			require.GreaterOrEqual(t, contrast(separator, background), 1.6,
+				"separators divide, so they have to be seen dividing")
 		})
 	}
+}
+
+// Picking a hue in the settings is what changes the accent.
+func TestThemeAccentFollowsThePreference(t *testing.T) {
+	blue := &GoggTheme{Theme: theme.DefaultTheme(), accent: accentByName("Blue")}
+	purple := &GoggTheme{Theme: theme.DefaultTheme()}
+	require.NotEqual(t,
+		blue.Color(theme.ColorNamePrimary, theme.VariantLight),
+		purple.Color(theme.ColorNamePrimary, theme.VariantLight))
+	require.Equal(t, accentByName("Purple"), accentByName("no such hue"),
+		"an unknown stored hue falls back to the default")
 }
 
 // The accent is purple in both variants, not the blue it used to be: more

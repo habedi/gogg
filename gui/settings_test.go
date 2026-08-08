@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
@@ -231,4 +232,36 @@ func TestSettings_CarriesTheUpdateDetectionOptions(t *testing.T) {
 		"Include extras in update check", "Include DLCs in update check",
 		"Include patches", "Scan folders when history missing",
 	})
+}
+
+// The accent hue is picked in the settings, applies at once, and comes back
+// on the next start through CreateThemeFromPreferences.
+func TestSettings_AccentHueAppliesAndSticks(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	defer win.Close()
+
+	ui := SettingsTabUI(win, openStores(), func() {})
+
+	var accent *widget.Select
+	for _, s := range widgetsOfType[*widget.Select](ui) {
+		if len(s.Options) > 0 && s.Options[0] == "Purple" {
+			accent = s
+		}
+	}
+	require.NotNil(t, accent, "the settings offer the accent hues")
+	require.Equal(t, accentNames, accent.Options)
+	require.Equal(t, "Purple", accent.Selected, "purple stays the default")
+
+	accent.SetSelected("Teal")
+	require.Equal(t, "Teal", app.Preferences().String(prefAccentColor))
+
+	applied := app.Settings().Theme()
+	require.Equal(t, applied.Color(theme.ColorNamePrimary, theme.VariantLight),
+		accentByName("Teal").deep, "picking a hue recolors the app at once")
+
+	rebuilt := CreateThemeFromPreferences()
+	require.Equal(t, rebuilt.Color(theme.ColorNamePrimary, theme.VariantLight),
+		accentByName("Teal").deep, "and the next start reads it back")
 }
