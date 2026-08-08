@@ -67,14 +67,15 @@ Gogg has real users. The following must stay backward compatible:
 ## Repository Layout
 
 - `main.go`: Entry point; initializes the database and delegates to `cmd.Execute`.
-- `cmd/`: Cobra command definitions (`cli.go`, `download.go`, `catalogue.go`, `login.go`, `version.go`, `file.go`,
-  `gui.go`). Each command wires flags and calls into `client/` or `db/`.
+- `cmd/`: Cobra command definitions (`cli.go`, `download.go`, `saves.go`, `catalogue.go`, `login.go`,
+  `version.go`, `file.go`, `gui.go`). Each command wires flags and calls into `client/` or `db/`.
 - `client/`: GOG API client; contains `login.go` (OAuth via chromedp), `games.go` (owned-game listing),
   `catalogue.go` (sync), `products.go` (owned-products listing with artwork and purchase order),
   `download.go` (file downloads with progress and the `files.json` manifest), `parallel.go` (range connections
   within one file), `checksum.go` (verification against GOG's published MD5), `stall.go` (the silence watchdog),
-  `lutris.go` (the Lutris slug and cache layout), `prune.go` (old-installer removal), `metadata.go` (store-page
-  lookups), `data.go` (data parsing), and `rate_limiter.go` (request throttling).
+  `lutris.go` (the Lutris slug and cache layout), `cloudsaves.go` (read-only Galaxy cloud save backup),
+  `prune.go` (old-installer removal), `metadata.go` (store-page lookups), `data.go` (data parsing), and
+  `rate_limiter.go` (request throttling).
 - `auth/`: Authentication service and interfaces wrapping GOG OAuth token lifecycle.
 - `db/`: GORM/SQLite persistence; contains `db.go` (connection setup), `game.go` (game model), `token.go` (token
   model), `tag.go` (user marks such as favorite and hidden), `metadata.go` (stored store-page lookups), and
