@@ -68,7 +68,9 @@ Additionally, it allows users to perform the following actions:
 - Filter files to be downloaded by platform, language, and other attributes like content type
 - Download files using multiple threads to speed up the process
 - Resume interrupted downloads and only download missing or newer files
-- Verify the integrity of downloaded files by calculating their hashes
+- Verify the integrity of downloaded files against the checksums GOG publishes
+- Arrange downloads in folder layouts that RomM and Lutris can use directly
+- Back up a game's GOG GALAXY cloud saves
 - Calculate the total size of the files to be downloaded (for storage planning)
 
 ---
@@ -81,8 +83,8 @@ Run `gogg -h` to see the available commands and options.
 
 > [!NOTE]
 > * Since version `0.4.1`, Gogg has a GUI besides its command line interface (CLI).
-> The GUI is still in the early stages of development and does not support all the features of the CLI and may have
-> bugs.
+> The GUI supports the features of the CLI and adds a searchable library with covers, collections, download
+> management, and cloud save backup.
 > To start the GUI, run `gogg gui`.
 > * Since version `0.4.2`, there are Docker images available for Gogg.
 > See the [documentation](docs/README.md#containerization) for more information.

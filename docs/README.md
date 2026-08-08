@@ -140,10 +140,18 @@ The `download` command supports the following additional options:
 - `--extras`: Include extra files in the download like soundtracks, wallpapers, etc. (default is true)
 - `--resume`: Resume interrupted downloads (default is true)
 - `--threads`: Number of worker threads to use for downloading (default is 5)
+- `--connections`: Number of connections per file (1 to 8, default is 1); more than one splits a large file into
+  ranges downloaded at once, which can speed up download for large files
 - `--flatten`: Flatten the directory structure of the downloaded files (default is true)
 - `--skip-patches`: Skip patches when downloading (default is false)
 - `--keep-latest`: After a successful download, remove older installer versions and keep only the latest version (default is false)
 - `--romm`: Use RomM compatible folder layout `platform/game` for better integration with ROM Manager (default is false)
+- `--lutris`: Use Lutris compatible folder layout `game-slug/gog` (default is false); pointed at Lutris's
+  installer cache directory, this lets Lutris reuse the downloaded files instead of fetching them again
+
+Downloads are verified when possible.
+For installers and patches, Gogg compares the checksum of what arrived against the MD5 that GOG publishes for the file, deletes a mismatched file, and tries again.
+Every completed download is recorded in a `files.json` manifest next to `metadata.json`, with exact sizes, checksums, and timestamps.
 
 > [!NOTE]
 > The `--keep-latest` flag scans downloaded installer files whose names contain a version-like pattern of digits separated by dots (like `game_installer_1.2.3.exe`).
@@ -159,9 +167,55 @@ gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --ex
 --resume=true --threads=5 --flatten=true --keep-latest=true
 ```
 
+#### Backing up Cloud Saves
+
+The `saves` command downloads a game's GOG GALAXY cloud saves into a local directory.
+It only reads from the cloud (with no changes or deleting of what GOG stores).
+It can be used to back up the GOG GALAXY's save files locally.
+
+```sh
+gogg saves <game_id> <output_dir>
+```
+
+When `<output_dir>` is omitted and `download_dir` is set in the configuration file, the saves land under
+`<download_dir>/saves/<game>`.
+The files keep the folder layout of the cloud storage and the modification times GALAXY recorded for them.
+A game that has no cloud saves, which includes every game never played through GOG GALAXY, is reported as such.
+
+The `--platform` flag says which platform's build carries the game's cloud credentials (default is windows).
+
 ---
 
 ### Configuration
+
+#### Configuration File
+
+Gogg reads default values for the download flags from `~/.config/gogg/config.json`
+(`%AppData%\gogg\config.json` on Windows).
+Every value acts as a flag default, and a flag given on the command line always wins.
+All keys are optional; this example shows every supported key with its built-in default:
+
+```json
+{
+  "language": "en",
+  "platform": "windows",
+  "download_dir": "",
+  "extras": true,
+  "dlcs": true,
+  "resume": true,
+  "threads": 5,
+  "connections": 1,
+  "flatten": true,
+  "skip_patches": false,
+  "keep_latest": false,
+  "romm_layout": false,
+  "lutris_layout": false
+}
+```
+
+When `download_dir` is set, the `download` and `saves` commands can be run without a directory argument.
+
+#### Data Directory
 
 You can customize where Gogg stores its data (like the game database and download history) using environment variables.
 The location is determined with the following priority:
@@ -194,7 +248,8 @@ $env:GOGG_HOME = "D:\GoggData"; gogg catalogue list
 
 ### GUI
 
-Since version `0.4.1`, Gogg has a GUI that provides most of the features of Gogg's CLI.
+Since version `0.4.1`, Gogg has a GUI that provides the features of Gogg's CLI, along with a searchable
+library with covers, collections, download management, and cloud save backup.
 The GUI can be started by running `gogg gui` from the command line.
 
 ---
@@ -271,7 +326,7 @@ docker run --rm \
 If you encounter "permission denied" errors when setting up these storage folders:
 
 1. Check that the user running Docker on your computer has permission to write to the host paths you've specified.
-2. Make sure that the container's `gogg` user (which is not the root user) has the same user's ID and group
+2. Make sure that the container's `gogg` user (who is not the root user) has the same user's ID and group
    ID as your host user.
    You can do this by adding `--user <YOUR_HOST_UID>:<YOUR_HOST_GID>` to your `docker run` command (for example,
    `--user 1000:1000` for a typical Linux user).

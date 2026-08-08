@@ -95,4 +95,11 @@ else
     echo -e "\033[0;33mSkipping login test as the command doesn't exist${NC}"
 fi
 
+# Test: saves command (cloud save backup)
+if $GOGG --help | grep -q "saves"; then
+    run_test "Saves help" "$GOGG saves --help"
+else
+    echo -e "\033[0;33mSkipping saves test as the command doesn't exist${NC}"
+fi
+
 echo -e "\n${GREEN}=== All tests completed ===${NC}"
