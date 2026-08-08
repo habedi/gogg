@@ -74,3 +74,54 @@ func bindSelect(sel *widget.Select, options []string, wanted string, onChanged f
 	sel.OnChanged = onChanged
 	sel.Refresh()
 }
+
+// platformGroupChoices is platformChoices without "all": in a set of check
+// boxes, all is every box ticked.
+func platformGroupChoices(offered []string) []string {
+	choices := platformChoices(offered)
+	return choices[:len(choices)-1]
+}
+
+// bindCheckGroup points a check group at a new set of options, keeping of the
+// wanted values the ones the game offers. The change handler is detached
+// first, for the reason bindSelect gives. When nothing wanted is on offer,
+// the first option is ticked: a download needs at least one of everything.
+func bindCheckGroup(group *widget.CheckGroup, options, wanted []string, onChanged func([]string)) {
+	group.OnChanged = nil
+	group.Options = options
+	kept := make([]string, 0, len(wanted))
+	for _, want := range wanted {
+		if slices.Contains(options, want) {
+			kept = append(kept, want)
+		}
+	}
+	if len(kept) == 0 && len(options) > 0 {
+		kept = options[:1]
+	}
+	group.SetSelected(kept)
+	group.OnChanged = onChanged
+	group.Refresh()
+}
+
+// languageNamesFor turns stored comma-joined codes back into display names,
+// dropping codes gogg no longer knows.
+func languageNamesFor(codes string) []string {
+	names := make([]string, 0, 2)
+	for _, code := range splitCSV(codes) {
+		if name, ok := client.GameLanguages[code]; ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// splitCSV reads a comma-joined preference back into its values.
+func splitCSV(joined string) []string {
+	values := make([]string, 0, 2)
+	for _, part := range strings.Split(joined, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
+}

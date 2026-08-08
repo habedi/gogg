@@ -231,6 +231,26 @@ func TestDebounced_RunsOnceTheChangesRest(t *testing.T) {
 		200*time.Millisecond, 20*time.Millisecond)
 }
 
+// Enter on the focused list or grid downloads what is selected: the last step
+// of a flow the arrow keys and space already carry.
+func TestLibrary_EnterDownloadsTheSelectedGame(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 2)
+	started := 0
+	lt.pane.form.download = func() { started++ }
+
+	grid := widgetsOfType[*activatableGrid](lt.content)[0]
+	grid.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	require.Equal(t, 1, started, "Enter on the grid starts the download")
+
+	iconButtonWithTip(lt.content, tipShowList).OnTapped()
+	list := widgetsOfType[*activatableList](lt.content)[0]
+	list.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEnter})
+	require.Equal(t, 2, started, "and on the list, either Enter key")
+}
+
 // Escape is the way out of a filter: it clears the box and brings the whole
 // catalogue back.
 func TestSearchBox_EscapeClearsTheSearch(t *testing.T) {

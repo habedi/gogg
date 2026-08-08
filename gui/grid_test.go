@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
@@ -69,16 +68,16 @@ func TestLibraryTab_OpensOnTheGridAndCanSwitchToTheList(t *testing.T) {
 
 	toggle := iconButtonWithTip(lt.content, tipShowList)
 	require.NotNil(t, toggle, "a fresh library opens on the covers")
-	grids := widgetsOfType[*widget.GridWrap](lt.content)
+	grids := widgetsOfType[*activatableGrid](lt.content)
 	require.Len(t, grids, 1)
 	require.Equal(t, 3, grids[0].Length())
 
 	toggle.OnTapped()
-	require.Empty(t, widgetsOfType[*widget.GridWrap](lt.content))
+	require.Empty(t, widgetsOfType[*activatableGrid](lt.content))
 	require.Equal(t, tipShowCovers, toggle.tip, "the button offers the way back")
 
 	toggle.OnTapped()
-	require.Len(t, widgetsOfType[*widget.GridWrap](lt.content), 1)
+	require.Len(t, widgetsOfType[*activatableGrid](lt.content), 1)
 }
 
 // The chosen view is how the library looks next time it opens.
@@ -100,7 +99,7 @@ func TestLibraryTab_GridFollowsTheSearch(t *testing.T) {
 
 	lt, _ := newLibraryFixture(t, 3)
 
-	grid := widgetsOfType[*widget.GridWrap](lt.content)[0]
+	grid := widgetsOfType[*activatableGrid](lt.content)[0]
 	require.Equal(t, 3, grid.Length())
 
 	lt.searchEntry.SetText("Game 1")
@@ -145,7 +144,7 @@ func TestLibraryTab_SelectingInTheGridShowsTheGame(t *testing.T) {
 
 	lt, _ := newLibraryFixture(t, 3)
 
-	grid := widgetsOfType[*widget.GridWrap](lt.content)[0]
+	grid := widgetsOfType[*activatableGrid](lt.content)[0]
 	require.NotNil(t, grid.OnSelected, "the grid must report what was clicked")
 
 	grid.OnSelected(0)

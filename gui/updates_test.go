@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,11 +102,20 @@ func newUpdatableLibrary(t *testing.T) *libraryTab {
 	prefs.SetString("downloadForm.language", "en")
 	prefs.SetString("downloadForm.platform", "windows")
 
+	// No test may reach the real store API, and nothing may land mid-test.
+	if os.Getenv("GOGG_API_BASE") == "" {
+		t.Setenv("GOGG_API_BASE", hangingStoreStub(t))
+	}
+
 	updateStatusCache = make(map[int]updateStatus)
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	return LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()}, func() {})
+	lt := LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()}, func() {})
+	// Closed with the test, or its background lookups outlive it and land in
+	// the next test's library.
+	t.Cleanup(lt.close)
+	return lt
 }
 
 func TestLibraryTab_OffersToUpdateEverythingThatHasOne(t *testing.T) {
@@ -155,7 +165,7 @@ func newUndownloadedLibrary(t *testing.T, games int) (*libraryTab, *DownloadMana
 	cacheRoot = func() string { return cache }
 	t.Cleanup(func() { cacheRoot = original })
 	if os.Getenv("GOGG_API_BASE") == "" {
-		t.Setenv("GOGG_API_BASE", storeStub(t, nil))
+		t.Setenv("GOGG_API_BASE", hangingStoreStub(t))
 	}
 
 	updateStatusCache = make(map[int]updateStatus)
@@ -163,7 +173,9 @@ func newUndownloadedLibrary(t *testing.T, games int) (*libraryTab, *DownloadMana
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	return LibraryTabUI(win, nil, dm, func() {}), dm
+	lt := LibraryTabUI(win, nil, dm, func() {})
+	t.Cleanup(lt.close)
+	return lt, dm
 }
 
 // A download finishing changes what a game is, so the collections beside the
@@ -330,4 +342,84 @@ func TestLibraryTab_CloseStopsItFollowingTheCatalogue(t *testing.T) {
 		require.NotContains(t, labelTexts(lt.content), "Checking downloads...",
 			"a library that has been replaced does not")
 	})
+}
+
+// A refresh that brought updates is news: it is announced once the statuses
+// are known, naming the games. One that brought none stays quiet.
+func TestLibrary_RefreshAnnouncesWaitingUpdates(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		refreshes := captureRefreshes(t)
+		lt := newUpdatableLibrary(t)
+
+		require.Nil(t, topOverlay(t), "building the library is not a refresh, and says nothing")
+
+		test.Tap(iconButtonWithTip(lt.content, tipRefresh))
+		refreshes.finish()
+
+		overlay := topOverlay(t)
+		require.NotNil(t, overlay, "a refresh that found updates says so")
+		texts := labelTexts(overlay)
+		joined := strings.Join(texts, "\n")
+		require.Contains(t, joined, "new files since being downloaded")
+	})
+}
+
+// A refresh that changes nothing does not open a dialog to say so.
+func TestLibrary_QuietRefreshStaysQuiet(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		refreshes := captureRefreshes(t)
+		lt, _ := newLibraryFixture(t, 2)
+
+		test.Tap(iconButtonWithTip(lt.content, tipRefresh))
+		refreshes.finish()
+
+		require.Nil(t, topOverlay(t), "nothing changed, nothing to say")
+	})
+}
+
+// An update carries the day gogg first noticed it, so the library can be
+// asked for what changed recently.
+func TestLibrary_FiltersByWhenAnUpdateWasNoticed(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt := newUpdatableLibrary(t)
+
+	lt.searchEntry.SetText("updated:>1d")
+	require.Len(t, lt.listed(), 1, "an update noticed today is recent")
+
+	lt.searchEntry.SetText("updated:<1d")
+	require.Empty(t, lt.listed(), "nothing has waited longer than a day")
+}
+
+// The same update seen again keeps the day it was first noticed; a different
+// one gets its own.
+func TestApplyStatuses_KeepsTheFirstNoticedDate(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	updateStatusCache = map[int]updateStatus{}
+	t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
+
+	applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: a"}}})
+	first := updateStatusCache[1].ChangedAt
+	require.False(t, first.IsZero(), "an update is stamped when it is noticed")
+
+	applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: a"}}})
+	require.True(t, updateStatusCache[1].ChangedAt.Equal(first),
+		"the same update seen again is not news again")
+
+	time.Sleep(2 * time.Millisecond)
+	applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: b"}}})
+	require.True(t, updateStatusCache[1].ChangedAt.After(first),
+		"a different update is fresh news")
+
+	applyStatuses(gameStatuses{1: {Downloaded: true}})
+	require.True(t, updateStatusCache[1].ChangedAt.IsZero(),
+		"a downloaded update takes its date with it")
 }

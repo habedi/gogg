@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -223,6 +226,25 @@ func DownloadGameFiles(
 	// Serialize all progress JSON output
 	sw := &syncWriter{w: updateWriter, mu: &sync.Mutex{}}
 
+	// The metadata and the file manifest belong with the files they describe.
+	// Under the RomM layout those live in <root>/<platform>/<game>; with "all"
+	// they are spread across platforms, so it stays at the top level.
+	manifestDir := filepath.Join(downloadPath, SanitizePath(game.Title))
+	if rommLayout {
+		if plat := strings.ToLower(strings.TrimSpace(platformName)); plat != "" && plat != "all" {
+			manifestDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
+		}
+	}
+
+	// What this run brought, for the manifest written at the end.
+	var manifestMu sync.Mutex
+	var broughtFiles []DownloadedFile
+	recordFile := func(entry DownloadedFile) {
+		manifestMu.Lock()
+		defer manifestMu.Unlock()
+		broughtFiles = append(broughtFiles, entry)
+	}
+
 	totalDownloadSize, err := game.EstimateStorageSize(gameLanguage, platformName, extrasFlag, dlcFlag)
 	if err != nil {
 		return fmt.Errorf("failed to estimate total download size: %w", err)
@@ -422,7 +444,7 @@ func DownloadGameFiles(
 				}
 				_ = os.Remove(activeFile)
 			}
-			return fmt.Errorf("failed to download %s: HTTP %d", fileName, getResp.StatusCode)
+			return fmt.Errorf("failed to download %s: %w", fileName, &httpStatusError{status: getResp.StatusCode})
 		}
 
 		// If the server ignored Range and returned 200, make sure we start from the beginning
@@ -441,6 +463,30 @@ func DownloadGameFiles(
 			defer func() { _ = file.Close() }()
 			startOffset = 0
 		}
+		// The checksum is computed as the bytes stream past. A resumed download
+		// already holds a prefix, which is read back through the hash first; a
+		// prefix that cannot be read leaves the checksum unrecorded rather than
+		// recorded wrong.
+		hasher := md5.New()
+		if startOffset > 0 {
+			activeFile := filePath
+			if usingPartFile {
+				activeFile = partPath
+			}
+			prior, hashErr := os.Open(activeFile)
+			if hashErr == nil {
+				_, hashErr = io.Copy(hasher, io.LimitReader(prior, startOffset))
+				_ = prior.Close()
+			}
+			if hashErr != nil {
+				hasher = nil
+			}
+		}
+		var sink io.Writer = file
+		if hasher != nil {
+			sink = io.MultiWriter(file, hasher)
+		}
+
 		limitedBody := wrapWithGlobalRateLimiter(getResp.Body)
 		progressReader := &progressReader{
 			reader:    limitedBody,
@@ -451,7 +497,7 @@ func DownloadGameFiles(
 		}
 
 		buffer := make([]byte, 32*1024)
-		nWritten, err := io.CopyBuffer(file, progressReader, buffer)
+		nWritten, err := io.CopyBuffer(sink, progressReader, buffer)
 		if err != nil {
 			// Tolerate ErrUnexpectedEOF if we actually received the exact expected remaining bytes
 			if errors.Is(err, io.ErrUnexpectedEOF) && totalSize > 0 {
@@ -487,7 +533,45 @@ func DownloadGameFiles(
 				return fmt.Errorf("failed to finalize %s: %w", fileName, err)
 			}
 		}
+
+		sum := ""
+		if hasher != nil {
+			sum = hex.EncodeToString(hasher.Sum(nil))
+		}
+		relPath := filePath
+		if rel, relErr := filepath.Rel(manifestDir, filePath); relErr == nil && !strings.HasPrefix(rel, "..") {
+			relPath = rel
+		}
+		recordFile(DownloadedFile{
+			Path:         relPath,
+			SizeBytes:    startOffset + nWritten,
+			MD5:          sum,
+			DownloadedAt: time.Now().UTC(),
+		})
 		return nil
+	}
+
+	// Transient failures are retried with a pause: a download hours in is not
+	// abandoned over one dropped connection. With resume on, an attempt picks
+	// up where the last one stopped.
+	downloadWithRetry := func(ctx context.Context, task downloadTask) error {
+		var err error
+		for attempt := 1; attempt <= downloadAttempts; attempt++ {
+			if attempt > 1 {
+				log.Warn().Str("file", task.fileName).Int("attempt", attempt).Err(err).
+					Msg("Retrying download after a transient failure")
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(RetryDelay << (attempt - 2)):
+				}
+			}
+			err = downloadFile(ctx, task)
+			if err == nil || isCancellation(err) || !isRetryable(err) {
+				return err
+			}
+		}
+		return err
 	}
 
 	var tasks []downloadTask
@@ -527,7 +611,7 @@ func DownloadGameFiles(
 		return enqueueErr
 	}
 
-	downloadErrors := pool.Run(ctx, tasks, numThreads, downloadFile)
+	downloadErrors := pool.Run(ctx, tasks, numThreads, downloadWithRetry)
 
 	if len(downloadErrors) > 0 {
 		for _, err := range downloadErrors {
@@ -542,26 +626,66 @@ func DownloadGameFiles(
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
-		// The metadata belongs with the files it describes. Under the RomM
-		// layout those live in <root>/<platform>/<game>; with "all" they are
-		// spread across platforms, so it stays at the top level.
-		metadataDir := filepath.Join(downloadPath, SanitizePath(game.Title))
-		if rommLayout {
-			if plat := strings.ToLower(strings.TrimSpace(platformName)); plat != "" && plat != "all" {
-				metadataDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
-			}
-		}
-		metadataPath := filepath.Join(metadataDir, "metadata.json")
+		metadataPath := filepath.Join(manifestDir, "metadata.json")
 		metadata, err := json.MarshalIndent(game, "", "  ")
 		if err == nil {
 			if ensureDirExists(filepath.Dir(metadataPath)) == nil {
 				_ = os.WriteFile(metadataPath, metadata, 0644)
 			}
 		}
+		manifestMu.Lock()
+		brought := append([]DownloadedFile{}, broughtFiles...)
+		manifestMu.Unlock()
+		writeFileManifest(filepath.Join(manifestDir, "files.json"), brought)
 	}
 
 	log.Info().Msg("Download process completed.")
 	return nil
+}
+
+// DownloadedFile is one file a download brought, as files.json beside
+// metadata.json records it: where it landed, exactly how many bytes it is,
+// the MD5 of what streamed in, and when. The checksum is of what was written,
+// so a file can later be told apart from what it was.
+type DownloadedFile struct {
+	Path         string    `json:"path"` // relative to the game's folder when under it
+	SizeBytes    int64     `json:"size_bytes"`
+	MD5          string    `json:"md5,omitempty"`
+	DownloadedAt time.Time `json:"downloaded_at"`
+}
+
+// writeFileManifest records what this run downloaded, keeping the entries of
+// files earlier runs brought and this one skipped.
+func writeFileManifest(path string, fresh []DownloadedFile) {
+	entries := make(map[string]DownloadedFile)
+	if data, err := os.ReadFile(path); err == nil {
+		var existing []DownloadedFile
+		if json.Unmarshal(data, &existing) == nil {
+			for _, entry := range existing {
+				entries[entry.Path] = entry
+			}
+		}
+	}
+	for _, entry := range fresh {
+		entries[entry.Path] = entry
+	}
+
+	all := make([]DownloadedFile, 0, len(entries))
+	for _, entry := range entries {
+		all = append(all, entry)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Path < all[j].Path })
+
+	data, err := json.MarshalIndent(all, "", "  ")
+	if err != nil {
+		return
+	}
+	if ensureDirExists(filepath.Dir(path)) != nil {
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Debug().Err(err).Msg("Could not write the file manifest")
+	}
 }
 
 // isCancellation reports whether err is, or wraps, a context cancellation or a
@@ -569,6 +693,36 @@ func DownloadGameFiles(
 // comparison against the sentinel values would never match.
 func isCancellation(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// downloadAttempts is how many times one file is tried before its download
+// counts as failed; RetryDelay is the pause before the second try, doubling
+// after. A variable so tests, including other packages' tests that download
+// through here, do not sit the delays out.
+const downloadAttempts = 3
+
+var RetryDelay = 2 * time.Second
+
+// httpStatusError is a download refusal with the status the server gave, kept
+// as a type so retrying can tell a server mistake from a server refusal.
+type httpStatusError struct {
+	status int
+}
+
+func (e *httpStatusError) Error() string { return fmt.Sprintf("HTTP %d", e.status) }
+
+// isRetryable reports whether trying again can help: network trouble and
+// server-side errors can pass, a refusal like 404 will not.
+func isRetryable(err error) bool {
+	var status *httpStatusError
+	if errors.As(err, &status) {
+		return status.status >= 500 ||
+			status.status == http.StatusTooManyRequests ||
+			status.status == http.StatusRequestTimeout
+	}
+	// Everything else that is not a cancellation is assumed transient:
+	// dropped connections and read timeouts do not come typed.
+	return true
 }
 
 func isAbsoluteURL(u string) bool {

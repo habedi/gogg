@@ -89,7 +89,13 @@ func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// getFileStatusString builds a compact string of current file progresses.
+// statusFilesShown is how many in-flight files the bar's description names. A
+// description longer than the terminal is wide wraps, and every redraw of a
+// wrapped bar becomes a new line of scrollback.
+const statusFilesShown = 2
+
+// getFileStatusString builds a compact string of current file progresses,
+// short enough to keep the bar on its one line.
 func (cw *cliProgressWriter) getFileStatusString() string {
 	if len(cw.fileProgress) == 0 {
 		return "Finalizing..."
@@ -102,20 +108,34 @@ func (cw *cliProgressWriter) getFileStatusString() string {
 	sort.Strings(files)
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Downloading %d files: ", len(files))
+	fmt.Fprintf(&sb, "%d %s: ", len(files), filesWord(len(files)))
 	for i, file := range files {
+		if i >= statusFilesShown {
+			fmt.Fprintf(&sb, " +%d more", len(files)-statusFilesShown)
+			break
+		}
 		shortName := file
-		if len(shortName) > 25 {
-			shortName = "..." + shortName[len(shortName)-22:]
+		if len(shortName) > 20 {
+			shortName = "..." + shortName[len(shortName)-17:]
 		}
 		progress := cw.fileProgress[file]
-		sizeStr := fmt.Sprintf("%s/%s", formatBytes(progress.current), formatBytes(progress.total))
-		fmt.Fprintf(&sb, "%s %s", shortName, sizeStr)
-		if i < len(files)-1 {
+		percent := 0
+		if progress.total > 0 {
+			percent = int(float64(progress.current) / float64(progress.total) * 100)
+		}
+		if i > 0 {
 			sb.WriteString(" | ")
 		}
+		fmt.Fprintf(&sb, "%s %d%%", shortName, percent)
 	}
 	return sb.String()
+}
+
+func filesWord(n int) string {
+	if n == 1 {
+		return "file"
+	}
+	return "files"
 }
 
 func downloadCmd(authService *auth.Service) *cobra.Command {

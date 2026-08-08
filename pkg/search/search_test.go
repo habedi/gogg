@@ -2,6 +2,7 @@ package search
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -200,4 +201,53 @@ func TestFormatSize_WritesTheUnitsTheAppShows(t *testing.T) {
 	require.Equal(t, "10gib", FormatSize(10<<30))
 	require.Equal(t, "512mib", FormatSize(512<<20))
 	require.Equal(t, "2tib", FormatSize(2<<40))
+}
+
+// A genre is what GOG's store says a game is, matched loosely: the names are
+// long, and nobody types "Role-playing" with the hyphen.
+func TestMatch_GenreIsASubstring(t *testing.T) {
+	query, err := Parse("genre:role")
+	require.NoError(t, err)
+
+	require.True(t, query.Needs().Genres, "asking about genres has to say so")
+	require.True(t, query.Match(Facts{Title: "G", Genres: []string{"Role-playing", "Adventure"}}))
+	require.False(t, query.Match(Facts{Title: "G", Genres: []string{"Strategy"}}))
+	require.False(t, query.Match(Facts{Title: "G"}), "no lookup, no genres, no match")
+
+	plural, err := Parse("genres:strategy")
+	require.NoError(t, err)
+	require.True(t, plural.Match(Facts{Title: "G", Genres: []string{"Strategy"}}),
+		"the plural spelling means the same field")
+}
+
+// An update is asked for by when it was noticed: as an age ("the last month")
+// or since a date.
+func TestMatch_UpdatedSince(t *testing.T) {
+	held := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	original := now
+	now = func() time.Time { return held }
+	t.Cleanup(func() { now = original })
+
+	fresh := Facts{Title: "G", UpdatedAt: held.Add(-2 * 24 * time.Hour)}
+	old := Facts{Title: "G", UpdatedAt: held.Add(-60 * 24 * time.Hour)}
+	none := Facts{Title: "G"}
+
+	within, err := Parse("updated:>30d")
+	require.NoError(t, err)
+	require.True(t, within.Match(fresh))
+	require.False(t, within.Match(old))
+	require.False(t, within.Match(none), "no update waiting, nothing recently updated")
+
+	sinceDate, err := Parse("updated:2026-08-01")
+	require.NoError(t, err)
+	require.True(t, sinceDate.Match(fresh), "a bare value means since then")
+	require.False(t, sinceDate.Match(old))
+
+	before, err := Parse("updated:<30d")
+	require.NoError(t, err)
+	require.False(t, before.Match(fresh))
+	require.True(t, before.Match(old), "the other direction finds what has waited long")
+
+	_, err = Parse("updated:whenever")
+	require.Error(t, err, "a moment it cannot read is said, not guessed")
 }

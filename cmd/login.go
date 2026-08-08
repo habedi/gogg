@@ -45,6 +45,8 @@ func loginCmd(gogClient *client.GogClient) *cobra.Command {
 					reportLoginError(cmd, clierr.New(clierr.Internal, "Failed to login to GOG.com", err))
 					if strings.Contains(err.Error(), "executable found in PATH") {
 						cmd.PrintErrln("Hint: Make sure Google Chrome or Chromium is installed and accessible in your system's PATH.")
+						cmd.PrintErrln("Or log in without a browser driver: open " + client.GOGLoginURL +
+							" in any browser, log in there, and run: gogg login --code <the address you land on>")
 					}
 				} else {
 					cmd.Println("Login was successful.")

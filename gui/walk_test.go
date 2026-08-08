@@ -87,16 +87,17 @@ func buttonWithLabel(root fyne.CanvasObject, label string) *widget.Button {
 	return nil
 }
 
-func selectWithOption(t *testing.T, root fyne.CanvasObject, option string) *widget.Select {
+// checkGroupWithOption finds a check group by one of the boxes it offers.
+func checkGroupWithOption(t *testing.T, root fyne.CanvasObject, option string) *widget.CheckGroup {
 	t.Helper()
-	for _, sel := range widgetsOfType[*widget.Select](root) {
-		for _, candidate := range sel.Options {
+	for _, group := range widgetsOfType[*widget.CheckGroup](root) {
+		for _, candidate := range group.Options {
 			if candidate == option {
-				return sel
+				return group
 			}
 		}
 	}
-	t.Fatalf("no select offering %q", option)
+	t.Fatalf("no check group offering %q", option)
 	return nil
 }
 

@@ -194,3 +194,64 @@ func TestMetadataCache_StoresTheLookupInTheDatabase(t *testing.T) {
 	require.NoError(t, json.Unmarshal(record.Data, &meta))
 	require.Equal(t, "A Publisher", meta.Publisher)
 }
+
+// The sweep fills the database for the games nobody has clicked, skipping the
+// ones already stored, and says once when it has brought anything new.
+func TestMetadataCache_SweepFillsTheLibrary(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	openTestDB(t)
+	srv, calls := metadataAPI(t)
+	t.Setenv("GOGG_API_BASE", srv.URL)
+
+	original := metadataSweepPause
+	metadataSweepPause = 0
+	t.Cleanup(func() { metadataSweepPause = original })
+
+	// Game 5 is already stored; 7 is what the store answers for; 999 is
+	// delisted and stays absent.
+	stored, err := json.Marshal(client.GameMetadata{Summary: "already here"})
+	require.NoError(t, err)
+	require.NoError(t, db.PutGameMetadata(context.Background(), 5, metadataFormat, stored))
+
+	cache := newMetadataCache()
+	t.Cleanup(cache.close)
+	var swept atomic.Int64
+	cache.sweep([]db.Game{{ID: 5}, {ID: 7}, {ID: 999}}, func() { swept.Add(1) })
+
+	require.Eventually(t, func() bool {
+		record, err := db.GetGameMetadata(context.Background(), 7)
+		return err == nil && record != nil
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return swept.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	record, err := db.GetGameMetadata(context.Background(), 999)
+	require.NoError(t, err)
+	require.Nil(t, record, "a delisted game stays absent rather than failing the sweep")
+
+	askedBefore := calls.Load()
+	cache.sweep([]db.Game{{ID: 5}, {ID: 7}}, nil)
+	require.Never(t, func() bool { return calls.Load() > askedBefore },
+		300*time.Millisecond, 20*time.Millisecond)
+}
+
+// Closing the library takes the sweep with it.
+func TestMetadataCache_CloseStopsTheSweep(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	openTestDB(t)
+	srv, calls := metadataAPI(t)
+	t.Setenv("GOGG_API_BASE", srv.URL)
+
+	original := metadataSweepPause
+	metadataSweepPause = time.Hour // the pause after the first lookup holds the sweep
+	t.Cleanup(func() { metadataSweepPause = original })
+
+	cache := newMetadataCache()
+	cache.sweep([]db.Game{{ID: 7}, {ID: 999}}, nil)
+	require.Eventually(t, func() bool { return calls.Load() > 0 }, 5*time.Second, 10*time.Millisecond)
+
+	cache.close()
+	require.Eventually(t, func() bool { return !cache.sweeping.Load() },
+		5*time.Second, 10*time.Millisecond)
+}

@@ -66,6 +66,11 @@ func SettingsTabUI(win fyne.Window, onSignOut func()) fyne.CanvasObject {
 	})
 	notifyCheck.SetChecked(prefs.BoolWithFallback(prefNotifications, true))
 
+	sweepCheck := widget.NewCheck("Fetch store details in the background", func(checked bool) {
+		prefs.SetBool(prefMetadataSweep, checked)
+	})
+	sweepCheck.SetChecked(prefs.BoolWithFallback(prefMetadataSweep, true))
+
 	soundPathLabel := widget.NewLabel("")
 	soundStatusLabel := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
@@ -220,6 +225,7 @@ func SettingsTabUI(win fyne.Window, onSignOut func()) fyne.CanvasObject {
 		widget.NewSeparator(),
 		soundCheck,
 		notifyCheck,
+		sweepCheck,
 		soundConfigBox,
 		widget.NewSeparator(),
 		limitsBox,

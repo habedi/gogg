@@ -18,6 +18,10 @@ type Game struct {
 	// CoverImage is the artwork GOG lists for the game, as a protocol-relative
 	// address. Empty for catalogues refreshed before gogg recorded it.
 	CoverImage string `json:"cover_image"`
+	// PurchaseRank is the game's place in GOG's by-purchase-date listing, 1
+	// being the most recent buy. Zero for catalogues refreshed before gogg
+	// recorded it: GOG publishes the order but not the dates themselves.
+	PurchaseRank int `json:"purchase_rank"`
 }
 
 // PutInGame inserts or updates a game record in the catalogue.

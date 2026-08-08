@@ -156,11 +156,16 @@ func (dm *DownloadManager) noteStateChange() {
 }
 
 type queuedDownload struct {
-	authService     *auth.Service
-	game            db.Game
-	downloadPath    string
-	language        string
-	platformName    string
+	authService  *auth.Service
+	game         db.Game
+	downloadPath string
+	language     string
+	platformName string
+	// languages and platforms are every choice that was ticked; the singular
+	// fields above carry the first of each for whatever still expects one.
+	// Empty slices mean the singular fields are the whole answer.
+	languages       []string
+	platforms       []string
 	extrasFlag      bool
 	dlcFlag         bool
 	resumeFlag      bool

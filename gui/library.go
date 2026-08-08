@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -170,6 +171,9 @@ type updateStatus struct {
 	Downloaded bool
 	HasUpdate  bool
 	Diff       []string // human-readable changes
+	// ChangedAt is when gogg first noticed the update now waiting, so the
+	// library can be asked for what changed recently.
+	ChangedAt time.Time `json:",omitempty"`
 }
 
 // gameStatuses is what was found out about a set of games.
@@ -217,9 +221,19 @@ func computeUpdateStatus(dm *DownloadManager, games []db.Game) {
 }
 
 // applyStatuses records what was found. The window reads these, so they are
-// only ever written on the thread that draws it.
+// only ever written on the thread that draws it. An update carries the moment
+// it was first noticed: the same one seen again keeps its date, a different
+// one gets today's.
 func applyStatuses(found gameStatuses) {
 	for id, status := range found {
+		if status.HasUpdate {
+			previous := updateStatusCache[id]
+			if previous.HasUpdate && !previous.ChangedAt.IsZero() && slices.Equal(previous.Diff, status.Diff) {
+				status.ChangedAt = previous.ChangedAt
+			} else {
+				status.ChangedAt = time.Now()
+			}
+		}
 		updateStatusCache[id] = status
 	}
 	persistUpdateStatusCache()
@@ -526,6 +540,29 @@ func loadGameTags() {
 	gameTags = tags
 }
 
+// gameGenres is what GOG's store says each game is, for games whose store
+// pages have been looked up. Read in one go and kept, like the tags.
+var gameGenres = map[int][]string{}
+
+// loadGameGenres reads the genres out of the stored lookups.
+func loadGameGenres() {
+	records, err := db.AllGameMetadata(context.Background())
+	if err != nil {
+		log.Debug().Err(err).Msg("Could not read stored metadata")
+		return
+	}
+
+	genres := make(map[int][]string, len(records))
+	for _, record := range records {
+		var meta client.GameMetadata
+		if json.Unmarshal(record.Data, &meta) != nil || len(meta.Genres) == 0 {
+			continue
+		}
+		genres[record.GameID] = meta.Genres
+	}
+	gameGenres = genres
+}
+
 // gameHasTag says whether a game carries a tag, read from the cache the
 // searches read.
 func gameHasTag(gameID int, tag string) bool {
@@ -545,7 +582,9 @@ type filterChoices struct {
 	Downloaded, HasUpdate bool
 	MinSize, MaxSize      string
 	Platform, Language    string
-	Tag                   string
+	Tag, Genre            string
+	// UpdatedSince narrows to updates noticed within an age or since a date.
+	UpdatedSince string
 }
 
 // filterTerms turns what the filter dialog was set to into the terms it writes
@@ -565,11 +604,15 @@ func filterTerms(choices filterChoices) []string {
 		terms = append(terms, "size:<="+size)
 	}
 	for _, field := range []struct{ name, chosen string }{
-		{"platform", choices.Platform}, {"lang", choices.Language}, {"tag", choices.Tag},
+		{"platform", choices.Platform}, {"lang", choices.Language},
+		{"tag", choices.Tag}, {"genre", choices.Genre},
 	} {
 		if value := strings.TrimSpace(field.chosen); value != "" && value != anyChoice {
 			terms = append(terms, field.name+":"+value)
 		}
+	}
+	if since := strings.ReplaceAll(strings.TrimSpace(choices.UpdatedSince), " ", ""); since != "" {
+		terms = append(terms, "updated:>="+since)
 	}
 	return terms
 }
@@ -595,9 +638,13 @@ func factsFor(game db.Game, needs search.Needs) search.Facts {
 	if status, ok := updateStatusCache[game.ID]; ok {
 		facts.Downloaded = status.Downloaded
 		facts.HasUpdate = status.HasUpdate
+		facts.UpdatedAt = status.ChangedAt
 	}
 	if needs.Tags {
 		facts.Tags = gameTags[game.ID]
+	}
+	if needs.Genres {
+		facts.Genres = gameGenres[game.ID]
 	}
 	if needs.Size {
 		facts.SizeBytes = estimateGameSize(game)
@@ -661,6 +708,12 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 		tagEntry := widget.NewEntry()
 		tagEntry.SetPlaceHolder("finished")
 		tagEntry.SetText(current.TermValue("tag", ""))
+		genreEntry := widget.NewEntry()
+		genreEntry.SetPlaceHolder("strategy")
+		genreEntry.SetText(current.TermValue("genre", ""))
+		updatedEntry := widget.NewEntry()
+		updatedEntry.SetPlaceHolder("30d, or 2026-01-31")
+		updatedEntry.SetText(current.TermValue("updated", ">="))
 
 		apply := func(terms ...string) {
 			query := strings.TrimSpace(strings.Join(append([]string{search.Words(searchEntry.Text)}, terms...), " "))
@@ -674,7 +727,8 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 				Downloaded: downloadedChk.Checked, HasUpdate: updateChk.Checked,
 				MinSize: sizeMinEntry.Text, MaxSize: sizeMaxEntry.Text,
 				Platform: platformSelect.Selected, Language: languageSelect.Selected,
-				Tag: tagEntry.Text,
+				Tag: tagEntry.Text, Genre: genreEntry.Text,
+				UpdatedSince: updatedEntry.Text,
 			})...)
 		})
 		resetBtn := widget.NewButtonWithIcon("Reset", theme.ViewRefreshIcon(), func() { apply() })
@@ -686,6 +740,8 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 				widget.NewFormItem("Platform", platformSelect),
 				widget.NewFormItem("Language", languageSelect),
 				widget.NewFormItem("Tag", tagEntry),
+				widget.NewFormItem("Genre", genreEntry),
+				widget.NewFormItem("Updated in", updatedEntry),
 			),
 			container.NewGridWithColumns(2, downloadedChk, updateChk),
 			widget.NewLabel("These become terms in the search box, where they can also be typed."),
@@ -745,6 +801,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	allGames, _ := db.GetCatalogue()
 	loadGameTags()
+	loadGameGenres()
 	// Set when this library is replaced. Answers that were on their way to it
 	// are dropped rather than delivered to a pane nothing shows anymore.
 	var closed atomic.Bool
@@ -752,6 +809,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	var sidebar *librarySidebar
 	selectedGameBinding := binding.NewUntyped()
 	isSortAscending := true
+	// sortByPurchase puts the latest buys first, the order GOG's account
+	// listing was read in; titles break the ties.
+	sortByPurchase := false
 
 	gameCountLabel := widget.NewLabel("")
 
@@ -785,8 +845,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	covers := newCoverCache(coverCacheDir())
 	metadata := newMetadataCache()
 
-	var gameListWidget *widget.List
-	var gameGridWidget *widget.GridWrap
+	var gameListWidget *activatableList
+	var gameGridWidget *activatableGrid
 	displayedGames := func() []db.Game {
 		items, _ := gamesListBinding.Get()
 		games := make([]db.Game, 0, len(items))
@@ -826,6 +886,20 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		}
 
 		sort.Slice(displayGames, func(i, j int) bool {
+			if sortByPurchase {
+				// Rank 1 is the most recent buy; games from catalogues
+				// refreshed before gogg recorded ranks sink to the bottom.
+				left, right := displayGames[i].PurchaseRank, displayGames[j].PurchaseRank
+				if left != right {
+					if left == 0 {
+						return false
+					}
+					if right == 0 {
+						return true
+					}
+					return left < right
+				}
+			}
 			left := strings.ToLower(displayGames[i].Title)
 			right := strings.ToLower(displayGames[j].Title)
 			if isSortAscending {
@@ -854,8 +928,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	// recomputeStatuses refreshes the cached download and update status for the
 	// whole library. It reads the filesystem and reparses every stored game, so
-	// it runs only when something that can change a status happened.
-	recomputeStatuses := func() {
+	// it runs only when something that can change a status happened. onDone,
+	// when given, runs once the statuses are known.
+	recomputeStatuses := func(onDone func()) {
 		games := allGames
 		updatesLabel.SetText("Checking downloads...")
 		statusWorker(
@@ -872,6 +947,9 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				if refreshUpdatesSummary != nil {
 					refreshUpdatesSummary()
 				}
+				if onDone != nil {
+					onDone()
+				}
 			})
 	}
 
@@ -881,7 +959,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	displayedForGrid := func() []db.Game { return displayedGames() }
 
-	gameGridWidget = widget.NewGridWrap(
+	gameGridWidget = newActivatableGrid(
 		func() int { return len(displayedForGrid()) },
 		newGameCell,
 		func(id widget.GridWrapItemID, obj fyne.CanvasObject) {
@@ -898,7 +976,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	)
 
 	listContent := container.NewStack()
-	gameListWidget = widget.NewListWithData(gamesListBinding,
+	gameListWidget = newActivatableList(gamesListBinding,
 		newGameRow,
 		func(item binding.DataItem, obj fyne.CanvasObject) {
 			gameRaw, _ := item.(binding.Untyped).Get()
@@ -1013,13 +1091,53 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			button.Disable()
 		}
 	}
+	// The whole library's store details fill in quietly in the background, so
+	// genres and descriptions work for every game, not only the clicked ones.
+	startSweep := func() {
+		if !prefs.BoolWithFallback(prefMetadataSweep, true) || len(allGames) == 0 {
+			return
+		}
+		metadata.sweep(allGames, func() {
+			if closed.Load() {
+				return
+			}
+			if sidebar != nil && sidebar.content.Visible() {
+				sidebar.refresh(allGames)
+			}
+			updateDisplayedGames()
+		})
+	}
+
+	// A refresh that brought updates is news, so it is announced; one that
+	// brought none already shows in the counts, and a dialog saying "nothing"
+	// after every refresh would teach people to dismiss dialogs unread.
+	announceRefreshOutcome := func() {
+		pending := gamesWithUpdates(allGames)
+		if len(pending) == 0 {
+			return
+		}
+		titles := make([]string, 0, len(pending))
+		for _, game := range pending {
+			titles = append(titles, game.Title)
+		}
+		verb := "have"
+		if len(pending) == 1 {
+			verb = "has"
+		}
+		dialog.ShowInformation("Updates waiting",
+			fmt.Sprintf("%d %s %s new files since being downloaded: %s",
+				len(pending), gamesWord(len(pending)), verb, joinTitles(titles)), win)
+	}
 	onFinishRefresh := func() {
 		allGames, _ = db.GetCatalogue()
 		loadGameTags()
+		loadGameGenres()
 		forgetParsedGames()
-		recomputeStatuses()
+		recomputeStatuses(announceRefreshOutcome)
 		setRefreshEnabled(true)
 		showGames()
+		// A refresh may have brought games nobody has looked up yet.
+		startSweep()
 	}
 	startRefresh := func() {
 		setRefreshEnabled(false)
@@ -1039,7 +1157,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// Load any status cached by an earlier session before recomputing, so stale
 	// entries cannot overwrite fresh ones.
 	initUpdateStatusPersistence()
-	recomputeStatuses()
+	recomputeStatuses(nil)
+	startSweep()
 
 	// The search box is left as it is: emptying it threw away the filter, or the
 	// collection, the user was looking at.
@@ -1057,10 +1176,24 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// Sorting and exporting are reached for rarely, so they wait in a menu
 	// rather than widening the toolbar for everyone. The menu is built afresh
 	// each time it opens, so the sort entry names the order it would switch to.
+	// The purchase entry names the order it would switch to, like the title
+	// one beside it.
+	purchaseLabel := func() string {
+		if sortByPurchase {
+			return "Sort by Title"
+		}
+		return "Sort by Purchase Date"
+	}
 	moreMenu := func() *fyne.Menu {
 		return fyne.NewMenu("",
 			fyne.NewMenuItem(sortLabel(), func() {
+				sortByPurchase = false
 				isSortAscending = !isSortAscending
+				updateDisplayedGames()
+				gameListWidget.Refresh()
+			}),
+			fyne.NewMenuItem(purchaseLabel(), func() {
+				sortByPurchase = !sortByPurchase
 				updateDisplayedGames()
 				gameListWidget.Refresh()
 			}),
@@ -1149,6 +1282,11 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			updateDisplayedGames()
 		})
 	form := pane.form
+
+	// Enter on the focused list or grid downloads what is selected: the last
+	// step of a flow the arrow keys and space already carry.
+	gameListWidget.onActivate = func() { form.download() }
+	gameGridWidget.onActivate = func() { form.download() }
 
 	afterSelectionChange = func() {
 		if n := sel.count(); n > 0 {
@@ -1252,7 +1390,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		}
 		clearPersistedUpdateStatus()
 		forgetParsedGames()
-		recomputeStatuses()
+		recomputeStatuses(nil)
 	})
 	catalogueUpdated.AddListener(catalogueListener)
 
@@ -1264,7 +1402,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			settingsJustRegistered = false
 			return
 		}
-		recomputeStatuses()
+		recomputeStatuses(nil)
 	})
 	updateSettingsChanged.AddListener(settingsListener)
 	split := container.NewHSplit(leftPane, rightPane)
@@ -1324,6 +1462,8 @@ type downloadForm struct {
 	relabel func()
 	// queue starts downloads for the given games with the options on screen.
 	queue func(games []db.Game) (batchResult, error)
+	// download is what the download button does, reachable from the keyboard.
+	download func()
 	// narrowTo restricts the language and platform choices to what a game
 	// offers; a zero game restores the full lists.
 	narrowTo func(game db.Game)
@@ -1504,16 +1644,32 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	})
 	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, downloadPathEntry)
 
-	// The selects show language names but store the codes the rest of gogg uses.
-	onLanguagePicked := func(name string) {
-		if code, ok := languageCodes[name]; ok {
-			prefs.SetString("downloadForm.language", code)
+	// Checked rather than picked from a list: a download can want English and
+	// French for Windows and Linux at once. The boxes show language names but
+	// store the codes the rest of gogg uses, and the first choice stands in
+	// for the set wherever one value is still expected.
+	onLanguagesPicked := func(names []string) {
+		codes := make([]string, 0, len(names))
+		for _, name := range names {
+			if code, ok := languageCodes[name]; ok {
+				codes = append(codes, code)
+			}
+		}
+		prefs.SetString("downloadForm.languages", strings.Join(codes, ","))
+		if len(codes) > 0 {
+			prefs.SetString("downloadForm.language", codes[0])
 		}
 	}
-	onPlatformPicked := func(platform string) { prefs.SetString("downloadForm.platform", platform) }
+	onPlatformsPicked := func(platforms []string) {
+		prefs.SetString("downloadForm.platforms", strings.Join(platforms, ","))
+		if len(platforms) > 0 {
+			prefs.SetString("downloadForm.platform", platforms[0])
+		}
+	}
 
-	langSelect := widget.NewSelect(nil, onLanguagePicked)
-	platformSelect := widget.NewSelect(nil, onPlatformPicked)
+	langGroup := widget.NewCheckGroup(nil, nil)
+	platformGroup := widget.NewCheckGroup(nil, nil)
+	platformGroup.Horizontal = true
 
 	// narrowTo restricts the choices to what a game actually offers. A zero
 	// game restores the full lists.
@@ -1523,10 +1679,12 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			languages = offeredLanguages(parsed)
 			platforms = offeredPlatforms(parsed)
 		}
-		bindSelect(langSelect, languageChoices(languages),
-			client.GameLanguages[prefs.StringWithFallback("downloadForm.language", "en")], onLanguagePicked)
-		bindSelect(platformSelect, platformChoices(platforms),
-			prefs.StringWithFallback("downloadForm.platform", "windows"), onPlatformPicked)
+		bindCheckGroup(langGroup, languageChoices(languages),
+			languageNamesFor(prefs.StringWithFallback("downloadForm.languages",
+				prefs.StringWithFallback("downloadForm.language", "en"))), onLanguagesPicked)
+		bindCheckGroup(platformGroup, platformGroupChoices(platforms),
+			splitCSV(prefs.StringWithFallback("downloadForm.platforms",
+				prefs.StringWithFallback("downloadForm.platform", "windows"))), onPlatformsPicked)
 	}
 	narrowTo(db.Game{})
 	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) { prefs.SetString("downloadForm.threads", s) })
@@ -1573,11 +1731,23 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		if downloadPathEntry.Text == "" {
 			return batchResult{}, errors.New("download path cannot be empty")
 		}
+		languages := append([]string{}, langGroup.Selected...)
+		platforms := append([]string{}, platformGroup.Selected...)
+		if len(languages) == 0 || len(platforms) == 0 {
+			return batchResult{}, errors.New("pick at least one language and one platform")
+		}
+		// Where one value is still expected, the first choice stands in; more
+		// than one platform behaves as "all" for folders and pruning.
+		primaryPlatform := platforms[0]
+		if len(platforms) > 1 {
+			primaryPlatform = "all"
+		}
 		threads, _ := strconv.Atoi(threadsSelect.Selected)
 		return queueDownloads(dm, games, func(game db.Game) queuedDownload {
 			return queuedDownload{
 				authService: authService, game: game, downloadPath: downloadPathEntry.Text,
-				language: langSelect.Selected, platformName: platformSelect.Selected,
+				language: languages[0], platformName: primaryPlatform,
+				languages: languages, platforms: platforms,
 				extrasFlag: extrasCheck.Checked, dlcFlag: dlcsCheck.Checked,
 				resumeFlag: resumeCheck.Checked, flattenFlag: flattenCheck.Checked,
 				skipPatchesFlag: skipPatchesCheck.Checked, keepLatestFlag: keepLatestCheck.Checked,
@@ -1610,7 +1780,9 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		showSizeEstimate(win, estimates, total)
 	})
 
-	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), func() {
+	// Named rather than left in the button, because Enter on the list starts
+	// the same download the button does.
+	startDownload := func() {
 		games := targets()
 		if len(games) == 0 {
 			return
@@ -1626,13 +1798,14 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			return
 		}
 		dialog.ShowInformation("Downloads", result.summary(), win)
-	})
+	}
+	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), startDownload)
 	downloadBtn.Importance = widget.HighImportance
 
 	form := widget.NewForm(
 		widget.NewFormItem("Download Path", pathContainer),
-		widget.NewFormItem("Platform", platformSelect),
-		widget.NewFormItem("Language", langSelect),
+		widget.NewFormItem("Platforms", platformGroup),
+		widget.NewFormItem("Languages", langGroup),
 		widget.NewFormItem("Threads", threadsSelect),
 	)
 	// Seven switches in a grid say nothing about what they do to each other.
@@ -1671,6 +1844,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		},
 		relabel:  relabel,
 		queue:    queue,
+		download: startDownload,
 		narrowTo: narrowTo,
 	}
 }

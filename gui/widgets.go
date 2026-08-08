@@ -5,6 +5,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
@@ -28,6 +29,70 @@ func showCopied(near fyne.CanvasObject, message string) {
 	popup.ShowAtPosition(driver.AbsolutePositionForObject(near).
 		Add(fyne.NewPos(0, near.Size().Height)))
 	time.AfterFunc(copiedShownFor, func() { fyne.Do(popup.Hide) })
+}
+
+// activatableList is the library list, which also answers Enter: the arrows
+// and space already walk and select, so the keyboard can go all the way to
+// starting the download.
+type activatableList struct {
+	widget.List
+
+	// onActivate runs when Enter is pressed on the focused list.
+	onActivate func()
+}
+
+// newActivatableList wires a list to a bound source, the way
+// widget.NewListWithData does for a plain list.
+func newActivatableList(data binding.DataList, create func() fyne.CanvasObject,
+	update func(binding.DataItem, fyne.CanvasObject),
+) *activatableList {
+	list := &activatableList{}
+	list.Length = data.Length
+	list.CreateItem = create
+	list.UpdateItem = func(id widget.ListItemID, obj fyne.CanvasObject) {
+		item, err := data.GetItem(id)
+		if err != nil {
+			return
+		}
+		update(item, obj)
+	}
+	list.ExtendBaseWidget(list)
+	data.AddListener(binding.NewDataListener(list.Refresh))
+	return list
+}
+
+func (l *activatableList) TypedKey(event *fyne.KeyEvent) {
+	if (event.Name == fyne.KeyReturn || event.Name == fyne.KeyEnter) && l.onActivate != nil {
+		l.onActivate()
+		return
+	}
+	l.List.TypedKey(event)
+}
+
+// activatableGrid is the cover grid, answering Enter the same way.
+type activatableGrid struct {
+	widget.GridWrap
+
+	onActivate func()
+}
+
+func newActivatableGrid(length func() int, create func() fyne.CanvasObject,
+	update func(widget.GridWrapItemID, fyne.CanvasObject),
+) *activatableGrid {
+	grid := &activatableGrid{}
+	grid.Length = length
+	grid.CreateItem = create
+	grid.UpdateItem = update
+	grid.ExtendBaseWidget(grid)
+	return grid
+}
+
+func (g *activatableGrid) TypedKey(event *fyne.KeyEvent) {
+	if (event.Name == fyne.KeyReturn || event.Name == fyne.KeyEnter) && g.onActivate != nil {
+		g.onActivate()
+		return
+	}
+	g.GridWrap.TypedKey(event)
 }
 
 // fileDialogSize is the room every file and folder dialog opens with. Fyne's

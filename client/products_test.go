@@ -12,11 +12,14 @@ import (
 )
 
 // The artwork in the game details has GOG's fade baked in; the owned-products
-// listing points at the unfaded banner instead.
-func TestFetchOwnedProductImages_ReadsEveryPage(t *testing.T) {
+// listing points at the unfaded banner instead. The listing is asked for
+// sorted by purchase date, so a product's position is its purchase rank.
+func TestFetchOwnedProducts_ReadsEveryPageInPurchaseOrder(t *testing.T) {
 	var requested atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requested.Add(1)
+		require.Equal(t, "date_purchased", r.URL.Query().Get("sortBy"),
+			"the listing has to be asked for in purchase order")
 		switch r.URL.Query().Get("page") {
 		case "1":
 			_, _ = w.Write([]byte(`{"totalPages":2,"products":[
@@ -29,42 +32,46 @@ func TestFetchOwnedProductImages_ReadsEveryPage(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("GOGG_EMBED_BASE", srv.URL)
 
-	images, err := FetchOwnedProductImages(context.Background(), "tok")
+	products, err := FetchOwnedProducts(context.Background(), "tok")
 	require.NoError(t, err)
 
-	require.Equal(t, map[int]string{
-		1: "//images-1.gog-statics.com/aaa",
-		2: "//images-2.gog-statics.com/bbb",
-		3: "//images-3.gog-statics.com/ccc",
-	}, images)
+	require.Equal(t, map[int]OwnedProduct{
+		1: {Image: "//images-1.gog-statics.com/aaa", PurchaseRank: 1},
+		2: {Image: "//images-2.gog-statics.com/bbb", PurchaseRank: 2},
+		3: {Image: "//images-3.gog-statics.com/ccc", PurchaseRank: 3},
+	}, products)
 	require.Equal(t, int64(2), requested.Load())
 }
 
-func TestFetchOwnedProductImages_SkipsProductsWithoutArtwork(t *testing.T) {
+// A product without artwork still has a place in the purchase order.
+func TestFetchOwnedProducts_KeepsProductsWithoutArtwork(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"totalPages":1,"products":[{"id":1,"image":""},{"id":2,"image":"//x/y"}]}`))
 	}))
 	defer srv.Close()
 	t.Setenv("GOGG_EMBED_BASE", srv.URL)
 
-	images, err := FetchOwnedProductImages(context.Background(), "tok")
+	products, err := FetchOwnedProducts(context.Background(), "tok")
 	require.NoError(t, err)
-	require.Equal(t, map[int]string{2: "//x/y"}, images)
+	require.Equal(t, map[int]OwnedProduct{
+		1: {Image: "", PurchaseRank: 1},
+		2: {Image: "//x/y", PurchaseRank: 2},
+	}, products)
 }
 
-func TestFetchOwnedProductImages_ReportsFailure(t *testing.T) {
+func TestFetchOwnedProducts_ReportsFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer srv.Close()
 	t.Setenv("GOGG_EMBED_BASE", srv.URL)
 
-	_, err := FetchOwnedProductImages(context.Background(), "tok")
+	_, err := FetchOwnedProducts(context.Background(), "tok")
 	require.Error(t, err)
 }
 
 // A server claiming an absurd number of pages must not keep gogg going forever.
-func TestFetchOwnedProductImages_StopsAtAPageLimit(t *testing.T) {
+func TestFetchOwnedProducts_StopsAtAPageLimit(t *testing.T) {
 	var requested atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requested.Add(1)
@@ -73,7 +80,7 @@ func TestFetchOwnedProductImages_StopsAtAPageLimit(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("GOGG_EMBED_BASE", srv.URL)
 
-	_, err := FetchOwnedProductImages(context.Background(), "tok")
+	_, err := FetchOwnedProducts(context.Background(), "tok")
 	require.NoError(t, err)
 	require.LessOrEqual(t, requested.Load(), int64(maxProductPages))
 }

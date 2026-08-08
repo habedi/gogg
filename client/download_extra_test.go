@@ -2,12 +2,19 @@ package client
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -215,4 +222,184 @@ func TestDownloadGameFiles_ExtrasFlag(t *testing.T) {
 	assert.FileExists(t, filepath.Join(tmp, "extragame", "windows", "setup.exe"))
 	// enqueueExtras: SanitizePath("Game Soundtrack") = "game-soundtrack", then appends ".zip" from URL
 	assert.FileExists(t, filepath.Join(tmp, "extragame", "extras", "game-soundtrack.zip"))
+}
+
+// files.json beside metadata.json records what a download brought: exact
+// bytes, the MD5 of what streamed in, and when. A later run keeps the entries
+// of files it skipped and replaces the ones it fetched again.
+func TestDownloadGameFiles_WritesAFileManifest(t *testing.T) {
+	body := []byte("the bytes gog served")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/game/setup_game_1.0.exe"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &rawURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	require.NoError(t, DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard))
+
+	manifest, err := os.ReadFile(filepath.Join(tmp, "mygame", "files.json"))
+	require.NoError(t, err)
+	var entries []DownloadedFile
+	require.NoError(t, json.Unmarshal(manifest, &entries))
+	require.Len(t, entries, 1)
+
+	sum := md5.Sum(body)
+	require.Equal(t, filepath.Join("windows", "setup.exe"), entries[0].Path)
+	require.Equal(t, int64(len(body)), entries[0].SizeBytes)
+	require.Equal(t, hex.EncodeToString(sum[:]), entries[0].MD5, "the checksum is of what was written")
+	require.WithinDuration(t, time.Now(), entries[0].DownloadedAt, time.Minute)
+}
+
+// A resumed download hashes the prefix it already holds, so the recorded
+// checksum is of the whole file, not of the part that arrived this run.
+func TestDownloadGameFiles_ManifestChecksumSurvivesResume(t *testing.T) {
+	body := []byte("0123456789abcdef")
+	var sawRange atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if strings.HasPrefix(r.Header.Get("Range"), "bytes=") {
+			sawRange.Store(true)
+			var from int
+			_, _ = fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-", &from)
+			w.Header().Set("Content-Range",
+				fmt.Sprintf("bytes %d-%d/%d", from, len(body)-1, len(body)))
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(body[from:])
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/game/setup_game_1.0.exe"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &rawURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	// Half the file is already on disk from an interrupted run.
+	gameDir := filepath.Join(tmp, "mygame", "windows")
+	require.NoError(t, os.MkdirAll(gameDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(gameDir, "setup.exe.part"), body[:8], 0o644))
+
+	require.NoError(t, DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, true, false, false, false, 1, io.Discard))
+
+	manifest, err := os.ReadFile(filepath.Join(tmp, "mygame", "files.json"))
+	require.NoError(t, err)
+	var entries []DownloadedFile
+	require.NoError(t, json.Unmarshal(manifest, &entries))
+	require.Len(t, entries, 1)
+
+	require.True(t, sawRange.Load(), "the run has to have resumed, not refetched")
+	sum := md5.Sum(body)
+	require.Equal(t, hex.EncodeToString(sum[:]), entries[0].MD5)
+	require.Equal(t, int64(len(body)), entries[0].SizeBytes)
+}
+
+// A dropped connection or a server-side error is worth another try; a refusal
+// such as 404 is not.
+func TestDownloadGameFiles_RetriesTransientFailures(t *testing.T) {
+	body := []byte("eventually served")
+	var gets atomic.Int64
+	var base string
+	// The first GET of a file is the redirect probe; the download itself lands
+	// on /dl, so only /dl requests count as tries.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/dl/setup.exe" {
+			w.Header().Set("Location", base+"/dl/setup.exe")
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if gets.Add(1) < 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+	base = server.URL
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/game/setup.exe"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &rawURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	require.NoError(t, DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard))
+
+	data, err := os.ReadFile(filepath.Join(tmp, "mygame", "windows", "setup.exe"))
+	require.NoError(t, err)
+	require.Equal(t, body, data, "the third try brought the file")
+	require.Equal(t, int64(3), gets.Load())
+}
+
+func TestDownloadGameFiles_DoesNotRetryARefusal(t *testing.T) {
+	var gets atomic.Int64
+	var base string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/dl/setup.exe" {
+			w.Header().Set("Location", base+"/dl/setup.exe")
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", "8")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		gets.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	base = server.URL
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/game/setup.exe"
+	game := Game{
+		Title: "mygame",
+		Downloads: []Downloadable{{
+			Language:  "en",
+			Platforms: Platform{Windows: []PlatformFile{{ManualURL: &rawURL, Name: "setup.exe"}}},
+		}},
+	}
+
+	err := DownloadGameFiles(context.Background(), "token", game, tmp,
+		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+	require.Error(t, err)
+	require.Equal(t, int64(1), gets.Load(), "asking again cannot turn a 404 into a file")
 }

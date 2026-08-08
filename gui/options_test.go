@@ -83,13 +83,34 @@ func TestLibraryTab_SelectingAGameNarrowsTheOptions(t *testing.T) {
 		`{"manualUrl":"/w","name":"setup.exe","size":"1 GB"}]}]],"extras":[],"dlcs":[]}`
 	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Nur Deutsch", Data: germanOnly}))
 
-	language := selectWithOption(t, lt.content, "Deutsch")
+	language := checkGroupWithOption(t, lt.content, "Deutsch")
 	require.Equal(t, []string{"Deutsch"}, language.Options)
-	require.Equal(t, "Deutsch", language.Selected)
+	require.Equal(t, []string{"Deutsch"}, language.Selected,
+		"a wanted language the game lacks falls back to what it has")
 
-	platform := selectWithOption(t, lt.content, "all")
-	require.Equal(t, []string{"windows", "all"}, platform.Options)
+	platform := checkGroupWithOption(t, lt.content, "windows")
+	require.Equal(t, []string{"windows"}, platform.Options,
+		"no all box: in check boxes, all is every box ticked")
 
 	require.Equal(t, "en", app.Preferences().String("downloadForm.language"),
 		"narrowing the list must not rewrite the user's default language")
+}
+
+// Narrowing the boxes for a game is not the user choosing.
+func TestBindCheckGroup_DoesNotFireForAProgrammaticChange(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	var fired [][]string
+	group := widget.NewCheckGroup(nil, nil)
+
+	bindCheckGroup(group, []string{"English", "Deutsch", "Polski"},
+		[]string{"Deutsch", "Polski"}, func(chosen []string) { fired = append(fired, chosen) })
+	require.Equal(t, []string{"Deutsch", "Polski"}, group.Selected, "offered choices are kept")
+	require.Empty(t, fired)
+
+	bindCheckGroup(group, []string{"English"}, []string{"Deutsch"}, nil)
+	require.Equal(t, []string{"English"}, group.Selected,
+		"nothing wanted on offer ticks the first box: a download needs a language")
+	require.Empty(t, fired)
 }

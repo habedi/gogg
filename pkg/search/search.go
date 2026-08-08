@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Facts are what gogg knows about a game when it decides whether to list it.
@@ -21,6 +22,10 @@ type Facts struct {
 	HasUpdate  bool
 	SizeBytes  int64
 	Tags       []string // what the user has marked the game with
+	Genres     []string // what GOG's store says the game is, once looked up
+	// UpdatedAt is when gogg first noticed the update now waiting for the
+	// game; zero when none is.
+	UpdatedAt time.Time
 }
 
 // Query is a parsed search. An empty one matches every game.
@@ -35,9 +40,12 @@ type term struct {
 	value string
 	// flag is what a yes or no field was set to.
 	flag bool
-	// operator and size are how a size is compared, ">=" by default.
+	// operator and size are how a size is compared, ">=" by default. when is
+	// the moment an updated term compares against, under the same operator:
+	// updated:>30d means noticed within the last thirty days.
 	operator string
 	size     int64
+	when     time.Time
 }
 
 // Parse reads a query. Free words match the title; the rest are field:value,
@@ -68,6 +76,7 @@ type Needs struct {
 	Languages bool
 	Size      bool
 	Tags      bool
+	Genres    bool
 }
 
 // Needs reports what the library has to work out before asking this query.
@@ -83,6 +92,8 @@ func (q Query) Needs() Needs {
 			needs.Size = true
 		case "tag", "favorite", "hidden":
 			needs.Tags = true
+		case "genre":
+			needs.Genres = true
 		}
 	}
 	return needs
@@ -199,12 +210,32 @@ func (t term) match(facts Facts) bool {
 		return containsFold(facts.Languages, t.value)
 	case "tag":
 		return containsFold(facts.Tags, t.value)
+	case "genre":
+		// A substring, because GOG's names are long: genre:role finds
+		// "Role-playing" without anyone typing the hyphen.
+		return anyContainsFold(facts.Genres, t.value)
 	case "favorite", "hidden":
 		return containsFold(facts.Tags, t.field) == t.flag
 	case "size":
 		return t.matchSize(facts.SizeBytes)
+	case "updated":
+		return t.matchUpdated(facts.UpdatedAt)
 	}
 	return false
+}
+
+// matchUpdated compares when an update was noticed against the term's moment.
+// ">" reads as "more recently than": updated:>30d is the last thirty days.
+func (t term) matchUpdated(noticed time.Time) bool {
+	if noticed.IsZero() {
+		return false
+	}
+	switch t.operator {
+	case "<", "<=":
+		return noticed.Before(t.when)
+	default:
+		return !noticed.Before(t.when)
+	}
 }
 
 func (t term) matchSize(size int64) bool {
@@ -229,10 +260,23 @@ func containsFold(values []string, want string) bool {
 	return false
 }
 
+func anyContainsFold(values []string, want string) bool {
+	want = strings.ToLower(want)
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), want) {
+			return true
+		}
+	}
+	return false
+}
+
 // flagFields are the yes-or-no fields; valueFields take something to compare.
 var (
 	flagFields  = map[string]bool{"downloaded": true, "updates": true, "favorite": true, "hidden": true}
-	valueFields = map[string]bool{"title": true, "platform": true, "lang": true, "tag": true, "size": true}
+	valueFields = map[string]bool{
+		"title": true, "platform": true, "lang": true, "tag": true,
+		"size": true, "genre": true, "updated": true,
+	}
 )
 
 func parseTerm(token string) (term, error) {
@@ -267,7 +311,47 @@ func parseTerm(token string) (term, error) {
 		return term{field: field, operator: operator, size: size}, nil
 	}
 
+	if field == "updated" {
+		operator, rest := splitOperator(value)
+		when, err := parseSince(rest)
+		if err != nil {
+			return term{}, fmt.Errorf("updated %q is not a date such as 2026-01-31 or an age such as 30d", value)
+		}
+		return term{field: field, operator: operator, when: when, value: rest}, nil
+	}
+
 	return term{field: field, value: strings.ToLower(value)}, nil
+}
+
+// now is read rather than called so tests can hold the clock still.
+var now = time.Now
+
+// sinceUnits are the ages a query can name: days, weeks, months, and years,
+// the way a person says "in the last month".
+var sinceUnits = map[byte]time.Duration{
+	'd': 24 * time.Hour,
+	'w': 7 * 24 * time.Hour,
+	'm': 30 * 24 * time.Hour,
+	'y': 365 * 24 * time.Hour,
+}
+
+// parseSince reads a moment, either as a date or as an age: updated:>30d is
+// the last thirty days, updated:>2026-01-31 is since that day.
+func parseSince(value string) (time.Time, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if len(value) >= 2 {
+		if unit, ok := sinceUnits[value[len(value)-1]]; ok {
+			count, err := strconv.Atoi(value[:len(value)-1])
+			if err == nil && count >= 0 {
+				return now().Add(-time.Duration(count) * unit), nil
+			}
+		}
+	}
+	when, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return when, nil
 }
 
 // aliases let a query read the way it is spoken.
@@ -276,6 +360,7 @@ var aliases = map[string]string{
 	"language":  "lang",
 	"favourite": "favorite",
 	"installed": "downloaded",
+	"genres":    "genre",
 }
 
 func knownAlias(field string) bool { _, ok := aliases[field]; return ok }

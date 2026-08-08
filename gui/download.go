@@ -57,6 +57,14 @@ type progressUpdater struct {
 	lastBytes         int64
 	speeds            []float64
 	speedAvgSize      int
+
+	// A download of several languages or platforms runs in passes, and each
+	// pass owns a slice of the one bar: base is where this pass starts, span
+	// how much of the bar it may fill. Zero span means the whole bar.
+	progressBase float64
+	progressSpan float64
+	// finishing notes that every byte of this pass has landed.
+	finishing bool
 }
 
 func (pu *progressUpdater) Write(p []byte) (n int, err error) {
@@ -85,12 +93,29 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 			pu.fileBytes[update.FileName] = update.CurrentBytes
 
 			if pu.totalBytes > 0 {
-				progress := float64(pu.downloadedBytes) / float64(pu.totalBytes)
-				_ = pu.task.Progress.Set(progress)
+				span := pu.progressSpan
+				if span == 0 {
+					span = 1
+				}
+				fraction := float64(pu.downloadedBytes) / float64(pu.totalBytes)
+				_ = pu.task.Progress.Set(pu.progressBase + fraction*span)
 			}
 			if pu.task.State() == StatePreparing {
 				pu.task.SetState(StateDownloading)
 				_ = pu.task.Status.Set("Downloading files...")
+			}
+			// Every byte has landed but the call has not returned: files are
+			// being renamed into place. Said, or the pause reads as a hang.
+			if pu.totalBytes > 0 {
+				finishing := pu.downloadedBytes >= pu.totalBytes
+				if finishing != pu.finishing {
+					pu.finishing = finishing
+					if finishing {
+						_ = pu.task.Status.Set("Finishing up...")
+					} else {
+						_ = pu.task.Status.Set("Downloading files...")
+					}
+				}
 			}
 			pu.updateSpeedAndETA()
 			pu.publishTotals()
@@ -282,18 +307,44 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 			return
 		}
 
-		updater := &progressUpdater{
-			task:         task,
-			dm:           dm,
-			fileBytes:    make(map[string]int64),
-			fileProgress: make(map[string]struct{ current, total int64 }),
+		// A download of several languages or platforms runs as passes over the
+		// same call, each owning its slice of the one progress bar. Files two
+		// passes share are skipped by the second, so nothing is fetched twice.
+		languages := q.languages
+		if len(languages) == 0 {
+			languages = []string{q.language}
+		}
+		platforms := q.platforms
+		if len(platforms) == 0 {
+			platforms = []string{q.platformName}
 		}
 
-		err = client.DownloadGameFiles(
-			ctx, token.AccessToken, parsedGameData, q.downloadPath, q.language, q.platformName,
-			q.extrasFlag, q.dlcFlag, q.resumeFlag, q.flattenFlag, q.skipPatchesFlag, q.rommLayoutFlag,
-			q.numThreads, updater,
-		)
+		passes := len(languages) * len(platforms)
+		pass := 0
+		for _, language := range languages {
+			for _, platform := range platforms {
+				updater := &progressUpdater{
+					task:         task,
+					dm:           dm,
+					fileBytes:    make(map[string]int64),
+					fileProgress: make(map[string]struct{ current, total int64 }),
+					progressBase: float64(pass) / float64(passes),
+					progressSpan: 1 / float64(passes),
+				}
+				err = client.DownloadGameFiles(
+					ctx, token.AccessToken, parsedGameData, q.downloadPath, language, platform,
+					q.extrasFlag, q.dlcFlag, q.resumeFlag, q.flattenFlag, q.skipPatchesFlag, q.rommLayoutFlag,
+					q.numThreads, updater,
+				)
+				if err != nil {
+					break
+				}
+				pass++
+			}
+			if err != nil {
+				break
+			}
+		}
 
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -317,17 +368,21 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		announceIfLast(dm, StateCompleted, q.game.Title)
 		// Persist download info for future update checks.
 		info := struct {
-			Language    string `json:"language"`
-			Platform    string `json:"platform"`
-			Extras      bool   `json:"extras"`
-			DLCs        bool   `json:"dlcs"`
-			SkipPatches bool   `json:"skipPatches"`
-			Flatten     bool   `json:"flatten"`
-			Resume      bool   `json:"resume"`
-			Threads     int    `json:"threads"`
+			Language    string   `json:"language"`
+			Platform    string   `json:"platform"`
+			Languages   []string `json:"languages,omitempty"`
+			Platforms   []string `json:"platforms,omitempty"`
+			Extras      bool     `json:"extras"`
+			DLCs        bool     `json:"dlcs"`
+			SkipPatches bool     `json:"skipPatches"`
+			Flatten     bool     `json:"flatten"`
+			Resume      bool     `json:"resume"`
+			Threads     int      `json:"threads"`
 		}{
 			Language:    q.language,
 			Platform:    q.platformName,
+			Languages:   q.languages,
+			Platforms:   q.platforms,
 			Extras:      q.extrasFlag,
 			DLCs:        q.dlcFlag,
 			SkipPatches: q.skipPatchesFlag,

@@ -1,15 +1,19 @@
 package gui
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/test"
 	"github.com/habedi/gogg/auth"
+	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
@@ -129,4 +133,40 @@ func TestExecuteDownload_ReportsUnparseableGameData(t *testing.T) {
 	_, stillActive := activeDownloads[1]
 	activeDownloadsMutex.Unlock()
 	require.False(t, stillActive)
+}
+
+// A download of several languages and platforms runs as one task, and what it
+// was made of is written down beside the files.
+func TestExecuteDownload_CoversEveryTickedChoice(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	app.Preferences().SetBool("soundEnabled", false)
+	app.Preferences().SetBool(prefNotifications, false)
+
+	root := t.TempDir()
+	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+	require.NoError(t, executeDownload(dm, queuedDownload{
+		authService:  stubAuthService(),
+		game:         db.Game{ID: 12, Title: "Every Way", Data: `{"title":"Every Way","downloads":[],"extras":[],"dlcs":[]}`},
+		downloadPath: root,
+		language:     "English", platformName: "all",
+		languages: []string{"English", "Deutsch"}, platforms: []string{"windows", "linux"},
+		numThreads: 1,
+	}))
+
+	tasks := dm.tasksSnapshot()
+	require.Len(t, tasks, 1)
+	task := tasks[0]
+	require.Eventually(t, func() bool { return task.State() == StateCompleted },
+		5*time.Second, 10*time.Millisecond)
+
+	info, err := os.ReadFile(filepath.Join(root, client.SanitizePath("Every Way"), "download_info.json"))
+	require.NoError(t, err)
+	var written struct {
+		Languages []string `json:"languages"`
+		Platforms []string `json:"platforms"`
+	}
+	require.NoError(t, json.Unmarshal(info, &written))
+	require.Equal(t, []string{"English", "Deutsch"}, written.Languages)
+	require.Equal(t, []string{"windows", "linux"}, written.Platforms)
 }

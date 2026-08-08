@@ -41,6 +41,20 @@ func PutGameMetadataAt(ctx context.Context, gameID, format int, data []byte, fet
 	return nil
 }
 
+// AllGameMetadata returns every stored lookup. The library reads them in one
+// go on load, because a query is asked of every game as the user types.
+func AllGameMetadata(ctx context.Context) ([]GameMetadataRecord, error) {
+	if Db == nil {
+		return nil, fmt.Errorf("database connection is not initialized")
+	}
+
+	var records []GameMetadataRecord
+	if err := Db.WithContext(ctx).Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("failed to read metadata records: %w", err)
+	}
+	return records, nil
+}
+
 // GetGameMetadata returns what was stored for a game, or nil when nothing was.
 func GetGameMetadata(ctx context.Context, gameID int) (*GameMetadataRecord, error) {
 	if Db == nil {
