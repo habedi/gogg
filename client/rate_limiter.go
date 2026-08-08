@@ -48,41 +48,50 @@ type limitedReader struct {
 }
 
 func (lr *limitedReader) Read(p []byte) (int, error) {
-	if lr.lim == nil || lr.lim.rate <= 0 {
+	if lr.lim == nil {
 		return lr.under.Read(p)
 	}
-	lr.lim.mu.Lock()
-	// Refill tokens
-	now := time.Now()
-	elapsed := now.Sub(lr.lim.last).Seconds()
-	if elapsed > 0 {
-		lr.lim.tokens += elapsed * float64(lr.lim.rate)
-		maxTokens := float64(lr.lim.rate)
-		if lr.lim.tokens > maxTokens {
-			lr.lim.tokens = maxTokens
-		}
-		lr.lim.last = now
-	}
-	// Decide max bytes we can read now
-	allowed := int(lr.lim.tokens)
-	if allowed <= 0 {
-		// Need to wait for next refill cycle
-		lr.lim.mu.Unlock()
-		sleepDur := time.Duration(float64(time.Second) * (1.0 / float64(lr.lim.rate)))
-		time.Sleep(sleepDur)
-		return lr.Read(p)
-	}
-	if len(p) > allowed {
-		p = p[:allowed]
-	}
-	lr.lim.mu.Unlock()
-	n, err := lr.under.Read(p)
-	if n > 0 {
+	// The limiter fields are shared with SetGlobalDownloadRateLimit, so every
+	// access to them happens under lr.lim.mu.
+	for {
 		lr.lim.mu.Lock()
-		lr.lim.tokens -= float64(n)
+		rate := lr.lim.rate
+		if rate <= 0 {
+			lr.lim.mu.Unlock()
+			return lr.under.Read(p)
+		}
+		// Refill tokens
+		now := time.Now()
+		elapsed := now.Sub(lr.lim.last).Seconds()
+		if elapsed > 0 {
+			lr.lim.tokens += elapsed * float64(rate)
+			maxTokens := float64(rate)
+			if lr.lim.tokens > maxTokens {
+				lr.lim.tokens = maxTokens
+			}
+			lr.lim.last = now
+		}
+		// Decide max bytes we can read now
+		allowed := int(lr.lim.tokens)
+		if allowed <= 0 {
+			// Need to wait for next refill cycle
+			lr.lim.mu.Unlock()
+			time.Sleep(time.Duration(float64(time.Second) * (1.0 / float64(rate))))
+			continue
+		}
+		if len(p) > allowed {
+			p = p[:allowed]
+		}
 		lr.lim.mu.Unlock()
+
+		n, err := lr.under.Read(p)
+		if n > 0 {
+			lr.lim.mu.Lock()
+			lr.lim.tokens -= float64(n)
+			lr.lim.mu.Unlock()
+		}
+		return n, err
 	}
-	return n, err
 }
 
 func wrapWithGlobalRateLimiter(r io.Reader) io.Reader {

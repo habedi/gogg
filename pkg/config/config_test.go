@@ -19,7 +19,7 @@ func TestDefaults(t *testing.T) {
 	assert.True(t, cfg.Resume)
 	assert.Equal(t, 5, cfg.Threads)
 	assert.True(t, cfg.Flatten)
-	assert.False(t, cfg.SkipPatches)
+	assert.True(t, cfg.SkipPatches, "patches are skipped by default, the same as the GUI")
 	assert.False(t, cfg.KeepLatest)
 	assert.False(t, cfg.RommLayout)
 }

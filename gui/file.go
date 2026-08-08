@@ -3,11 +3,9 @@ package gui
 import (
 	"context"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -19,8 +17,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
 	"github.com/habedi/gogg/pkg/hasher"
 	"github.com/habedi/gogg/pkg/operations"
 	"github.com/rs/zerolog/log"
@@ -29,11 +25,6 @@ import (
 type hashResult struct {
 	File string
 	Hash string
-}
-
-type sizeResult struct {
-	Key   string
-	Value string
 }
 
 // hashRow is a custom widget for a single row in our hash results list.
@@ -70,27 +61,48 @@ func (r *hashRow) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(container.New(r.layout, r.file, r.hash))
 }
 
-// columnLayout defines a simple two-column layout with a fixed right column.
+// columnLayout is a two-column layout: the file path, and the hash beside it.
 type columnLayout struct{}
 
+// hashColWidth is the room a hash asks for. Hashes are all of a length, so the
+// column is too, until the row is too narrow to spare that much.
 const hashColWidth float32 = 530
 
 func newColumnLayout() fyne.Layout {
 	return &columnLayout{}
 }
 
+// hashColumnWidth is what the hash column gets in a row of the given width:
+// what it asks for, but never more than half the row. A width of its own left
+// the file path a sliver in a narrow window, and then a negative width that
+// pushed the hash off the left edge.
+func hashColumnWidth(rowWidth float32) float32 {
+	width := hashColWidth
+	if half := (rowWidth - theme.Padding()) / 2; width > half {
+		width = half
+	}
+	if width < 0 {
+		width = 0
+	}
+	return width
+}
+
 func (c *columnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	if len(objects) != 2 {
 		return
 	}
+	hashWidth := hashColumnWidth(size.Width)
+
 	// Right column (hash)
-	hashSize := fyne.NewSize(hashColWidth, objects[1].MinSize().Height)
-	objects[1].Resize(hashSize)
-	objects[1].Move(fyne.NewPos(size.Width-hashColWidth, 0))
+	objects[1].Resize(fyne.NewSize(hashWidth, objects[1].MinSize().Height))
+	objects[1].Move(fyne.NewPos(size.Width-hashWidth, 0))
 
 	// Left column (file path)
-	filePathSize := fyne.NewSize(size.Width-hashColWidth-theme.Padding(), objects[0].MinSize().Height)
-	objects[0].Resize(filePathSize)
+	fileWidth := size.Width - hashWidth - theme.Padding()
+	if fileWidth < 0 {
+		fileWidth = 0
+	}
+	objects[0].Resize(fyne.NewSize(fileWidth, objects[0].MinSize().Height))
 	objects[0].Move(fyne.NewPos(0, 0))
 }
 
@@ -129,7 +141,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 			}
 			dirEntry.SetText(uri.Path())
 		}, win)
-		folderDialog.Resize(fyne.NewSize(800, 600))
+		folderDialog.Resize(fileDialogSize)
 		folderDialog.Show()
 	})
 	pathContainer := container.NewBorder(nil, nil, nil, browseBtn, dirEntry)
@@ -166,6 +178,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	)
 
 	generateBtn := widget.NewButton("Generate File Hashes", nil)
+	generateBtn.Importance = widget.HighImportance
 	progressBar := widget.NewProgressBar()
 	progressBar.Hide()
 
@@ -189,11 +202,11 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	generateBtn.OnTapped = func() {
 		dir := dirEntry.Text
 		if dir == "" {
-			dialog.ShowError(errors.New("please select a directory"), win)
+			showErrorDialog(win, "Please select a directory", nil)
 			return
 		}
 		if _, statErr := os.Stat(dir); statErr != nil {
-			dialog.ShowError(fmt.Errorf("directory does not exist: %w", statErr), win)
+			showErrorDialog(win, "That directory does not exist", statErr)
 			return
 		}
 
@@ -208,7 +221,10 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 				progressBar.Hide()
 			})
 			numThreads, _ := strconv.Atoi(threadsSelect.Selected)
-			generateHashFilesUI(dir, algoSelect.Selected, recursiveCheck.Checked, numThreads, resultsData, progressBar)
+			if err := generateHashFilesUI(dir, algoSelect.Selected, recursiveCheck.Checked,
+				numThreads, resultsData, progressBar); err != nil {
+				runOnMain(func() { showErrorDialog(win, "Could not generate the hashes", err) })
+			}
 		}()
 	}
 
@@ -216,10 +232,11 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		_ = resultsData.Set(make([]interface{}, 0))
 	})
 
-	copyBtn := widget.NewButtonWithIcon("Copy All Results", theme.ContentCopyIcon(), func() {
+	var copyBtn *widget.Button
+	copyBtn = widget.NewButtonWithIcon("Copy All Results", theme.ContentCopyIcon(), func() {
 		items, _ := resultsData.Get()
 		if len(items) == 0 {
-			fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Nothing to copy."))
+			showCopied(copyBtn, "Nothing to copy")
 			return
 		}
 
@@ -234,7 +251,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 		writer.Flush()
 
 		fyne.CurrentApp().Clipboard().SetContent(sb.String())
-		fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Hash results copied to clipboard."))
+		showCopied(copyBtn, "Copied")
 	})
 
 	bottomBar := container.NewHBox(layout.NewSpacer(), clearBtn, copyBtn)
@@ -245,16 +262,18 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	return container.NewBorder(topContent, bottomBar, nil, nil, listContainer)
 }
 
-func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, results binding.UntypedList, progress *widget.ProgressBar) {
+// generateHashFilesUI hashes what is in a directory, appending each result as
+// it arrives. It reports a directory it cannot read or one with nothing in it
+// to hash, which otherwise looked exactly like a job that had finished.
+func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, results binding.UntypedList, progress *widget.ProgressBar) error {
 	filesToProcess, err := operations.FindFilesToHash(dir, recursive, operations.DefaultHashExclusions)
 	if err != nil {
-		log.Error().Err(err).Msg("GUI: Failed to find files to hash")
-		return
+		return fmt.Errorf("could not look through %s: %w", dir, err)
 	}
 
 	totalFiles := len(filesToProcess)
 	if totalFiles == 0 {
-		return
+		return fmt.Errorf("no files to hash in %s", dir)
 	}
 	runOnMain(func() {
 		progress.Max = float64(totalFiles)
@@ -281,520 +300,15 @@ func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, resul
 			progress.SetValue(float64(newCount))
 		})
 	}
+	return nil
 }
 
-func SizeUI(win fyne.Window) fyne.CanvasObject {
-	prefs := fyne.CurrentApp().Preferences()
-
-	var gameMap map[string]int
-	var allGameTitles []string
-	var filteredGameTitles []string
-	selectedGames := make(map[string]bool)
-
-	// Multi-select list for games
-	gamesList := widget.NewList(
-		func() int {
-			return len(filteredGameTitles)
-		},
-		func() fyne.CanvasObject {
-			check := widget.NewCheck("", nil)
-			return container.NewHBox(check, widget.NewLabel("Game Title"))
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			if id >= len(filteredGameTitles) {
-				return
-			}
-			title := filteredGameTitles[id]
-			hbox := obj.(*fyne.Container)
-			check := hbox.Objects[0].(*widget.Check)
-			label := hbox.Objects[1].(*widget.Label)
-
-			label.SetText(title)
-			check.SetChecked(selectedGames[title])
-			check.OnChanged = func(checked bool) {
-				selectedGames[title] = checked
-			}
-		},
-	)
-
-	refreshGameList := func() {
-		games, err := db.GetCatalogue()
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to reload catalogue for SizeUI")
-			return
-		}
-
-		gameMap = make(map[string]int)
-		allGameTitles = make([]string, len(games))
-		for i, game := range games {
-			gameMap[game.Title] = game.ID
-			allGameTitles[i] = game.Title
-		}
-		sort.Strings(allGameTitles)
-		filteredGameTitles = allGameTitles
-		gamesList.Refresh()
-	}
-
-	listener := binding.NewDataListener(func() {
-		runOnMain(refreshGameList)
-	})
-	catalogueUpdated.AddListener(listener)
-
-	refreshGameList()
-
-	filterEntry := widget.NewEntry()
-	filterEntry.SetPlaceHolder("Type to filter games...")
-	clearFilterBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
-		filterEntry.SetText("")
-	})
-	filterEntry.ActionItem = clearFilterBtn
-	clearFilterBtn.Hide()
-
-	gamesCountLabel := widget.NewLabel(fmt.Sprintf("Showing %d games", len(allGameTitles)))
-
-	filterEntry.OnChanged = func(s string) {
-		s = strings.ToLower(s)
-
-		if s == "" {
-			filteredGameTitles = allGameTitles
-			clearFilterBtn.Hide()
-		} else {
-			filtered := make([]string, 0)
-			for _, title := range allGameTitles {
-				if strings.Contains(strings.ToLower(title), s) {
-					filtered = append(filtered, title)
-				}
-			}
-			filteredGameTitles = filtered
-			clearFilterBtn.Show()
-		}
-		gamesCountLabel.SetText(fmt.Sprintf("Showing %d games", len(filteredGameTitles)))
-		gamesList.Refresh()
-	}
-
-	selectAllBtn := widget.NewButton("Select All Shown", func() {
-		for _, title := range filteredGameTitles {
-			selectedGames[title] = true
-		}
-		gamesList.Refresh()
-	})
-
-	deselectAllBtn := widget.NewButton("Deselect All", func() {
-		selectedGames = make(map[string]bool)
-		gamesList.Refresh()
-	})
-
-	selectionControls := container.NewHBox(selectAllBtn, deselectAllBtn, layout.NewSpacer(), gamesCountLabel)
-
-	langCodes := make([]string, 0, len(client.GameLanguages))
-	for code := range client.GameLanguages {
-		langCodes = append(langCodes, code)
-	}
-	sort.Strings(langCodes)
-	langSelect := widget.NewSelect(langCodes, func(s string) {
-		prefs.SetString("sizeUI.language", s)
-	})
-	langSelect.SetSelected(prefs.StringWithFallback("sizeUI.language", "en"))
-
-	platformSelect := widget.NewSelect([]string{"all", "windows", "mac", "linux"}, func(s string) {
-		prefs.SetString("sizeUI.platform", s)
-	})
-	platformSelect.SetSelected(prefs.StringWithFallback("sizeUI.platform", "windows"))
-
-	unitSelect := widget.NewSelect([]string{"gb", "mb"}, func(s string) {
-		prefs.SetString("sizeUI.unit", s)
-	})
-	unitSelect.SetSelected(prefs.StringWithFallback("sizeUI.unit", "gb"))
-
-	extrasCheck := widget.NewCheck("Include Extras", func(b bool) {
-		prefs.SetBool("sizeUI.extras", b)
-	})
-	extrasCheck.SetChecked(prefs.BoolWithFallback("sizeUI.extras", true))
-
-	dlcsCheck := widget.NewCheck("Include DLCs", func(b bool) {
-		prefs.SetBool("sizeUI.dlcs", b)
-	})
-	dlcsCheck.SetChecked(prefs.BoolWithFallback("sizeUI.dlcs", true))
-
-	form := widget.NewForm(
-		widget.NewFormItem("Language", langSelect),
-		widget.NewFormItem("Platform", platformSelect),
-		widget.NewFormItem("Unit", unitSelect),
-	)
-
-	progressBar := widget.NewProgressBar()
-	progressBar.Hide()
-	statusLabel := widget.NewLabel("")
-
-	estimateSelectedBtn := widget.NewButton("Estimate Selected Games", nil)
-	estimateSelectedBtn.Importance = widget.HighImportance
-
-	estimateAllFilteredBtn := widget.NewButton("Estimate All Filtered Games", nil)
-	estimateAllFilteredBtn.Importance = widget.MediumImportance
-
-	// Add help button
-	helpBtn := widget.NewButtonWithIcon("Help", theme.HelpIcon(), func() {
-		helpContent := widget.NewLabel(
-			"How to use Storage Size Estimation:\n\n" +
-				"1. Filter games: Type in the search box to filter the game list\n\n" +
-				"2. Select games:\n" +
-				"   • Click checkboxes to select individual games\n" +
-				"   • Use 'Select All Shown' to select all filtered games\n" +
-				"   • Use 'Deselect All' to clear all selections\n\n" +
-				"3. Configure settings:\n" +
-				"   • Choose language, platform, and display unit\n" +
-				"   • Toggle extras and DLCs inclusion\n\n" +
-				"4. Estimate:\n" +
-				"   • Click 'Estimate Selected' for chosen games\n" +
-				"   • Click 'Estimate All Filtered' for all visible games\n\n" +
-				"5. Results:\n" +
-				"   • View individual game sizes in the table below\n" +
-				"   • See total estimated size in the summary\n" +
-				"   • Copy results to clipboard as CSV",
-		)
-		helpContent.Wrapping = fyne.TextWrapWord
-
-		helpDialog := dialog.NewCustom("Storage Size Estimation Help", "Close",
-			container.NewVScroll(helpContent), win)
-		helpDialog.Resize(fyne.NewSize(600, 500))
-		helpDialog.Show()
-	})
-
-	buttonRow := container.NewHBox(
-		estimateSelectedBtn,
-		estimateAllFilteredBtn,
-		layout.NewSpacer(),
-		helpBtn,
-	)
-
-	// Left panel with scrollable game list
-	leftHeaderLabel := widget.NewLabel("Filter and Select Games:")
-	leftHeaderLabel.TextStyle.Bold = true
-
-	leftPanelTop := container.NewVBox(
-		leftHeaderLabel,
-		widget.NewSeparator(),
-		filterEntry,
-		selectionControls,
-		widget.NewSeparator(),
-	)
-
-	// Create a card-like container for the games list with subtle background
-	gamesListCard := widget.NewCard("", "", container.NewScroll(gamesList))
-
-	leftPanel := container.NewBorder(
-		leftPanelTop,
-		nil,
-		nil,
-		nil,
-		gamesListCard,
-	)
-
-	// Right panel with properly aligned settings
-	rightHeaderLabel := widget.NewLabel("Estimation Settings:")
-	rightHeaderLabel.TextStyle.Bold = true
-
-	// Wrap form in a card for visual grouping
-	formCard := widget.NewCard("", "",
-		container.NewVBox(
-			form,
-			container.NewHBox(extrasCheck, dlcsCheck),
-		),
-	)
-
-	rightPanelTop := container.NewVBox(
-		rightHeaderLabel,
-		widget.NewSeparator(),
-		formCard,
-		buttonRow,
-		progressBar,
-		statusLabel,
-	)
-
-	rightPanel := container.NewBorder(
-		rightPanelTop,
-		nil,
-		nil,
-		nil,
-		layout.NewSpacer(),
-	)
-
-	topContent := container.NewHSplit(leftPanel, rightPanel)
-	topContent.SetOffset(0.5)
-
-	resultsData := binding.NewUntypedList()
-
-	// Create a table with better sizing
-	resultsTable := widget.NewTable(
-		func() (int, int) { return resultsData.Length(), 2 },
-		func() fyne.CanvasObject {
-			label := NewCopyableLabel("Template")
-			label.Wrapping = fyne.TextWrapWord
-			return label
-		},
-		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			item, err := resultsData.GetValue(id.Row)
-			if err != nil {
-				return
-			}
-			res := item.(sizeResult)
-			label := cell.(*CopyableLabel)
-			if id.Col == 0 {
-				label.SetText(res.Key)
-				label.TextStyle.Bold = true
-			} else {
-				label.SetText(res.Value)
-				label.TextStyle.Bold = false
-			}
-			label.Refresh()
-		},
-	)
-	resultsTable.SetColumnWidth(0, 500)
-	resultsTable.SetColumnWidth(1, 200)
-
-	estimateSelectedBtn.OnTapped = func() {
-		selectedTitles := make([]string, 0)
-		for title, selected := range selectedGames {
-			if selected {
-				selectedTitles = append(selectedTitles, title)
-			}
-		}
-
-		if len(selectedTitles) == 0 {
-			dialog.ShowError(errors.New("please select at least one game"), win)
-			return
-		}
-
-		estimateSelectedBtn.Disable()
-		estimateAllFilteredBtn.Disable()
-		progressBar.Show()
-
-		go func() {
-			defer runOnMain(func() {
-				estimateSelectedBtn.Enable()
-				estimateAllFilteredBtn.Enable()
-				progressBar.Hide()
-				statusLabel.SetText("Estimation complete")
-			})
-
-			estimateMultipleGamesUI(
-				selectedTitles,
-				gameMap,
-				langSelect.Selected,
-				platformSelect.Selected,
-				extrasCheck.Checked,
-				dlcsCheck.Checked,
-				unitSelect.Selected,
-				resultsData,
-				progressBar,
-				statusLabel,
-			)
-		}()
-	}
-
-	estimateAllFilteredBtn.OnTapped = func() {
-		if len(filteredGameTitles) == 0 {
-			dialog.ShowError(errors.New("no games match the filter"), win)
-			return
-		}
-
-		msg := fmt.Sprintf("Estimate storage size for all %d filtered games?", len(filteredGameTitles))
-		dialog.ShowConfirm("Confirm Estimation", msg, func(confirmed bool) {
-			if !confirmed {
-				return
-			}
-
-			estimateSelectedBtn.Disable()
-			estimateAllFilteredBtn.Disable()
-			progressBar.Show()
-
-			go func() {
-				defer runOnMain(func() {
-					estimateSelectedBtn.Enable()
-					estimateAllFilteredBtn.Enable()
-					progressBar.Hide()
-					statusLabel.SetText("Estimation complete")
-				})
-
-				estimateMultipleGamesUI(
-					filteredGameTitles,
-					gameMap,
-					langSelect.Selected,
-					platformSelect.Selected,
-					extrasCheck.Checked,
-					dlcsCheck.Checked,
-					unitSelect.Selected,
-					resultsData,
-					progressBar,
-					statusLabel,
-				)
-			}()
-		}, win)
-	}
-
-	clearBtn := widget.NewButtonWithIcon("Clear Results", theme.DeleteIcon(), func() {
-		_ = resultsData.Set(make([]interface{}, 0))
-		statusLabel.SetText("")
-	})
-	clearBtn.Importance = widget.LowImportance
-
-	copyBtn := widget.NewButtonWithIcon("Copy All (CSV)", theme.ContentCopyIcon(), func() {
-		items, _ := resultsData.Get()
-		if len(items) == 0 {
-			fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Nothing to copy."))
-			return
-		}
-
-		var sb strings.Builder
-		writer := csv.NewWriter(&sb)
-		_ = writer.Write([]string{"Game/Parameter", "Value"})
-
-		for _, item := range items {
-			res := item.(sizeResult)
-			_ = writer.Write([]string{res.Key, res.Value})
-		}
-		writer.Flush()
-
-		fyne.CurrentApp().Clipboard().SetContent(sb.String())
-		fyne.CurrentApp().SendNotification(fyne.NewNotification("Gogg", "Size estimation results copied to clipboard."))
-	})
-	copyBtn.Importance = widget.MediumImportance
-
-	bottomBar := container.NewHBox(layout.NewSpacer(), clearBtn, copyBtn)
-
-	// Wrap results in a card with a header for better visual organization
-	resultsHeader := widget.NewLabel("Estimation Results:")
-	resultsHeader.TextStyle.Bold = true
-
-	resultsTableScroll := container.NewScroll(resultsTable)
-	resultsCard := widget.NewCard("", "", resultsTableScroll)
-
-	resultsSection := container.NewBorder(
-		container.NewVBox(resultsHeader, widget.NewSeparator()),
-		nil,
-		nil,
-		nil,
-		resultsCard,
-	)
-
-	return container.NewBorder(topContent, bottomBar, nil, nil, resultsSection)
-}
-
-func estimateMultipleGamesUI(
-	gameTitles []string,
-	gameMap map[string]int,
-	languageCode, platformName string,
-	extrasFlag, dlcFlag bool,
-	sizeUnit string,
-	results binding.UntypedList,
-	progress *widget.ProgressBar,
-	statusLabel *widget.Label,
-) {
-	_ = results.Set(make([]interface{}, 0))
-
-	totalGames := len(gameTitles)
-	runOnMain(func() {
-		progress.Max = float64(totalGames)
-		progress.SetValue(0)
-		statusLabel.SetText(fmt.Sprintf("Estimating 0/%d games...", totalGames))
-	})
-
-	params := operations.EstimationParams{
-		LanguageCode:  languageCode,
-		PlatformName:  platformName,
-		IncludeExtras: extrasFlag,
-		IncludeDLCs:   dlcFlag,
-	}
-
-	var totalBytes int64
-	successCount := 0
-	errorCount := 0
-
-	boolToStr := func(b bool) string {
-		if b {
-			return "Yes"
-		}
-		return "No"
-	}
-
-	// Add header information
-	langFullName := client.GameLanguages[languageCode]
-	headerRows := []interface{}{
-		sizeResult{"=== Estimation Settings ===", ""},
-		sizeResult{"Platform", platformName},
-		sizeResult{"Language", langFullName},
-		sizeResult{"Extras Included", boolToStr(extrasFlag)},
-		sizeResult{"DLCs Included", boolToStr(dlcFlag)},
-		sizeResult{"Total Games", fmt.Sprintf("%d", totalGames)},
-		sizeResult{"", ""},
-		sizeResult{"=== Individual Games ===", ""},
-	}
-	runOnMain(func() {
-		_ = results.Set(headerRows)
-	})
-
-	for i, title := range gameTitles {
-		gameID, exists := gameMap[title]
-		if !exists {
-			errorCount++
-			runOnMain(func() {
-				_ = results.Append(sizeResult{title, "Error: Game not found"})
-			})
-			continue
-		}
-
-		totalSizeBytes, _, err := operations.EstimateGameSize(gameID, params)
-		if err != nil {
-			errorCount++
-			runOnMain(func() {
-				_ = results.Append(sizeResult{title, fmt.Sprintf("Error: %v", err)})
-			})
-		} else {
-			totalBytes += totalSizeBytes
-			successCount++
-
-			var sizeStr string
-			if sizeUnit == "gb" {
-				sizeInGB := float64(totalSizeBytes) / (1024 * 1024 * 1024)
-				sizeStr = fmt.Sprintf("%.2f GB", sizeInGB)
-			} else {
-				sizeInMB := float64(totalSizeBytes) / (1024 * 1024)
-				sizeStr = fmt.Sprintf("%.2f MB", sizeInMB)
-			}
-
-			runOnMain(func() {
-				_ = results.Append(sizeResult{title, sizeStr})
-			})
-		}
-
-		runOnMain(func() {
-			progress.SetValue(float64(i + 1))
-			statusLabel.SetText(fmt.Sprintf("Estimated %d/%d games...", i+1, totalGames))
-		})
-	}
-
-	// Add summary at the end
-	var totalSizeStr string
-	if sizeUnit == "gb" {
-		totalInGB := float64(totalBytes) / (1024 * 1024 * 1024)
-		totalSizeStr = fmt.Sprintf("%.2f GB", totalInGB)
-	} else {
-		totalInMB := float64(totalBytes) / (1024 * 1024)
-		totalSizeStr = fmt.Sprintf("%.2f MB", totalInMB)
-	}
-
-	summaryRows := []interface{}{
-		sizeResult{"", ""},
-		sizeResult{"=== Summary ===", ""},
-		sizeResult{"Total Games Processed", fmt.Sprintf("%d", totalGames)},
-		sizeResult{"Successful Estimations", fmt.Sprintf("%d", successCount)},
-		sizeResult{"Failed Estimations", fmt.Sprintf("%d", errorCount)},
-		sizeResult{"Total Estimated Size", totalSizeStr},
-	}
-
-	runOnMain(func() {
-		currentItems, _ := results.Get()
-		allItems := append(currentItems, summaryRows...)
-		_ = results.Set(allItems)
-	})
+// showFileHashes opens the hash utility in a dialog. It used to be a tab,
+// but downloads verify themselves now, so manual hashing is a utility to
+// reach for rather than a place to be.
+func showFileHashes(win fyne.Window) {
+	body := container.NewStack(HashUI(win))
+	popup := dialog.NewCustom(sectionFileHashes, "Close", body, win)
+	popup.Resize(fileDialogSize)
+	popup.Show()
 }

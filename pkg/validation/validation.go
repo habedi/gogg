@@ -7,11 +7,21 @@ import (
 const (
 	MinThreads = 1
 	MaxThreads = 20
+	// Connection bounds for parallel range downloads within one file.
+	MinConnections = 1
+	MaxConnections = 8
 )
 
 func ValidateThreadCount(threads int) error {
 	if threads < MinThreads || threads > MaxThreads {
 		return fmt.Errorf("thread count must be between %d and %d, got %d", MinThreads, MaxThreads, threads)
+	}
+	return nil
+}
+
+func ValidateConnectionCount(connections int) error {
+	if connections < MinConnections || connections > MaxConnections {
+		return fmt.Errorf("connection count must be between %d and %d, got %d", MinConnections, MaxConnections, connections)
 	}
 	return nil
 }

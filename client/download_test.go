@@ -199,7 +199,7 @@ func TestDownloadGameFiles_BadDownloadPath(t *testing.T) {
 	badPath := filepath.Join(blockingFile, "sub")
 
 	err := DownloadGameFiles(context.Background(), "token", Game{}, badPath,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	assert.Error(t, err)
 }
 
@@ -208,7 +208,7 @@ func TestDownloadGameFiles_EmptyGame(t *testing.T) {
 	// and writes a metadata.json file.
 	tmp := t.TempDir()
 	err := DownloadGameFiles(context.Background(), "token", Game{Title: "mygame"}, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	require.NoError(t, err)
 }
 
@@ -225,7 +225,7 @@ func TestDownloadGameFiles_EnqueueError(t *testing.T) {
 	cancel()
 
 	err := DownloadGameFiles(ctx, "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -248,7 +248,7 @@ func TestDownloadGameFiles_HTTP403OnHEAD(t *testing.T) {
 	}
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
 	// The empty partial file must have been cleaned up.
@@ -281,7 +281,7 @@ func TestDownloadGameFiles_HTTP403OnGET(t *testing.T) {
 	}
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	require.NoError(t, err)
 }
 
@@ -311,7 +311,7 @@ func TestDownloadGameFiles_PartFileRenamedOnSuccess(t *testing.T) {
 	}
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
 	gameDir := filepath.Join(tmp, "mygame", "windows")
@@ -343,7 +343,7 @@ func TestDownloadGameFiles_PartFileRemovedOnError(t *testing.T) {
 	}
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	require.Error(t, err)
 
 	gameDir := filepath.Join(tmp, "mygame", "windows")
@@ -365,7 +365,7 @@ func TestDownloadGameFiles_DownloadTaskError(t *testing.T) {
 	}
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "download tasks failed")
 }

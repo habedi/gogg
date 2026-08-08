@@ -63,7 +63,7 @@ func TestCloseResponseBody_NilResponse(t *testing.T) {
 }
 
 func TestCloseResponseBody_NilBody(t *testing.T) {
-	closeResponseBody(&http.Response{}) // Body is nil — must not panic
+	closeResponseBody(&http.Response{}) // Body is nil and must not panic
 }
 
 func TestParseGameData_InvalidJSON(t *testing.T) {

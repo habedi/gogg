@@ -245,26 +245,29 @@ func refreshCatalogue(cmd *cobra.Command, authService *auth.Service, numThreads 
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
 	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
 	for _, c := range changes {
-		var changeType string
-		switch {
-		case c.OldVersion == "" && c.NewVersion != "":
-			changeType = "Added"
-		case c.NewVersion == "" && c.OldVersion != "":
-			changeType = "Removed"
-		default:
-			changeType = "Updated"
-		}
 		oldV := c.OldVersion
 		if oldV == "" {
-			oldV = "—"
+			oldV = "N/A"
 		}
 		newV := c.NewVersion
 		if newV == "" {
-			newV = "—"
+			newV = "N/A"
 		}
-		table.Append([]string{fmt.Sprintf("%d", c.GameID), c.Title, changeType, oldV, newV})
+		table.Append([]string{fmt.Sprintf("%d", c.GameID), c.Title, changeLabel(c), oldV, newV})
 	}
 	table.Render()
+}
+
+// changeLabel renders the kind of a catalogue change for the changes table.
+func changeLabel(c client.VersionChange) string {
+	switch c.Kind {
+	case client.ChangeAdded:
+		return "Added"
+	case client.ChangeRemoved:
+		return "Removed"
+	default:
+		return "Updated"
+	}
 }
 
 func searchCmd(repo db.GameRepository) *cobra.Command {
@@ -411,7 +414,9 @@ func exportCatalogueToCSV(path string, games []db.Game) error {
 		return err
 	}
 	for _, game := range games {
-		if _, err := fmt.Fprintf(file, "%d,\"%s\"\n", game.ID, game.Title); err != nil {
+		// Double quotes inside a quoted CSV field are escaped by doubling them.
+		title := strings.ReplaceAll(game.Title, `"`, `""`)
+		if _, err := fmt.Fprintf(file, "%d,\"%s\"\n", game.ID, title); err != nil {
 			log.Error().Err(err).Msgf("Failed to write game %d to CSV file", game.ID)
 			return err
 		}

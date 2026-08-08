@@ -70,10 +70,11 @@ func createRootCmd(authService *auth.Service, gogClient *client.GogClient, gameR
 	rootCmd.AddCommand(
 		catalogueCmd(authService, gameRepo),
 		downloadCmd(authService),
+		savesCmd(authService),
 		versionCmd(),
 		loginCmd(gogClient),
 		fileCmd(),
-		guiCmd(authService),
+		guiCmd(authService, gogClient),
 	)
 
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true

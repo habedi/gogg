@@ -11,6 +11,11 @@ type WorkerFunc[T any] func(ctx context.Context, item T) error
 // Run executes a worker pool. It processes a slice of items concurrently.
 // It returns a slice containing any errors that occurred during processing.
 func Run[T any](ctx context.Context, items []T, numWorkers int, workerFunc WorkerFunc[T]) []error {
+	if numWorkers < 1 {
+		// Without at least one worker nothing would ever drain taskChan.
+		numWorkers = 1
+	}
+
 	var wg sync.WaitGroup
 	taskChan := make(chan T, numWorkers)
 	errChan := make(chan error, len(items))

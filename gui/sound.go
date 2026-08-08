@@ -26,12 +26,39 @@ var defaultDingSound []byte
 
 var (
 	speakerOnce     sync.Once
-	mixer           *beep.Mixer
 	sampleRate      beep.SampleRate
 	currentSound    context.CancelFunc
+	currentSoundID  uint64
+	soundSeq        uint64
 	currentSoundMux sync.Mutex
-	soundPlaying    bool
 )
+
+// beginSound stops any sound that is still playing and registers this one as
+// the current sound. The returned release function retires the registration,
+// doing nothing if a newer sound has taken over in the meantime.
+func beginSound() (context.Context, func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	currentSoundMux.Lock()
+	if currentSound != nil {
+		currentSound()
+	}
+	soundSeq++
+	id := soundSeq
+	currentSound = cancel
+	currentSoundID = id
+	currentSoundMux.Unlock()
+
+	return ctx, func() {
+		currentSoundMux.Lock()
+		if currentSoundID == id {
+			currentSound = nil
+			currentSoundID = 0
+		}
+		currentSoundMux.Unlock()
+		cancel()
+	}
+}
 
 func initSpeaker(sr beep.SampleRate) {
 	speakerOnce.Do(func() {
@@ -39,10 +66,7 @@ func initSpeaker(sr beep.SampleRate) {
 		bufferSize := sr.N(time.Second / 10)
 		if err := speaker.Init(sampleRate, bufferSize); err != nil {
 			log.Error().Err(err).Msg("Failed to initialize speaker")
-			return
 		}
-		mixer = &beep.Mixer{}
-		speaker.Play(mixer)
 	})
 }
 
@@ -88,21 +112,8 @@ func PlayNotificationSound() {
 		return
 	}
 
-	currentSoundMux.Lock()
-	if currentSound != nil && soundPlaying {
-		currentSound()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	currentSound = cancel
-	soundPlaying = true
-	currentSoundMux.Unlock()
-
-	defer func() {
-		currentSoundMux.Lock()
-		soundPlaying = false
-		currentSound = nil
-		currentSoundMux.Unlock()
-	}()
+	ctx, release := beginSound()
+	defer release()
 
 	filePath := a.Preferences().String("soundFilePath")
 	var reader io.ReadCloser
@@ -169,7 +180,9 @@ func PlayNotificationSound() {
 	resampled := beep.Resample(4, format.SampleRate, sampleRate, streamer)
 
 	done := make(chan bool, 1)
-	mixer.Add(beep.Seq(resampled, beep.Callback(func() {
+	// speaker.Play mixes under the speaker's own lock; adding to a mixer of our
+	// own would race with the goroutine streaming it.
+	speaker.Play(beep.Seq(resampled, beep.Callback(func() {
 		select {
 		case done <- true:
 		default:

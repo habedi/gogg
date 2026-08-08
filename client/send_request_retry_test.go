@@ -25,7 +25,7 @@ func TestSendRequest_RetriesOn500ThenSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := time.Now()
+	delays := stubRetryWait(t, nil)
 	resp, err := sendRequest(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -36,9 +36,9 @@ func TestSendRequest_RetriesOn500ThenSucceeds(t *testing.T) {
 	if attempts != 2 {
 		t.Fatalf("expected 2 attempts, got %d", attempts)
 	}
-	if time.Since(start) < time.Second {
-		// There is a 1s backoff; if it didn't wait at all, retry didn't happen
-		t.Fatalf("expected at least ~1s backoff, got quick return")
+	if got := delays(); len(got) != 1 || got[0] != time.Second {
+		// The retry has to back off once before the second attempt.
+		t.Fatalf("expected a single 1s backoff, got %v", got)
 	}
 	_ = resp.Body.Close()
 }

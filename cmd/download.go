@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -89,7 +88,13 @@ func (cw *cliProgressWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// getFileStatusString builds a compact string of current file progresses.
+// statusFilesShown is how many in-flight files the bar's description names. A
+// description longer than the terminal is wide wraps, and every redraw of a
+// wrapped bar becomes a new line of scrollback.
+const statusFilesShown = 2
+
+// getFileStatusString builds a compact string of current file progresses,
+// short enough to keep the bar on its one line.
 func (cw *cliProgressWriter) getFileStatusString() string {
 	if len(cw.fileProgress) == 0 {
 		return "Finalizing..."
@@ -102,28 +107,43 @@ func (cw *cliProgressWriter) getFileStatusString() string {
 	sort.Strings(files)
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Downloading %d files: ", len(files))
+	fmt.Fprintf(&sb, "%d %s: ", len(files), filesWord(len(files)))
 	for i, file := range files {
+		if i >= statusFilesShown {
+			fmt.Fprintf(&sb, " +%d more", len(files)-statusFilesShown)
+			break
+		}
 		shortName := file
-		if len(shortName) > 25 {
-			shortName = "..." + shortName[len(shortName)-22:]
+		if len(shortName) > 20 {
+			shortName = "..." + shortName[len(shortName)-17:]
 		}
 		progress := cw.fileProgress[file]
-		sizeStr := fmt.Sprintf("%s/%s", formatBytes(progress.current), formatBytes(progress.total))
-		fmt.Fprintf(&sb, "%s %s", shortName, sizeStr)
-		if i < len(files)-1 {
+		percent := 0
+		if progress.total > 0 {
+			percent = int(float64(progress.current) / float64(progress.total) * 100)
+		}
+		if i > 0 {
 			sb.WriteString(" | ")
 		}
+		fmt.Fprintf(&sb, "%s %d%%", shortName, percent)
 	}
 	return sb.String()
+}
+
+func filesWord(n int) string {
+	if n == 1 {
+		return "file"
+	}
+	return "files"
 }
 
 func downloadCmd(authService *auth.Service) *cobra.Command {
 	cfg := config.Load()
 
 	var language, platformName string
-	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool
+	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool
 	var numThreads int
+	var connections int
 
 	cmd := &cobra.Command{
 		Use:   "download [gameID] [downloadDir]",
@@ -152,7 +172,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				}
 			}
 			ctx := cmd.Context()
-			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, numThreads)
+			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag, numThreads, connections)
 		},
 	}
 
@@ -162,20 +182,31 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cmd.Flags().BoolVarP(&dlcFlag, "dlcs", "d", cfg.DLCs, "Include DLC files? [true, false]")
 	cmd.Flags().BoolVarP(&resumeFlag, "resume", "r", cfg.Resume, "Resume downloading? [true, false]")
 	cmd.Flags().IntVarP(&numThreads, "threads", "t", cfg.Threads, "Number of worker threads to use for downloading [1-20]")
+	cmd.Flags().IntVar(&connections, "connections", cfg.Connections, "Number of connections per file for large files [1-8]; more than one splits a file into ranges downloaded at once")
 	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", cfg.Flatten, "Flatten the directory structure when downloading? [true, false]")
 	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", cfg.SkipPatches, "Skip patches when downloading? [true, false]")
 	cmd.Flags().BoolVar(&keepLatestFlag, "keep-latest", cfg.KeepLatest, "Remove older installer versions after successful download (keep only highest version)")
 	cmd.Flags().BoolVar(&rommLayoutFlag, "romm", cfg.RommLayout, "Use RomM compatible folder layout (platform/game)")
+	cmd.Flags().BoolVar(&lutrisLayoutFlag, "lutris", cfg.LutrisLayout, "Use Lutris compatible folder layout (game-slug/gog), so Lutris reuses the files as its installer cache")
 
 	return cmd
 }
 
-func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool, numThreads int) {
+func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool, numThreads, connections int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
 	if err := validation.ValidateThreadCount(numThreads); err != nil {
 		fmt.Println(clierr.New(clierr.Validation, "Invalid thread count", err).Message)
+		return
+	}
+	// Configs written before the key existed decode to zero, which means
+	// the setting was never chosen; that is the single stream, not an error.
+	if connections == 0 {
+		connections = 1
+	}
+	if err := validation.ValidateConnectionCount(connections); err != nil {
+		fmt.Println(clierr.New(clierr.Validation, "Invalid connection count", err).Message)
 		return
 	}
 	if err := validation.ValidatePlatform(platformName); err != nil {
@@ -230,12 +261,19 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		fmt.Println("Error parsing game data from local catalogue.")
 		return
 	}
+	parsedGameData.ID = game.ID
 
 	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
 	progressWriter := &cliProgressWriter{}
 
-	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, rommLayoutFlag, numThreads, progressWriter)
+	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath,
+		client.DownloadOptions{
+			Language: languageFullName, Platform: platformName,
+			Extras: extrasFlag, DLCs: dlcFlag, Resume: resumeFlag,
+			Flatten: flattenFlag, SkipPatches: skipPatchesFlag, RomMLayout: rommLayoutFlag,
+			LutrisLayout: lutrisLayoutFlag, Threads: numThreads, Connections: connections,
+		}, progressWriter)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			fmt.Println(clierr.New(clierr.Internal, "Download cancelled or timed out", err).Message)
@@ -245,104 +283,21 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		return
 	}
 
-	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title)))
+	gameDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
+	if lutrisLayoutFlag {
+		gameDir = filepath.Join(downloadPath, client.LutrisSlug(parsedGameData.Title), "gog")
+	}
+	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", gameDir)
 	if keepLatestFlag {
-		if err := pruneOldVersions(downloadPath, parsedGameData.Title); err != nil {
-			log.Warn().Err(err).Msg("Failed to prune old versions")
+		removed, pruneErr := client.PruneOldInstallerVersions(downloadPath, parsedGameData.Title,
+			client.DownloadOptions{RomMLayout: rommLayoutFlag, LutrisLayout: lutrisLayoutFlag, Platform: platformName})
+		if pruneErr != nil {
+			log.Warn().Err(pruneErr).Msg("Failed to prune old versions")
+		}
+		if len(removed) > 0 {
+			fmt.Printf("Removed %d older installer %s.\n", len(removed), filesWord(len(removed)))
 		}
 	}
-}
-
-var versionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
-
-func parseVersion(filename string) (prefix string, verSlice []int, suffix string, ok bool) {
-	m := versionPattern.FindStringSubmatch(filename)
-	if m == nil {
-		return "", nil, "", false
-	}
-	prefix = m[1]
-	suffix = m[3]
-	verParts := strings.Split(m[2], ".")
-	for _, p := range verParts {
-		v, err := strconv.Atoi(p)
-		if err != nil {
-			return "", nil, "", false
-		}
-		verSlice = append(verSlice, v)
-	}
-	return prefix, verSlice, suffix, true
-}
-
-func compareVersions(a, b []int) int { // 1 if a>b, -1 if a<b, 0 if eq
-	for i := 0; i < len(a) || i < len(b); i++ {
-		va, vb := 0, 0
-		if i < len(a) {
-			va = a[i]
-		}
-		if i < len(b) {
-			vb = b[i]
-		}
-		if va > vb {
-			return 1
-		}
-		if va < vb {
-			return -1
-		}
-	}
-	return 0
-}
-
-func pruneOldVersions(downloadPath, title string) error {
-	root := filepath.Join(downloadPath, client.SanitizePath(title))
-	if _, err := os.Stat(root); err != nil {
-		return err
-	}
-	// Candidate extensions (installer types)
-	extAllowed := map[string]struct{}{".exe": {}, ".bin": {}, ".dmg": {}, ".sh": {}, ".zip": {}, ".tar.gz": {}, ".rar": {}}
-	latestByPrefix := make(map[string]struct {
-		file string
-		ver  []int
-	})
-	filesByPrefix := make(map[string][]string)
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return nil
-		}
-		name := info.Name()
-		ext := filepath.Ext(name)
-		// handle .tar.gz
-		if strings.HasSuffix(name, ".tar.gz") {
-			ext = ".tar.gz"
-		}
-		if _, ok := extAllowed[ext]; !ok {
-			return nil
-		}
-		prefix, ver, _, ok := parseVersion(name)
-		if !ok || len(ver) == 0 {
-			return nil
-		}
-		filesByPrefix[prefix] = append(filesByPrefix[prefix], path)
-		curr, exists := latestByPrefix[prefix]
-		if !exists || compareVersions(ver, curr.ver) == 1 {
-			latestByPrefix[prefix] = struct {
-				file string
-				ver  []int
-			}{file: path, ver: ver}
-		}
-		return nil
-	})
-	// Remove older ones
-	for prefix, files := range filesByPrefix {
-		latest := latestByPrefix[prefix].file
-		for _, f := range files {
-			if f != latest {
-				if err := os.Remove(f); err != nil {
-					log.Warn().Err(err).Str("file", f).Msg("Failed to remove old version file")
-				}
-			}
-		}
-	}
-	return nil
 }
 
 func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {

@@ -1,5 +1,5 @@
 # ---- Builder Stage ----
-FROM golang:1.24-bookworm as builder
+FROM golang:1.25-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && \

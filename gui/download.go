@@ -6,29 +6,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/data/binding"
-	"github.com/habedi/gogg/auth"
 	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
 	"github.com/rs/zerolog/log"
 )
 
-var (
-	ErrDownloadInProgress = errors.New("download already in progress")
-	activeDownloads       = make(map[int]struct{})
-	activeDownloadsMutex  = &sync.Mutex{}
-)
+// fileStatusLines is how many transfers a download card lists before it
+// summarises the rest.
+const fileStatusLines = 3
+
+var ErrDownloadInProgress = errors.New("download already in progress")
 
 func formatBytes(b int64) string {
 	const unit = 1024
@@ -45,6 +40,7 @@ func formatBytes(b int64) string {
 
 type progressUpdater struct {
 	task              *DownloadTask
+	dm                *DownloadManager
 	totalBytes        int64
 	downloadedBytes   int64
 	fileBytes         map[string]int64
@@ -55,6 +51,20 @@ type progressUpdater struct {
 	lastBytes         int64
 	speeds            []float64
 	speedAvgSize      int
+
+	// A download of several languages or platforms runs in passes, and each
+	// pass owns a slice of the one bar: base is where this pass starts, span
+	// how much of the bar it may fill. Zero span means the whole bar.
+	progressBase float64
+	progressSpan float64
+	// The header counts bytes, and it counts across every pass, not one at a
+	// time: overallBase is the bytes the passes before this one already
+	// brought, and overallTotal the size of the whole job. Zero overallTotal
+	// means a single pass, where the pass total is the whole of it.
+	overallBase  int64
+	overallTotal int64
+	// finishing notes that every byte of this pass has landed.
+	finishing bool
 }
 
 func (pu *progressUpdater) Write(p []byte) (n int, err error) {
@@ -83,14 +93,32 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 			pu.fileBytes[update.FileName] = update.CurrentBytes
 
 			if pu.totalBytes > 0 {
-				progress := float64(pu.downloadedBytes) / float64(pu.totalBytes)
-				_ = pu.task.Progress.Set(progress)
+				span := pu.progressSpan
+				if span == 0 {
+					span = 1
+				}
+				fraction := float64(pu.downloadedBytes) / float64(pu.totalBytes)
+				_ = pu.task.Progress.Set(pu.progressBase + fraction*span)
 			}
-			if pu.task.State == StatePreparing {
-				pu.task.State = StateDownloading
+			if pu.task.State() == StatePreparing {
+				pu.task.SetState(StateDownloading)
 				_ = pu.task.Status.Set("Downloading files...")
 			}
+			// Every byte has landed but the call has not returned: files are
+			// being renamed into place. Said, or the pause reads as a hang.
+			if pu.totalBytes > 0 {
+				finishing := pu.downloadedBytes >= pu.totalBytes
+				if finishing != pu.finishing {
+					pu.finishing = finishing
+					if finishing {
+						_ = pu.task.Status.Set("Finishing up...")
+					} else {
+						_ = pu.task.Status.Set("Downloading files...")
+					}
+				}
+			}
 			pu.updateSpeedAndETA()
+			pu.publishTotals()
 
 			pu.fileProgress[update.FileName] = struct{ current, total int64 }{update.CurrentBytes, update.TotalBytes}
 			if update.CurrentBytes >= update.TotalBytes && update.TotalBytes > 0 {
@@ -101,6 +129,33 @@ func (pu *progressUpdater) Write(p []byte) (n int, err error) {
 	}
 
 	return len(p), nil
+}
+
+// publishTotals mirrors this download's progress onto the task and refreshes
+// the aggregate line above the download list. When the job runs in passes, it
+// reports the bytes and the total for the whole job rather than the pass in
+// hand, so the header counts up once instead of resetting each pass.
+func (pu *progressUpdater) publishTotals() {
+	downloaded, total := pu.downloadedBytes, pu.totalBytes
+	if pu.overallTotal > 0 {
+		downloaded, total = pu.overallBase+pu.downloadedBytes, pu.overallTotal
+	}
+	pu.task.SetProgressBytes(downloaded, total, int64(pu.averageSpeed()))
+	if pu.dm != nil {
+		pu.dm.refreshTotals()
+	}
+}
+
+// averageSpeed is the smoothed transfer rate in bytes per second.
+func (pu *progressUpdater) averageSpeed() float64 {
+	if len(pu.speeds) == 0 {
+		return 0
+	}
+	var total float64
+	for _, speed := range pu.speeds {
+		total += speed
+	}
+	return total / float64(len(pu.speeds))
 }
 
 func (pu *progressUpdater) updateSpeedAndETA() {
@@ -122,24 +177,32 @@ func (pu *progressUpdater) updateSpeedAndETA() {
 		pu.speeds = pu.speeds[1:]
 	}
 
-	var totalSpeed float64
-	for _, s := range pu.speeds {
-		totalSpeed += s
-	}
-	avgSpeed := totalSpeed / float64(len(pu.speeds))
+	avgSpeed := pu.averageSpeed()
 
 	pu.lastUpdateTime = now
 	pu.lastBytes = pu.downloadedBytes
 
-	detailsStr := fmt.Sprintf("Speed: %s/s", formatBytes(int64(avgSpeed)))
-	remainingBytes := pu.totalBytes - pu.downloadedBytes
-	if avgSpeed > 0 && remainingBytes > 0 {
-		etaSeconds := float64(remainingBytes) / avgSpeed
-		duration, _ := time.ParseDuration(fmt.Sprintf("%fs", math.Round(etaSeconds)))
-		detailsStr += fmt.Sprintf(" | ETA: %s", duration.Truncate(time.Second).String())
+	remaining := pu.totalBytes - pu.downloadedBytes
+	if pu.overallTotal > 0 {
+		remaining = pu.overallTotal - (pu.overallBase + pu.downloadedBytes)
+	}
+	_ = pu.task.Details.Set(transferSummary(avgSpeed, remaining))
+}
+
+// transferSummary is the line under a running download: how fast it is going
+// and how long is left. It is worded like the line above the download list, so
+// the same facts do not read as two different things.
+func transferSummary(speed float64, remaining int64) string {
+	if speed <= 0 {
+		return ""
 	}
 
-	_ = pu.task.Details.Set(detailsStr)
+	summary := fmt.Sprintf("%s/s", formatBytes(int64(speed)))
+	if remaining > 0 {
+		eta := time.Duration(float64(remaining)/speed) * time.Second
+		summary += " · ETA " + eta.Truncate(time.Second).String()
+	}
+	return summary
 }
 
 func (pu *progressUpdater) updateFileStatusText() {
@@ -155,12 +218,11 @@ func (pu *progressUpdater) updateFileStatusText() {
 	sort.Strings(files)
 
 	var sb strings.Builder
-	const maxLines = 2
 	const maxFilenameLen = 40
 
 	for i, file := range files {
-		if i >= maxLines {
-			fmt.Fprintf(&sb, "...and %d more files", len(files)-maxLines)
+		if i >= fileStatusLines {
+			fmt.Fprintf(&sb, "...and %d more files", len(files)-fileStatusLines)
 			break
 		}
 
@@ -181,133 +243,229 @@ func (pu *progressUpdater) updateFileStatusText() {
 	_ = pu.task.FileStatus.Set(strings.TrimSpace(sb.String()))
 }
 
-func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Game,
-	downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag,
-	flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool, numThreads int) error {
-
-	activeDownloadsMutex.Lock()
-	if _, exists := activeDownloads[game.ID]; exists {
-		log.Warn().Int("gameID", game.ID).Msg("Download is already in progress. Ignoring new request.")
-		activeDownloadsMutex.Unlock()
+// executeDownload starts a download described by q and registers it with dm.
+func executeDownload(dm *DownloadManager, q queuedDownload) error {
+	if !dm.acquireSlot(q.game.ID) {
+		log.Warn().Int("gameID", q.game.ID).Msg("Download is already in progress. Ignoring new request.")
 		return ErrDownloadInProgress
 	}
-	activeDownloads[game.ID] = struct{}{}
-	activeDownloadsMutex.Unlock()
+
+	releaseSlot := func() { dm.releaseSlot(q.game.ID) }
+
+	parsedGameData, err := client.ParseGameData(q.game.Data)
+	if err != nil {
+		releaseSlot()
+		return fmt.Errorf("failed to parse game data for %s: %w", q.game.Title, err)
+	}
+	parsedGameData.ID = q.game.ID
+
+	var targetDir string
+	switch {
+	case q.lutrisLayoutFlag:
+		targetDir = filepath.Join(q.downloadPath, client.LutrisSlug(parsedGameData.Title), "gog")
+	case q.rommLayoutFlag:
+		plat := strings.ToLower(q.platformName)
+		if plat == "all" { // show root for mixed
+			targetDir = q.downloadPath
+		} else {
+			targetDir = filepath.Join(q.downloadPath, plat, client.SanitizePath(parsedGameData.Title))
+		}
+	default:
+		targetDir = filepath.Join(q.downloadPath, client.SanitizePath(parsedGameData.Title))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	task := &DownloadTask{
+		ID:           q.game.ID,
+		InstanceID:   time.Now(),
+		Title:        q.game.Title,
+		request:      q,
+		Status:       binding.NewString(),
+		Details:      binding.NewString(),
+		Progress:     binding.NewFloat(),
+		CancelFunc:   cancel,
+		FileStatus:   binding.NewString(),
+		DownloadPath: targetDir,
+	}
+	task.SetState(StatePreparing)
+	_ = task.Status.Set("Preparing...")
+	// Registered before returning so that the queue counts this download as
+	// active right away instead of once the goroutine below gets scheduled.
+	_ = dm.AddTask(task)
+	// Written to the history now, not only when it ends, so a crash mid
+	// download still leaves an interrupted record to retry from next time.
+	dm.PersistHistory()
 
 	go func() {
 		defer func() {
-			activeDownloadsMutex.Lock()
-			delete(activeDownloads, game.ID)
-			activeDownloadsMutex.Unlock()
+			cancel()
+			releaseSlot()
 			dm.PersistHistory()
 			// Attempt to start queued downloads if slots free
 			go dm.startNextIfAvailable()
 		}()
 
-		ctx, cancel := context.WithCancel(context.Background())
+		// Both keys are written so the form's remembered path and the
+		// legacy one an older gogg stored cannot drift apart; the form and
+		// the history lookup read them through one accessor.
+		prefs := fyne.CurrentApp().Preferences()
+		prefs.SetString("lastUsedDownloadPath", q.downloadPath)
+		prefs.SetString("downloadForm.path", q.downloadPath)
 
-		parsedGameData, err := client.ParseGameData(game.Data)
+		token, err := q.authService.RefreshTokenCtx(ctx)
 		if err != nil {
-			fmt.Printf("Error parsing game data for %s: %v\n", game.Title, err)
-			cancel()
-			return
-		}
-		var targetDir string
-		if rommLayoutFlag {
-			plat := strings.ToLower(platformName)
-			if plat == "all" { // show root for mixed
-				targetDir = downloadPath
-			} else {
-				targetDir = filepath.Join(downloadPath, plat, client.SanitizePath(parsedGameData.Title))
-			}
-		} else {
-			targetDir = filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
-		}
-
-		task := &DownloadTask{
-			ID:           game.ID,
-			InstanceID:   time.Now(),
-			Title:        game.Title,
-			State:        StatePreparing,
-			Status:       binding.NewString(),
-			Details:      binding.NewString(),
-			Progress:     binding.NewFloat(),
-			CancelFunc:   cancel,
-			FileStatus:   binding.NewString(),
-			DownloadPath: targetDir,
-		}
-		_ = task.Status.Set("Preparing...")
-		_ = task.Details.Set("Speed: N/A | ETA: N/A")
-		_ = dm.AddTask(task)
-
-		fyne.CurrentApp().Preferences().SetString("lastUsedDownloadPath", downloadPath)
-
-		token, err := authService.RefreshTokenCtx(ctx)
-		if err != nil {
-			task.State = StateError
+			task.SetState(StateError)
 			_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
+			announceIfLast(dm, StateError, q.game.Title)
 			return
 		}
 
-		updater := &progressUpdater{
-			task:         task,
-			fileBytes:    make(map[string]int64),
-			fileProgress: make(map[string]struct{ current, total int64 }),
+		// A download of several languages or platforms runs as passes over the
+		// same call, each owning its slice of the one progress bar. Files two
+		// passes share are skipped by the second, so nothing is fetched twice.
+		languages := q.languages
+		if len(languages) == 0 {
+			languages = []string{q.language}
+		}
+		platforms := q.platforms
+		if len(platforms) == 0 {
+			platforms = []string{q.platformName}
 		}
 
-		err = client.DownloadGameFiles(
-			ctx, token.AccessToken, parsedGameData, downloadPath, language, platformName,
-			extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, rommLayoutFlag, numThreads,
-			updater,
-		)
+		passes := len(languages) * len(platforms)
+
+		// The whole job's size is worked out up front, and each pass's own
+		// size with it, so the header can count bytes across every pass
+		// rather than resetting when a pass ends. A size that cannot be
+		// estimated leaves overallTotal zero, and the header falls back to
+		// counting the pass in hand.
+		var overallTotal int64
+		passSizes := make([]int64, 0, passes)
+		for _, language := range languages {
+			for _, platform := range platforms {
+				size, estErr := parsedGameData.EstimateStorageSize(language, platform, q.extrasFlag, q.dlcFlag)
+				if estErr != nil {
+					overallTotal = 0
+					passSizes = nil
+					break
+				}
+				passSizes = append(passSizes, size)
+				overallTotal += size
+			}
+			if passSizes == nil {
+				break
+			}
+		}
+
+		pass := 0
+		var overallBase int64
+		for _, language := range languages {
+			for _, platform := range platforms {
+				updater := &progressUpdater{
+					task:         task,
+					dm:           dm,
+					fileBytes:    make(map[string]int64),
+					fileProgress: make(map[string]struct{ current, total int64 }),
+					progressBase: float64(pass) / float64(passes),
+					progressSpan: 1 / float64(passes),
+					overallBase:  overallBase,
+					overallTotal: overallTotal,
+				}
+				if overallTotal > 0 {
+					overallBase += passSizes[pass]
+				}
+				err = client.DownloadGameFiles(
+					ctx, token.AccessToken, parsedGameData, q.downloadPath,
+					client.DownloadOptions{
+						Language: language, Platform: platform,
+						Extras: q.extrasFlag, DLCs: q.dlcFlag, Resume: q.resumeFlag,
+						Flatten: q.flattenFlag, SkipPatches: q.skipPatchesFlag,
+						RomMLayout: q.rommLayoutFlag, LutrisLayout: q.lutrisLayoutFlag,
+						Threads:     q.numThreads,
+						Connections: q.connections,
+					}, updater,
+				)
+				if err != nil {
+					break
+				}
+				pass++
+			}
+			if err != nil {
+				break
+			}
+		}
 
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				task.State = StateCancelled
+				if task.pausing.Load() {
+					task.SetState(StatePaused)
+					_ = task.Status.Set("Paused. What has arrived stays for the resume.")
+					_ = task.FileStatus.Set("")
+					_ = task.Details.Set("")
+					announceIfLast(dm, StatePaused, q.game.Title)
+					return
+				}
+				task.SetState(StateCancelled)
 				_ = task.Status.Set("Cancelled")
 			} else {
-				task.State = StateError
+				task.SetState(StateError)
 				_ = task.Status.Set(fmt.Sprintf("Error: %v", err))
 			}
 			_ = task.FileStatus.Set("")
 			_ = task.Details.Set("")
+			announceIfLast(dm, task.State(), q.game.Title)
 			return
 		}
 
-		task.State = StateCompleted
+		task.SetState(StateCompleted)
 		_ = task.Status.Set(fmt.Sprintf("Download completed. Files are stored in: %s", targetDir))
 		_ = task.Details.Set("")
 		_ = task.Progress.Set(1.0)
 		_ = task.FileStatus.Set("")
-		go PlayNotificationSound()
+		announceIfLast(dm, StateCompleted, q.game.Title)
 		// Persist download info for future update checks.
 		info := struct {
-			Language    string `json:"language"`
-			Platform    string `json:"platform"`
-			Extras      bool   `json:"extras"`
-			DLCs        bool   `json:"dlcs"`
-			SkipPatches bool   `json:"skipPatches"`
-			Flatten     bool   `json:"flatten"`
-			Resume      bool   `json:"resume"`
-			Threads     int    `json:"threads"`
+			Language    string   `json:"language"`
+			Platform    string   `json:"platform"`
+			Languages   []string `json:"languages,omitempty"`
+			Platforms   []string `json:"platforms,omitempty"`
+			Extras      bool     `json:"extras"`
+			DLCs        bool     `json:"dlcs"`
+			SkipPatches bool     `json:"skipPatches"`
+			Flatten     bool     `json:"flatten"`
+			Resume      bool     `json:"resume"`
+			Threads     int      `json:"threads"`
+			Connections int      `json:"connections,omitempty"`
 		}{
-			Language:    language,
-			Platform:    platformName,
-			Extras:      extrasFlag,
-			DLCs:        dlcFlag,
-			SkipPatches: skipPatchesFlag,
-			Flatten:     flattenFlag,
-			Resume:      resumeFlag,
-			Threads:     numThreads,
+			Language:    q.language,
+			Platform:    q.platformName,
+			Languages:   q.languages,
+			Platforms:   q.platforms,
+			Extras:      q.extrasFlag,
+			DLCs:        q.dlcFlag,
+			SkipPatches: q.skipPatchesFlag,
+			Flatten:     q.flattenFlag,
+			Resume:      q.resumeFlag,
+			Threads:     q.numThreads,
+			Connections: q.connections,
 		}
 		if data, mErr := json.MarshalIndent(info, "", "  "); mErr == nil {
 			_ = os.MkdirAll(targetDir, 0755)
 			_ = os.WriteFile(filepath.Join(targetDir, "download_info.json"), data, 0644)
 		}
 
-		if keepLatestFlag {
-			if err := guiPruneOldVersions(downloadPath, parsedGameData.Title, rommLayoutFlag, platformName); err != nil {
-				log.Warn().Err(err).Msg("Failed to prune old versions (GUI)")
+		if q.keepLatestFlag {
+			removed, pruneErr := client.PruneOldInstallerVersions(q.downloadPath, parsedGameData.Title,
+				client.DownloadOptions{RomMLayout: q.rommLayoutFlag, LutrisLayout: q.lutrisLayoutFlag, Platform: q.platformName})
+			if pruneErr != nil {
+				log.Warn().Err(pruneErr).Msg("Failed to prune old versions (GUI)")
+			}
+			if len(removed) > 0 {
+				log.Info().Strs("files", removed).Msg("Removed older installer versions")
+				_ = task.Status.Set(fmt.Sprintf(
+					"Download completed. Files are stored in: %s. Removed %d older installer %s.",
+					targetDir, len(removed), filesWord(len(removed))))
 			}
 		}
 	}()
@@ -315,108 +473,13 @@ func executeDownload(authService *auth.Service, dm *DownloadManager, game db.Gam
 	return nil
 }
 
-var guiVersionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
-
-func guiParseVersion(filename string) (prefix string, verSlice []int, ok bool) {
-	m := guiVersionPattern.FindStringSubmatch(filename)
-	if m == nil {
-		return "", nil, false
+// announceIfLast plays the sound and shows the notification once the last
+// in-flight download has landed, speaking for the whole batch.
+func announceIfLast(dm *DownloadManager, state int, title string) {
+	done, failed, last := dm.noteFinished(state)
+	if !last {
+		return
 	}
-	prefix = m[1]
-	parts := strings.Split(m[2], ".")
-	for _, p := range parts {
-		v, err := strconv.Atoi(p)
-		if err != nil {
-			return "", nil, false
-		}
-		verSlice = append(verSlice, v)
-	}
-	return prefix, verSlice, true
-}
-
-func guiCompareVersions(a, b []int) int {
-	for i := 0; i < len(a) || i < len(b); i++ {
-		va, vb := 0, 0
-		if i < len(a) {
-			va = a[i]
-		}
-		if i < len(b) {
-			vb = b[i]
-		}
-		if va > vb {
-			return 1
-		}
-		if va < vb {
-			return -1
-		}
-	}
-	return 0
-}
-
-func guiPruneOldVersions(rootPath, title string, romm bool, platformName string) error {
-	// Determine roots to scan
-	var roots []string
-	if romm {
-		plats := []string{"windows", "mac", "linux"}
-		if strings.ToLower(platformName) != "all" {
-			plats = []string{strings.ToLower(platformName)}
-		}
-		for _, p := range plats {
-			roots = append(roots, filepath.Join(rootPath, p, client.SanitizePath(title)))
-		}
-	} else {
-		roots = []string{filepath.Join(rootPath, client.SanitizePath(title))}
-	}
-	extAllowed := map[string]struct{}{".exe": {}, ".bin": {}, ".dmg": {}, ".sh": {}, ".zip": {}, ".tar.gz": {}, ".rar": {}}
-	for _, root := range roots {
-		if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
-			continue
-		}
-		latest := map[string][]int{}
-		filesByPrefix := map[string][]string{}
-		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
-				return nil
-			}
-			name := info.Name()
-			ext := filepath.Ext(name)
-			if strings.HasSuffix(name, ".tar.gz") {
-				ext = ".tar.gz"
-			}
-			if _, ok := extAllowed[ext]; !ok {
-				return nil
-			}
-			prefix, ver, ok := guiParseVersion(name)
-			if !ok {
-				return nil
-			}
-			filesByPrefix[prefix] = append(filesByPrefix[prefix], path)
-			if cur, ok := latest[prefix]; !ok || guiCompareVersions(ver, cur) == 1 {
-				latest[prefix] = ver
-			}
-			return nil
-		})
-		for _, paths := range filesByPrefix {
-			// find the latest file among paths
-			var best string
-			var bestVer []int
-			for _, p := range paths {
-				name := filepath.Base(p)
-				_, ver, ok := guiParseVersion(name)
-				if !ok {
-					continue
-				}
-				if best == "" || guiCompareVersions(ver, bestVer) == 1 {
-					best = p
-					bestVer = ver
-				}
-			}
-			for _, p := range paths {
-				if p != best {
-					_ = os.Remove(p)
-				}
-			}
-		}
-	}
-	return nil
+	go PlayNotificationSound()
+	notifyBatchFinished(done, failed, title)
 }

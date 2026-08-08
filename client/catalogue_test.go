@@ -37,9 +37,10 @@ func (s *stubRefresher) PerformTokenRefresh(_ string) (string, string, int64, er
 }
 
 type stubGameRepo struct {
-	mu       sync.Mutex
-	games    map[int]db.Game
-	clearErr error
+	mu        sync.Mutex
+	games     map[int]db.Game
+	clearErr  error
+	deleteErr error
 }
 
 func newStubRepo() *stubGameRepo { return &stubGameRepo{games: make(map[int]db.Game)} }
@@ -69,7 +70,27 @@ func (r *stubGameRepo) List(_ context.Context) ([]db.Game, error) {
 	return games, nil
 }
 func (r *stubGameRepo) SearchByTitle(_ context.Context, _ string) ([]db.Game, error) { return nil, nil }
-func (r *stubGameRepo) Clear(_ context.Context) error                                { return r.clearErr }
+func (r *stubGameRepo) Clear(_ context.Context) error {
+	if r.clearErr != nil {
+		return r.clearErr
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.games = make(map[int]db.Game)
+	return nil
+}
+
+func (r *stubGameRepo) DeleteByIDs(_ context.Context, ids []int) error {
+	if r.deleteErr != nil {
+		return r.deleteErr
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, id := range ids {
+		delete(r.games, id)
+	}
+	return nil
+}
 
 func validToken() *db.Token {
 	return &db.Token{
@@ -126,7 +147,7 @@ func TestRefreshCatalogue_NoGames(t *testing.T) {
 	assert.Equal(t, 1.0, got)
 }
 
-func TestRefreshCatalogue_ClearError(t *testing.T) {
+func TestRefreshCatalogue_DeleteError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"owned": []int{1}})
 	}))
@@ -134,10 +155,12 @@ func TestRefreshCatalogue_ClearError(t *testing.T) {
 	t.Setenv("GOGG_EMBED_BASE", server.URL)
 
 	repo := newStubRepo()
-	repo.clearErr = errors.New("db error")
+	// A game that is no longer owned has to be removed, and that removal fails.
+	repo.games[7] = db.Game{ID: 7, Title: "Sold"}
+	repo.deleteErr = errors.New("db error")
 	_, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to empty catalogue")
+	assert.Contains(t, err.Error(), "failed to remove games no longer owned")
 }
 
 func TestRefreshCatalogue_StoresGames(t *testing.T) {
@@ -195,7 +218,7 @@ func TestRefreshCatalogue_SkipsGameWithoutTitle(t *testing.T) {
 
 func TestRefreshCatalogue_FetchGameDataError(t *testing.T) {
 	// When fetching details for a game returns an error, the worker logs a warning
-	// and returns nil — RefreshCatalogue should still succeed.
+	// and returns nil; RefreshCatalogue should still succeed.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/user/data/games":
@@ -313,7 +336,7 @@ func TestRefreshCatalogue_VersionChange_NewGame(t *testing.T) {
 	defer server.Close()
 	t.Setenv("GOGG_EMBED_BASE", server.URL)
 
-	repo := newStubRepo() // empty — game 10 is brand new
+	repo := newStubRepo() // empty; game 10 is brand new
 	changes, err := RefreshCatalogue(context.Background(), newAuthSvc(validToken(), nil), repo, 1, nil)
 	require.NoError(t, err)
 	require.Len(t, changes, 1)

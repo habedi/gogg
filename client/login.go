@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -73,10 +74,12 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 		return fmt.Errorf("username and password cannot be empty")
 	}
 
-	ctx, cancel, err := createChromeContext(headless)
+	execPath, err := findBrowser()
 	if err != nil {
 		return err
 	}
+
+	ctx, cancel := createChromeContext(execPath, headless)
 	defer cancel()
 
 	log.Info().Msg("Trying to login to GOG.com.")
@@ -90,20 +93,15 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 			// Cancel the first headless context before creating a new one.
 			cancel()
 
-			var headedCtx context.Context
-			var headedCancel context.CancelFunc
-			headedCtx, headedCancel, err = createChromeContext(false)
-			if err != nil {
-				return fmt.Errorf("failed to create Chrome context: %w", err)
-			}
+			headedCtx, headedCancel := createChromeContext(execPath, false)
 			defer headedCancel() // Defer cancellation of the new headed context.
 
 			finalURL, err = performLogin(headedCtx, loginURL, username, password, false)
 			if err != nil {
-				return fmt.Errorf("failed to login: %w", err)
+				return fmt.Errorf("failed to login using browser %s: %w", execPath, err)
 			}
 		} else {
-			return fmt.Errorf("failed to login: %w", err)
+			return fmt.Errorf("failed to login using browser %s: %w", execPath, err)
 		}
 	}
 
@@ -112,33 +110,96 @@ func (c *GogClient) Login(loginURL string, username string, password string, hea
 		return err
 	}
 
+	return c.exchangeAndStore(code)
+}
+
+// LoginWithCode signs in with the authorization code GOG issues after a
+// successful login, so no browser has to be driven: the user logs in wherever
+// they like and hands the code back. codeOrURL may be the address the browser
+// was redirected to or just the code out of it.
+func (c *GogClient) LoginWithCode(codeOrURL string) error {
+	code, err := parseAuthCode(codeOrURL)
+	if err != nil {
+		return err
+	}
+	return c.exchangeAndStore(code)
+}
+
+// exchangeAndStore trades an authorization code for tokens and saves them.
+func (c *GogClient) exchangeAndStore(code string) error {
 	token, refreshToken, expiresAt, err := c.exchangeCodeForToken(code)
 	if err != nil {
 		return fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
 
-	log.Info().Msgf("Access token: %s", token[:10])
-	log.Info().Msgf("Refresh token: %s", refreshToken[:10])
-	log.Info().Msgf("Expires at: %s", expiresAt)
+	log.Info().Str("expires_at", expiresAt).Msg("Received access and refresh tokens")
 
 	return db.UpsertTokenRecord(&db.Token{AccessToken: token, RefreshToken: refreshToken, ExpiresAt: expiresAt})
 }
 
-func createChromeContext(headless bool) (context.Context, context.CancelFunc, error) {
-	var execPath string
-	// Search for browsers in order of preference
-	browserExecutables := []string{"google-chrome", "Google Chrome", "chromium", "Chromium", "chrome", "msedge", "Microsoft Edge"}
+// parseAuthCode accepts the address GOG redirects to after a successful login,
+// the query part of that address, or the bare authorization code.
+func parseAuthCode(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", errors.New("no authorization code given")
+	}
+
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		return extractAuthCode(input)
+	}
+
+	if strings.Contains(input, "code=") {
+		values, err := url.ParseQuery(input)
+		if err != nil {
+			return "", fmt.Errorf("failed to read the authorization code: %w", err)
+		}
+		if code := values.Get("code"); code != "" {
+			return code, nil
+		}
+		return "", errors.New("authorization code not found in the pasted address")
+	}
+
+	if strings.ContainsAny(input, " \t\r\n/?&=") {
+		return "", errors.New("that is neither an authorization code nor the address containing one")
+	}
+	return input, nil
+}
+
+// browserExecutables lists the Chrome-family browsers to look for, in order of
+// preference. The same browser goes by different names per platform and
+// distribution.
+var browserExecutables = []string{
+	"google-chrome", "google-chrome-stable", "Google Chrome",
+	"chromium", "chromium-browser", "Chromium",
+	"chrome",
+	"msedge", "microsoft-edge", "microsoft-edge-stable", "Microsoft Edge",
+}
+
+// findBrowser returns the browser to drive. GOGG_BROWSER overrides the search,
+// which is how to point gogg at a browser that is not on PATH, or away from one
+// that cannot be driven, such as a snap-confined Chromium. It accepts a bare
+// name or a path.
+func findBrowser() (string, error) {
+	if custom := strings.TrimSpace(os.Getenv("GOGG_BROWSER")); custom != "" {
+		path, err := exec.LookPath(custom)
+		if err != nil {
+			return "", fmt.Errorf("GOGG_BROWSER is set to %q, which is not an executable: %w", custom, err)
+		}
+		return path, nil
+	}
+
 	for _, browser := range browserExecutables {
-		if p, err := exec.LookPath(browser); err == nil {
-			execPath = p
-			break
+		if path, err := exec.LookPath(browser); err == nil {
+			return path, nil
 		}
 	}
 
-	if execPath == "" {
-		return nil, nil, fmt.Errorf("no Chrome, Chromium, or Edge executable found in PATH")
-	}
+	return "", fmt.Errorf("no Chrome, Chromium, or Edge executable found in PATH; " +
+		"set GOGG_BROWSER to the browser to use, or log in with 'gogg login --code'")
+}
 
+func createChromeContext(execPath string, headless bool) (context.Context, context.CancelFunc) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(execPath),
 		chromedp.Flag("headless", headless),
@@ -154,7 +215,7 @@ func createChromeContext(headless bool) (context.Context, context.CancelFunc, er
 	return ctx, func() {
 		cancelContext()
 		cancelAllocator()
-	}, nil
+	}
 }
 
 func performLogin(ctx context.Context, loginURL string, username string, password string,
@@ -228,6 +289,10 @@ func (c *GogClient) exchangeCodeForToken(code string) (string, string, string, e
 		return "", "", "", fmt.Errorf("failed to read token response: %w", err)
 	}
 
+	if resp.StatusCode >= 400 {
+		return "", "", "", fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
 	var result struct {
 		AccessToken  string `json:"access_token"`
 		ExpiresIn    int64  `json:"expires_in"`
@@ -236,6 +301,10 @@ func (c *GogClient) exchangeCodeForToken(code string) (string, string, string, e
 
 	if err := json.Unmarshal(body, &result); err != nil {
 		return "", "", "", fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	if result.AccessToken == "" {
+		return "", "", "", fmt.Errorf("token response did not contain an access token")
 	}
 
 	expiresAt := time.Now().Add(time.Duration(result.ExpiresIn) * time.Second).Format(time.RFC3339)

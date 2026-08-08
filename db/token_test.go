@@ -104,3 +104,21 @@ func TestUpsertTokenRecord_ReturnsErrorForUninitializedDB(t *testing.T) {
 	err := db.UpsertTokenRecord(token)
 	assert.Error(t, err)
 }
+
+// Signing out has to leave nothing behind, so the next start is signed out.
+func TestDeleteTokenRecord(t *testing.T) {
+	testDB := setupTestDBForToken(t)
+	db.Db = testDB
+
+	require.NoError(t, db.UpsertTokenRecord(&db.Token{
+		AccessToken: "access_token", RefreshToken: "refresh_token", ExpiresAt: "expires_at",
+	}))
+
+	require.NoError(t, db.DeleteTokenRecord())
+
+	token, err := db.GetTokenRecord()
+	require.NoError(t, err)
+	assert.Nil(t, token, "nothing is left to sign back in with")
+
+	require.NoError(t, db.DeleteTokenRecord(), "signing out twice is not a failure")
+}

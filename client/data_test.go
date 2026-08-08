@@ -126,7 +126,7 @@ func TestUnmarshalJSON_InvalidJSON(t *testing.T) {
 }
 
 func TestParseRawDownloads_NonStringLanguage(t *testing.T) {
-	// First element is an integer, not a string — type assertion to string fails → entry skipped.
+	// The first element is an integer, not a string: the type assertion fails and the entry is skipped.
 	jsonData := `{"title":"G","downloads":[[123,{"windows":[]}]],"extras":[],"dlcs":[]}`
 	var g client.Game
 	require.NoError(t, json.Unmarshal([]byte(jsonData), &g))
@@ -134,7 +134,7 @@ func TestParseRawDownloads_NonStringLanguage(t *testing.T) {
 }
 
 func TestParseRawDownloads_BadPlatformData(t *testing.T) {
-	// Second element is a string, not an object — json.Unmarshal into Platform fails → entry skipped.
+	// The second element is a string, not an object: json.Unmarshal into Platform fails and the entry is skipped.
 	jsonData := `{"title":"G","downloads":[["en","not-an-object"]],"extras":[],"dlcs":[]}`
 	var g client.Game
 	require.NoError(t, json.Unmarshal([]byte(jsonData), &g))

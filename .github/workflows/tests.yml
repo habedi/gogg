@@ -25,10 +25,10 @@ jobs:
 
     strategy:
       matrix:
-        go-version: [ "1.21", "1.22", "1.23", "1.24", "1.25" ]
+        go-version: [ "1.25", "1.26" ]
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Go ${{ matrix.go-version }}
@@ -36,7 +36,7 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - name: Cache Go Modules
+      - name: Cache Go modules
         uses: actions/cache@v4
         with:
           path: |
@@ -46,13 +46,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y make
           make install-deps
 
-      - name: Run Tests and Generate Coverage Report
+      - name: Run tests and generate coverage report
         env:
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
@@ -60,7 +60,7 @@ jobs:
           make test
           make test-integration
 
-      - name: Upload Coverage Reports to Codecov
+      - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

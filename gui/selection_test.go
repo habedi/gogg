@@ -1,0 +1,315 @@
+package gui
+
+import (
+	"image"
+	"testing"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
+	"github.com/habedi/gogg/db"
+	"github.com/stretchr/testify/require"
+)
+
+func TestGameSelection(t *testing.T) {
+	sel := newGameSelection()
+	require.Zero(t, sel.count())
+
+	sel.set(1, true)
+	sel.set(2, true)
+	require.True(t, sel.has(1))
+	require.False(t, sel.has(3))
+	require.Equal(t, 2, sel.count())
+
+	sel.set(1, false)
+	require.False(t, sel.has(1))
+	require.Equal(t, 1, sel.count())
+
+	sel.clear()
+	require.Zero(t, sel.count())
+}
+
+// Selecting everything shown must not touch games hidden by a filter, and the
+// selection has to survive the list being refiltered.
+func TestGameSelection_SelectAllAppliesToWhatIsShown(t *testing.T) {
+	sel := newGameSelection()
+	all := []db.Game{{ID: 1, Title: "A"}, {ID: 2, Title: "B"}, {ID: 3, Title: "C"}}
+	shown := all[:2]
+
+	sel.selectAll(shown)
+	require.Equal(t, 2, sel.count())
+	require.False(t, sel.has(3))
+
+	// The selection is keyed by game, not by position in the list.
+	require.Equal(t, []db.Game{{ID: 1, Title: "A"}, {ID: 2, Title: "B"}}, sel.gamesIn(all))
+}
+
+// A game that has left the catalogue must drop out of the selection quietly.
+func TestGameSelection_GamesInIgnoresUnknownIDs(t *testing.T) {
+	sel := newGameSelection()
+	sel.set(1, true)
+	sel.set(99, true)
+
+	require.Equal(t, []db.Game{{ID: 1, Title: "A"}}, sel.gamesIn([]db.Game{{ID: 1, Title: "A"}}))
+}
+
+// List rows are recycled. Pointing a checkbox at a new item must not fire the
+// handler still attached from the item it showed before.
+func TestBindCheck_DoesNotFireThePreviousHandler(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	var fired []string
+	check := widget.NewCheck("", nil)
+
+	bindCheck(check, true, func(bool) { fired = append(fired, "first") })
+	bindCheck(check, false, func(bool) { fired = append(fired, "second") })
+	require.Empty(t, fired, "rebinding must not fire either handler")
+
+	check.SetChecked(true)
+	require.Equal(t, []string{"second"}, fired, "only the current handler may fire")
+}
+
+func TestBindGameRow_RecyclingDoesNotLeakSelection(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	sel := newGameSelection()
+	sel.set(1, true)
+
+	row := newGameRow()
+	bindGameRow(row, db.Game{ID: 1, Title: "One"}, rowBinding{sel: sel})
+	bindGameRow(row, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: sel})
+
+	require.True(t, sel.has(1), "recycling a row must not deselect the game it used to show")
+	require.False(t, sel.has(2))
+}
+
+func TestBindGameRow_TicksTheBoxForSelectedGames(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	sel := newGameSelection()
+	sel.set(7, true)
+
+	row := newGameRow()
+	bindGameRow(row, db.Game{ID: 7, Title: "Seven"}, rowBinding{sel: sel})
+
+	require.True(t, row.(*gameRow).check.Checked)
+
+	bindGameRow(row, db.Game{ID: 8, Title: "Eight"}, rowBinding{sel: sel})
+	require.False(t, row.(*gameRow).check.Checked)
+}
+
+// A title that is given no width renders as "..." for every game in the list.
+func TestGameRow_TitleGetsTheRemainingWidth(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	row := newGameRow()
+	bindGameRow(row, db.Game{ID: 1, Title: "A Game With A Reasonably Long Title"}, rowBinding{sel: newGameSelection()})
+
+	const rowWidth = 400
+	test.WidgetRenderer(row.(*gameRow)) // force the renderer, as the list does
+	row.(*gameRow).Resize(fyne.NewSize(rowWidth, 40))
+
+	title := row.(*gameRow).title
+	require.Greater(t, title.Size().Width, float32(rowWidth/2),
+		"the title must take the width left by the leading controls")
+}
+
+// queueingFixture returns a manager that is already at its concurrency limit,
+// so QueueOrStart queues instead of starting anything.
+func queueingFixture(t *testing.T) *DownloadManager {
+	t.Helper()
+	fyne.CurrentApp().Preferences().SetInt("download.maxConcurrent", 1)
+
+	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+	busy := &DownloadTask{
+		ID: 999, Title: "Busy", Status: binding.NewString(),
+		Details: binding.NewString(), Progress: binding.NewFloat(), FileStatus: binding.NewString(),
+	}
+	busy.SetState(StateDownloading)
+	require.NoError(t, dm.AddTask(busy))
+	return dm
+}
+
+func TestQueueDownloads_QueuesEveryGame(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	dm := queueingFixture(t)
+	dir := t.TempDir()
+
+	games := []db.Game{{ID: 1, Title: "One", Data: "{}"}, {ID: 2, Title: "Two", Data: "{}"}, {ID: 3, Title: "Three", Data: "{}"}}
+	result := queueDownloads(dm, games, func(g db.Game) queuedDownload {
+		return queuedDownload{game: g, downloadPath: dir, language: "English", platformName: "windows", numThreads: 1}
+	})
+
+	require.Equal(t, 3, result.Queued)
+	require.Empty(t, result.Skipped)
+	require.Empty(t, result.Failed)
+
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	require.Len(t, dm.queue, 3)
+}
+
+// One game that is already on its way must not stop the rest of the batch.
+func TestQueueDownloads_SkipsGamesAlreadyInProgress(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	dm := queueingFixture(t)
+	dir := t.TempDir()
+
+	build := func(g db.Game) queuedDownload {
+		return queuedDownload{game: g, downloadPath: dir, language: "English", platformName: "windows", numThreads: 1}
+	}
+	games := []db.Game{{ID: 1, Title: "One", Data: "{}"}, {ID: 2, Title: "Two", Data: "{}"}}
+
+	require.Equal(t, 2, queueDownloads(dm, games, build).Queued)
+
+	// Queueing the same selection again finds both already waiting.
+	result := queueDownloads(dm, games, build)
+	require.Zero(t, result.Queued)
+	require.Equal(t, []string{"One", "Two"}, result.Skipped)
+	require.Empty(t, result.Failed)
+}
+
+func TestQueueDownloads_ReportsGamesThatCannotStart(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	fyne.CurrentApp().Preferences().SetInt("download.maxConcurrent", 2)
+	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
+	dir := t.TempDir()
+
+	games := []db.Game{{ID: 1, Title: "Broken One", Data: "{not json"}, {ID: 2, Title: "Broken Two", Data: "{not json"}}
+	result := queueDownloads(dm, games, func(g db.Game) queuedDownload {
+		return queuedDownload{game: g, downloadPath: dir, language: "English", platformName: "windows", numThreads: 1}
+	})
+
+	require.Zero(t, result.Queued)
+	require.Equal(t, []string{"Broken One", "Broken Two"}, result.Failed,
+		"a game that cannot start must be reported, and the batch must carry on")
+}
+
+func TestBatchResult_Summary(t *testing.T) {
+	require.Contains(t, batchResult{Queued: 1}.summary(), "Queued 1 game")
+	require.Contains(t, batchResult{Queued: 3}.summary(), "Queued 3 games")
+
+	summary := batchResult{Queued: 1, Skipped: []string{"A"}, Failed: []string{"B"}}.summary()
+	require.Contains(t, summary, "already in progress")
+	require.Contains(t, summary, "A")
+	require.Contains(t, summary, "could not be started")
+	require.Contains(t, summary, "B")
+}
+
+// Select All Shown has to reach the whole chain: the selection, the count and
+// the download button.
+func TestLibraryTab_SelectAllShownSelectsTheListedGames(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 3)
+
+	selectAll := buttonWithLabel(lt.content, "Select All Shown")
+	require.NotNil(t, selectAll, "the library must offer Select All Shown")
+	download := buttonWithLabel(lt.content, "Download")
+	require.NotNil(t, download, "the download button starts out in single-game mode")
+
+	selectAll.OnTapped()
+	require.Equal(t, "Download (3)", download.Text)
+
+	clear := buttonWithLabel(lt.content, "Clear Selection")
+	require.NotNil(t, clear)
+	clear.OnTapped()
+	require.Equal(t, "Download", download.Text)
+}
+
+// Rows are rebound on every refresh; throwing the thumbnail away each time
+// makes the list blink exactly as the grid did.
+func TestBindGameRow_KeepsTheThumbnailForTheSameGame(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	sel := newGameSelection()
+	row := newGameRow().(*gameRow)
+	game := db.Game{ID: 1, Title: "One"}
+
+	bindGameRow(row, game, rowBinding{sel: sel})
+	artwork := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	row.thumbnail.Image = artwork
+	row.thumbnail.Resource = nil
+
+	bindGameRow(row, game, rowBinding{sel: sel})
+	require.Equal(t, artwork, row.thumbnail.Image)
+
+	bindGameRow(row, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: sel})
+	require.Nil(t, row.thumbnail.Image, "a different game starts from the placeholder")
+}
+
+// The changes waiting for a game are listed in a dialog. Left to its own
+// minimum, the scroll holding them opened one line tall whatever the list said.
+func TestGameRow_UpdateDetailsOpenLargeEnoughToRead(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
+
+	state := newLibraryState()
+	state.statuses[1] = updateStatus{Downloaded: true, HasUpdate: true, Diff: []string{
+		"CHANGED: windows|setup_the_game_1.2.3.exe 1.2.2 -> 1.2.3",
+		"NEW: windows|setup_the_game_dlc_1.0.exe version=1.0",
+	}}
+
+	row := newGameRow().(*gameRow)
+	bindGameRow(row, db.Game{ID: 1, Title: "One"}, rowBinding{sel: newGameSelection(), state: state})
+	test.Tap(row.badges.update)
+
+	overlay := topOverlay(t)
+	require.NotNil(t, overlay, "the update badge has to open the details")
+
+	scrolls := widgetsOfType[*container.Scroll](overlay)
+	require.NotEmpty(t, scrolls, "the changes are listed in a scroll")
+	body := scrolls[0]
+	require.GreaterOrEqual(t, body.MinSize().Height, body.Content.MinSize().Height,
+		"a short list of changes has to be readable without scrolling")
+	require.GreaterOrEqual(t, body.MinSize().Width, body.Content.MinSize().Width,
+		"and without scrolling sideways either")
+}
+
+// topOverlay is whatever dialog or menu is on screen, on whichever window the
+// app put it.
+func topOverlay(t *testing.T) fyne.CanvasObject {
+	t.Helper()
+	for _, win := range fyne.CurrentApp().Driver().AllWindows() {
+		if overlay := win.Canvas().Overlays().Top(); overlay != nil {
+			return overlay
+		}
+	}
+	return nil
+}
+
+// A game with nothing to download cannot be ticked for one, in the list as
+// in the grid, and the state helper says which is which.
+func TestListRow_CheckboxDisabledForUnDownloadableGame(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	state := newLibraryState()
+	online := db.Game{ID: 1, Title: "Online", Data: `{"title":"Online","downloads":[],"extras":[],"dlcs":[]}`}
+	withFiles := db.Game{ID: 2, Title: "Has Files", Data: richGameData}
+
+	require.False(t, state.downloadable(online), "an online-only title is not downloadable")
+	require.True(t, state.downloadable(withFiles))
+
+	row := newGameRow().(*gameRow)
+	bindGameRow(row, online, rowBinding{sel: newGameSelection(), state: state})
+	require.True(t, row.check.Disabled(), "the list row disables its checkbox for a game with no files")
+
+	bindGameRow(row, withFiles, rowBinding{sel: newGameSelection(), state: state})
+	require.False(t, row.check.Disabled())
+}

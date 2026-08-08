@@ -54,3 +54,19 @@ func UpsertTokenRecord(token *Token) error {
 	log.Info().Msgf("Token upserted successfully")
 	return nil
 }
+
+// DeleteTokenRecord forgets what gogg was signed in with. Signing out when
+// there is nothing stored is not a failure: the end state is what was asked
+// for either way.
+func DeleteTokenRecord() error {
+	if Db == nil {
+		return fmt.Errorf("database connection is not initialized")
+	}
+	if err := Db.Where("1 = 1").Delete(&Token{}).Error; err != nil {
+		log.Error().Err(err).Msg("Failed to delete token data")
+		return err
+	}
+
+	log.Info().Msg("Token deleted successfully")
+	return nil
+}

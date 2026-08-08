@@ -7,9 +7,26 @@ import "fyne.io/fyne/v2/data/binding"
 var catalogueUpdated = binding.NewBool()
 
 // SignalCatalogueUpdated sends a notification that the catalogue has been updated.
+// The value carries no meaning, only the change event, so it is toggled: a
+// binding notifies its listeners only when the value actually changes.
 func SignalCatalogueUpdated() {
-	err := catalogueUpdated.Set(true)
+	current, err := catalogueUpdated.Get()
 	if err != nil {
 		return
-	} // The value doesn't matter, only the change event.
+	}
+	_ = catalogueUpdated.Set(!current)
+}
+
+// updateSettingsChanged says the rules for spotting an update have changed, so
+// whatever was worked out under the old ones is no longer the answer.
+var updateSettingsChanged = binding.NewBool()
+
+// SignalUpdateSettingsChanged sends that notification. Like the catalogue
+// signal, the value carries no meaning, only the change.
+func SignalUpdateSettingsChanged() {
+	current, err := updateSettingsChanged.Get()
+	if err != nil {
+		return
+	}
+	_ = updateSettingsChanged.Set(!current)
 }

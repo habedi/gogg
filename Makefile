@@ -78,6 +78,11 @@ run: build ## Build and run the binary
 	$(ECHO) "Running the $(BINARY) binary..."
 	@./$(BINARY)
 
+.PHONY: run-gui
+run-gui: build ## Build and run the binary with the GUI
+	$(ECHO) "Running the $(BINARY) binary with the GUI..."
+	@./$(BINARY) gui
+
 .PHONY: clean
 clean: ## Remove artifacts and temporary files
 	$(ECHO) "Cleaning up..."
@@ -182,3 +187,11 @@ test-fuzz: ## Run fuzz tests
 	$(ECHO) "Running fuzz tests (short)"
 	@$(GO) test ./client -run=^$$ -fuzz=FuzzParseSizeString -fuzztime=10s
 	@$(GO) test ./client -run=^$$ -fuzz=FuzzParseGameData -fuzztime=10s
+
+.PHONY: dev-shell
+dev-shell: ## Enter the Nix development shell (needs Nix with flakes)
+	@if ! command -v nix &> /dev/null; then \
+	   echo "nix not found. Install it from https://nixos.org/download/"; \
+	   exit 1; \
+	fi
+	@nix develop

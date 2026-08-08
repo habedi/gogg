@@ -19,6 +19,10 @@ var GameLanguages = map[string]string{
 
 // Game contains information about a game and its downloadable content like extras and DLCs.
 type Game struct {
+	// ID is the GOG product ID. The game data GOG serves does not carry it,
+	// so callers that know it set it after parsing; zero means unknown, and
+	// checksum verification is skipped without it.
+	ID              int            `json:"id,omitempty"`
 	Title           string         `json:"title"`
 	BackgroundImage *string        `json:"backgroundImage,omitempty"`
 	Downloads       []Downloadable `json:"downloads"`

@@ -50,17 +50,16 @@ func TestFetchAllOwnedGameIDs_CycleDetection(t *testing.T) {
 }
 
 func TestFetchAllOwnedGameIDs_BadJSONBody(t *testing.T) {
-	// Server returns invalid JSON: the unmarshal error sets nextURL="" and the
-	// loop exits cleanly, returning an empty (non-nil) slice.
+	// Server returns invalid JSON: the page cannot be trusted, so the error is
+	// reported rather than treated as the end of the listing.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("not json"))
 	}))
 	defer server.Close()
 
-	ids, err := FetchAllOwnedGameIDs(context.Background(), "tok", server.URL)
-	require.NoError(t, err)
-	assert.Empty(t, ids)
+	_, err := FetchAllOwnedGameIDs(context.Background(), "tok", server.URL)
+	assert.Error(t, err)
 }
 
 func TestFetchAllOwnedGameIDs_SendRequestError(t *testing.T) {
@@ -76,7 +75,7 @@ func TestFetchAllOwnedGameIDs_SendRequestError(t *testing.T) {
 
 func TestFetchAllOwnedGameIDs_ReadBodyError(t *testing.T) {
 	// Server sends 200 headers then drops the connection, causing readResponseBody
-	// to fail. The closure sets nextURL="" and the function returns empty with no error.
+	// to fail. The error must reach the caller.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
@@ -94,7 +93,6 @@ func TestFetchAllOwnedGameIDs_ReadBodyError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ids, err := FetchAllOwnedGameIDs(context.Background(), "tok", server.URL)
-	require.NoError(t, err)
-	assert.Empty(t, ids)
+	_, err := FetchAllOwnedGameIDs(context.Background(), "tok", server.URL)
+	assert.Error(t, err)
 }

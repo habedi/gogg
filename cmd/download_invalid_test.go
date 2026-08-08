@@ -14,7 +14,7 @@ import (
 func TestDownloadCmd_MissingDirNoConfig(t *testing.T) {
 	// When downloadDir is omitted and no config download_dir is set, the command
 	// must print an error and not panic.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty config dir — no config.json
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // an empty config dir, so no config.json
 	authService := auth.NewService(nil, nil)
 	cmd := downloadCmd(authService)
 	cmd.SetArgs([]string{"1234567890"}) // gameID only, no dir
@@ -58,7 +58,7 @@ func captureStdout2(f func()) string {
 func TestExecuteDownload_InvalidLanguagePrintsList(t *testing.T) {
 	// Use invalid language code to trigger early return and listing of supported languages
 	out := captureStdout2(func() {
-		executeDownload(context.Background(), nil, 1, filepath.Join(t.TempDir(), "dl"), "xx", "windows", true, true, true, true, false, false, false, 2)
+		executeDownload(context.Background(), nil, 1, filepath.Join(t.TempDir(), "dl"), "xx", "windows", true, true, true, true, false, false, false, false, 2, 1)
 	})
 	if out == "" {
 		t.Fatalf("expected output for invalid language")

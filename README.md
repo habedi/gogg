@@ -68,7 +68,9 @@ Additionally, it allows users to perform the following actions:
 - Filter files to be downloaded by platform, language, and other attributes like content type
 - Download files using multiple threads to speed up the process
 - Resume interrupted downloads and only download missing or newer files
-- Verify the integrity of downloaded files by calculating their hashes
+- Verify the integrity of downloaded files against the checksums GOG publishes
+- Arrange downloads in folder layouts that RomM and Lutris can use directly
+- Back up a game's GOG GALAXY cloud saves locally
 - Calculate the total size of the files to be downloaded (for storage planning)
 
 ---
@@ -81,8 +83,8 @@ Run `gogg -h` to see the available commands and options.
 
 > [!NOTE]
 > * Since version `0.4.1`, Gogg has a GUI besides its command line interface (CLI).
-> The GUI is still in the early stages of development and does not support all the features of the CLI and may have
-> bugs.
+> The GUI supports the features of the CLI and adds a searchable library with covers, collections, download
+> management, and cloud save backup.
 > To start the GUI, run `gogg gui`.
 > * Since version `0.4.2`, there are Docker images available for Gogg.
 > See the [documentation](docs/README.md#containerization) for more information.
@@ -96,7 +98,7 @@ Run `gogg -h` to see the available commands and options.
 | [download_all_games.sh](docs/examples/download_all_games.sh)                             | Bash script to download all games user owns                         |
 | [simple_example.sh](docs/examples/simple_example.sh)                                     | Simple examples of how to use Gogg from the command line            |
 
-##### Login to GOG
+##### Log in to GOG
 
 ```bash
 # First-time using Gogg, you need to log in to GOG to authenticate
@@ -107,6 +109,16 @@ gogg login
 > You might need to have [Google Chrome](https://www.google.com/chrome/), [Chromium](https://www.chromium.org/), or
 > [Microsoft Edge](https://www.microsoft.com/edge) browsers installed on your machine for the first-time authentication.
 > So, make sure you have one of them installed and available in your system's PATH.
+
+> [!IMPORTANT]
+> Since version `0.5.0` users can log in to their GOG account from the GUI.
+> So it's not strictly necessary for them to have of [Google Chrome](https://www.google.com/chrome/), [Chromium](https://www.chromium.org/), or
+> [Microsoft Edge](https://www.microsoft.com/edge) browsers installed on their machines.
+> **And Any modern web browser should work**.
+
+<div align="center">
+  <img alt="Log in from GUI" src="docs/screenshots/v0.5.0/8.png" width="100%">
+</div>
 
 ##### Syncing the Game Catalogue
 
@@ -130,7 +142,7 @@ gogg download 1207658924 ./games --platform=windows --lang=en --dlcs=true --extr
  --resume=true --threads 5 --flatten=true --keep-latest=true
 ```
 
-##### File Hashes (For Verification)
+##### File Hashes (for Verification)
 
 ```bash
 # Will show the SHA1 hash of the downloaded files for `The Witcher: Enhanced Edition`
@@ -152,17 +164,19 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
 ### GUI Screenshots
 
 <div align="center">
-  <img alt="Game Library" src="docs/screenshots/v0.4.2/5.png" width="100%">
+  <img alt="Game Library" src="docs/screenshots/v0.5.0/6.png" width="100%">
 </div>
 
 <details>
 <summary>Show more screenshots</summary>
 
 <div align="center">
-  <img alt="File Operations" src="docs/screenshots/v0.4.2/2.png" width="100%">
-  <img alt="Download Games" src="docs/screenshots/v0.4.2/8.png" width="100%">
-  <img alt="About" src="docs/screenshots/v0.4.2/14.png" width="100%">
-  <img alt="Download Progress" src="docs/screenshots/v0.4.2/9.png" width="100%">
+  <img alt="Start 1" src="docs/screenshots/v0.5.0/1.png" width="100%">
+  <img alt="Start 2" src="docs/screenshots/v0.5.0/2.png" width="100%">
+  <img alt="Settings" src="docs/screenshots/v0.5.0/3.png" width="100%">
+  <img alt="Downloads" src="docs/screenshots/v0.5.0/4.png" width="100%">
+  <img alt="Refreshing Library" src="docs/screenshots/v0.5.0/5.png" width="100%">
+  <img alt="Downloaded Games" src="docs/screenshots/v0.5.0/7.png" width="100%">
 </div>
 
 </details>
