@@ -348,6 +348,14 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
+				if task.pausing.Load() {
+					task.SetState(StatePaused)
+					_ = task.Status.Set("Paused. What has arrived stays for the resume.")
+					_ = task.FileStatus.Set("")
+					_ = task.Details.Set("")
+					announceIfLast(dm, StatePaused, q.game.Title)
+					return
+				}
 				task.SetState(StateCancelled)
 				_ = task.Status.Set("Cancelled")
 			} else {

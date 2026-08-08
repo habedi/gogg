@@ -32,6 +32,10 @@ const (
 	StateCompleted
 	StateCancelled
 	StateError
+	// StatePaused is stopped on purpose with the intent to come back: the
+	// partial files stay, and Resume picks up where they end. Added after the
+	// others because the values are written into the history file.
+	StatePaused
 )
 
 type DownloadTask struct {
@@ -52,6 +56,10 @@ type DownloadTask struct {
 	// state is written by the download goroutine and read by the UI, so it is
 	// only reachable through State and SetState.
 	state atomic.Int32
+
+	// pausing marks a cancellation as a pause, so the download goroutine ends
+	// the task as paused rather than cancelled. Set before CancelFunc runs.
+	pausing atomic.Bool
 
 	// onStateChange is set by the manager when it takes a download on. Nothing
 	// else says a download has moved between running and finished, which is
@@ -210,6 +218,36 @@ func (t *DownloadTask) canRetry() bool {
 	return state == StateError || state == StateCancelled
 }
 
+// pause stops a running download, keeping what has arrived for the resume.
+func (t *DownloadTask) pause() {
+	if t.CancelFunc == nil {
+		return
+	}
+	t.pausing.Store(true)
+	t.CancelFunc()
+}
+
+// canResume reports whether a paused download can pick up where it stopped.
+// One restored from the history file cannot: its request did not survive.
+func (t *DownloadTask) canResume() bool {
+	return t.State() == StatePaused && t.request.game.ID != 0
+}
+
+// resumePaused starts a paused download again from what is already on disk,
+// replacing its entry. Resume is forced on: that is what pausing promised.
+func (dm *DownloadManager) resumePaused(task *DownloadTask) error {
+	if !task.canResume() {
+		return errors.New("this download cannot be resumed")
+	}
+	request := task.request
+	request.resumeFlag = true
+	if err := dm.QueueOrStart(request); err != nil {
+		return err
+	}
+	dm.removeTask(task)
+	return nil
+}
+
 // retry starts a failed or cancelled download again, replacing its entry.
 func (dm *DownloadManager) retry(task *DownloadTask) error {
 	if !task.canRetry() {
@@ -310,7 +348,8 @@ func (dm *DownloadManager) PersistHistory() {
 
 	for _, taskRaw := range allTasks {
 		task := taskRaw.(*DownloadTask)
-		if state := task.State(); state == StateCompleted || state == StateCancelled || state == StateError {
+		if state := task.State(); state == StateCompleted || state == StateCancelled ||
+			state == StateError || state == StatePaused {
 			status, _ := task.Status.Get()
 			persistentTasks = append(persistentTasks, PersistentDownloadTask{
 				ID:           task.ID,
@@ -352,6 +391,7 @@ type downloadRow struct {
 	widget.BaseWidget
 
 	title      *widget.Label
+	pauseBtn   *iconButton
 	actionBtn  *widget.Button
 	clearBtn   *iconButton
 	status     *widget.Label
@@ -365,6 +405,7 @@ type downloadRow struct {
 func newDownloadRow() fyne.CanvasObject {
 	row := &downloadRow{
 		title:      widget.NewLabel("Game Title"),
+		pauseBtn:   newIconButton(theme.MediaPauseIcon(), "Pause, keeping what has arrived", nil),
 		actionBtn:  widget.NewButtonWithIcon("Action", theme.CancelIcon(), nil),
 		clearBtn:   newIconButton(theme.DeleteIcon(), "Take this off the list", nil),
 		status:     widget.NewLabel("Status"),
@@ -396,7 +437,7 @@ func newDownloadRow() fyne.CanvasObject {
 
 func (r *downloadRow) CreateRenderer() fyne.WidgetRenderer {
 	topRow := container.NewBorder(nil, nil, nil,
-		container.NewHBox(r.actionBtn, r.clearBtn), r.title)
+		container.NewHBox(r.pauseBtn, r.actionBtn, r.clearBtn), r.title)
 
 	content := container.NewVBox(
 		topRow,
@@ -530,6 +571,16 @@ func DownloadsTabUI(win fyne.Window, dm *DownloadManager) fyne.CanvasObject {
 
 			clearBtn.OnTapped = func() { dm.removeTask(task) }
 
+			// Only a transfer that is truly moving can be paused: a queued
+			// placeholder has nothing on disk worth keeping yet.
+			queuedStatus, _ := task.Status.Get()
+			if stillGoing(task) && queuedStatus != "Queued" && task.CancelFunc != nil {
+				row.pauseBtn.OnTapped = func() { task.pause() }
+				row.pauseBtn.Show()
+			} else {
+				row.pauseBtn.Hide()
+			}
+
 			switch task.State() {
 			case StateCompleted:
 				actionBtn.SetIcon(theme.FolderOpenIcon())
@@ -537,6 +588,25 @@ func DownloadsTabUI(win fyne.Window, dm *DownloadManager) fyne.CanvasObject {
 				actionBtn.OnTapped = func() { openFolder(task.DownloadPath) }
 				actionBtn.Enable()
 				clearBtn.Show()
+			case StatePaused:
+				clearBtn.Show()
+				if task.canResume() {
+					actionBtn.SetIcon(theme.MediaPlayIcon())
+					actionBtn.SetText("Resume")
+					actionBtn.OnTapped = func() {
+						if err := dm.resumePaused(task); err != nil {
+							log.Error().Err(err).Str("game", task.Title).Msg("Failed to resume download")
+						}
+					}
+					actionBtn.Enable()
+					break
+				}
+				// Paused in an earlier run: the request did not survive, so
+				// the way on is downloading the game again with resume on.
+				actionBtn.SetIcon(theme.MediaPauseIcon())
+				actionBtn.SetText("Paused")
+				actionBtn.OnTapped = nil
+				actionBtn.Disable()
 			case StateCancelled, StateError:
 				clearBtn.Show()
 				if task.canRetry() {
@@ -615,9 +685,11 @@ func DownloadsTabUI(win fyne.Window, dm *DownloadManager) fyne.CanvasObject {
 		dm.refreshTotals()
 	}
 	clearAllBtn := widget.NewButton("Clear All Finished", func() {
+		// Paused downloads are not finished: someone means to come back.
 		finished := 0
 		for _, task := range dm.tasksSnapshot() {
-			if !stillGoing(task) {
+			switch task.State() {
+			case StateCompleted, StateCancelled, StateError:
 				finished++
 			}
 		}
