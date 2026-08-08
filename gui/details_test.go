@@ -63,11 +63,8 @@ func TestGameDetails_DescribesTheGame(t *testing.T) {
 	prefs.SetBool("downloadForm.extras", false)
 	prefs.SetBool("downloadForm.dlcs", false)
 
-	updateStatusCache = make(map[int]updateStatus)
-	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
-
 	game := db.Game{ID: 42, Title: "Rich Game", Data: richGameData, Version: "2.1"}
-	details := gameDetails(game, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
+	details := gameDetails(newLibraryState(), game, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
 
 	require.Equal(t, "42", detailValue(t, details, "Game ID"))
 	require.Equal(t, "2.1", detailValue(t, details, "Version"))
@@ -83,9 +80,6 @@ func TestGameDetails_ShowsWhereADownloadedGameLives(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	updateStatusCache = make(map[int]updateStatus)
-	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
-
 	root := t.TempDir()
 	dir := filepath.Join(root, client.SanitizePath("Rich Game"))
 	require.NoError(t, os.MkdirAll(dir, 0o755))
@@ -93,7 +87,7 @@ func TestGameDetails_ShowsWhereADownloadedGameLives(t *testing.T) {
 	app.Preferences().SetString("lastUsedDownloadPath", root)
 
 	game := db.Game{ID: 42, Title: "Rich Game", Data: richGameData}
-	details := gameDetails(game, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
+	details := gameDetails(newLibraryState(), game, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
 
 	require.Equal(t, dir, detailValue(t, details, "Downloaded to"))
 }
@@ -102,12 +96,10 @@ func TestGameDetails_ReportsAWaitingUpdate(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	updateStatusCache = map[int]updateStatus{
-		42: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: a", "CHANGED: b"}},
-	}
-	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
+	state := newLibraryState()
+	state.statuses[42] = updateStatus{Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: a", "CHANGED: b"}}
 
-	details := gameDetails(db.Game{ID: 42, Title: "Rich Game", Data: richGameData}, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
+	details := gameDetails(state, db.Game{ID: 42, Title: "Rich Game", Data: richGameData}, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
 
 	require.Equal(t, "2 changed files", detailValue(t, details, "Update"))
 }
@@ -117,7 +109,7 @@ func TestGameDetails_SurvivesUnreadableGameData(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	details := gameDetails(db.Game{ID: 7, Title: "Broken", Data: "{not json"}, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
+	details := gameDetails(newLibraryState(), db.Game{ID: 7, Title: "Broken", Data: "{not json"}, &DownloadManager{Tasks: binding.NewUntypedList()}, nil)
 
 	require.Equal(t, "7", detailValue(t, details, "Game ID"))
 	require.Equal(t, "Unknown", detailValue(t, details, "Version"))
@@ -236,8 +228,6 @@ func timesIn(values []string, want string) int {
 func TestGameDetails_IncludesStoreInformation(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
-	updateStatusCache = make(map[int]updateStatus)
-	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
 
 	meta := &client.GameMetadata{
 		Developers:  []string{"Santa Monica Studio"},
@@ -249,7 +239,7 @@ func TestGameDetails_IncludesStoreInformation(t *testing.T) {
 		Voiceovers:  []string{"English", "German"},
 		InstalledMB: 40981,
 	}
-	details := gameDetails(db.Game{ID: 42, Title: "Rich Game", Data: richGameData},
+	details := gameDetails(newLibraryState(), db.Game{ID: 42, Title: "Rich Game", Data: richGameData},
 		&DownloadManager{Tasks: binding.NewUntypedList()}, meta)
 
 	require.Equal(t, "Santa Monica Studio", detailValue(t, details, "Developer"))
@@ -266,7 +256,7 @@ func TestGameDetails_OmitsStoreFactsThatAreMissing(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	details := gameDetails(db.Game{ID: 42, Title: "Rich Game", Data: richGameData},
+	details := gameDetails(newLibraryState(), db.Game{ID: 42, Title: "Rich Game", Data: richGameData},
 		&DownloadManager{Tasks: binding.NewUntypedList()}, &client.GameMetadata{})
 
 	for _, label := range []string{"Developer", "Publisher", "Released", "Genres", "Age rating", "Installed size"} {
@@ -338,7 +328,7 @@ func TestFillDetails_AddsTheStoreFactsWhenTheyArrive(t *testing.T) {
 
 		require.NotContains(t, formLabels(lt.pane.facts), "Publisher", "nothing is known about the store yet")
 
-		fillDetails(lt.pane, game, lt.dm, &client.GameMetadata{Publisher: "A Publisher"})
+		fillDetails(lt.pane, lt.state, game, lt.dm, &client.GameMetadata{Publisher: "A Publisher"})
 		require.Contains(t, formLabels(lt.pane.facts), "Publisher")
 	})
 }
@@ -627,7 +617,7 @@ func newDownloadFormForTest(t *testing.T) *downloadForm {
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 	return createDownloadForm(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()},
-		binding.NewUntyped(), newGameSelection(), func() []db.Game { return nil })
+		newLibraryState(), binding.NewUntyped(), newGameSelection(), func() []db.Game { return nil })
 }
 
 // downloadPathEntry is the box the download path is typed into.

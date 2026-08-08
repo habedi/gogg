@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -255,7 +254,13 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 
 	progressWriter := &cliProgressWriter{}
 
-	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, rommLayoutFlag, numThreads, progressWriter)
+	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath,
+		client.DownloadOptions{
+			Language: languageFullName, Platform: platformName,
+			Extras: extrasFlag, DLCs: dlcFlag, Resume: resumeFlag,
+			Flatten: flattenFlag, SkipPatches: skipPatchesFlag, RomMLayout: rommLayoutFlag,
+			Threads: numThreads,
+		}, progressWriter)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			fmt.Println(clierr.New(clierr.Internal, "Download cancelled or timed out", err).Message)
@@ -267,114 +272,14 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 
 	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title)))
 	if keepLatestFlag {
-		if err := pruneOldVersions(downloadPath, parsedGameData.Title); err != nil {
-			log.Warn().Err(err).Msg("Failed to prune old versions")
+		removed, pruneErr := client.PruneOldInstallerVersions(downloadPath, parsedGameData.Title, rommLayoutFlag, platformName)
+		if pruneErr != nil {
+			log.Warn().Err(pruneErr).Msg("Failed to prune old versions")
+		}
+		if len(removed) > 0 {
+			fmt.Printf("Removed %d older installer %s.\n", len(removed), filesWord(len(removed)))
 		}
 	}
-}
-
-var versionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
-
-func parseVersion(filename string) (prefix string, verSlice []int, suffix string, ok bool) {
-	m := versionPattern.FindStringSubmatch(filename)
-	if m == nil {
-		return "", nil, "", false
-	}
-	prefix = m[1]
-	suffix = m[3]
-	verParts := strings.Split(m[2], ".")
-	for _, p := range verParts {
-		v, err := strconv.Atoi(p)
-		if err != nil {
-			return "", nil, "", false
-		}
-		verSlice = append(verSlice, v)
-	}
-	return prefix, verSlice, suffix, true
-}
-
-func compareVersions(a, b []int) int { // 1 if a>b, -1 if a<b, 0 if eq
-	for i := 0; i < len(a) || i < len(b); i++ {
-		va, vb := 0, 0
-		if i < len(a) {
-			va = a[i]
-		}
-		if i < len(b) {
-			vb = b[i]
-		}
-		if va > vb {
-			return 1
-		}
-		if va < vb {
-			return -1
-		}
-	}
-	return 0
-}
-
-// installerGroup identifies files that are versions of the same installer.
-// Files only compete with one another when they sit in the same directory and
-// share both a name prefix and an extension: a Windows installer is not an
-// older version of the Linux one, and neither is a DLC installer that happens
-// to share a name with the base game.
-type installerGroup struct {
-	dir    string
-	prefix string
-	suffix string
-}
-
-func pruneOldVersions(downloadPath, title string) error {
-	root := filepath.Join(downloadPath, client.SanitizePath(title))
-	if _, err := os.Stat(root); err != nil {
-		return err
-	}
-	// Candidate extensions (installer types)
-	extAllowed := map[string]struct{}{".exe": {}, ".bin": {}, ".dmg": {}, ".sh": {}, ".zip": {}, ".tar.gz": {}, ".rar": {}}
-	latestByGroup := make(map[installerGroup]struct {
-		file string
-		ver  []int
-	})
-	filesByGroup := make(map[installerGroup][]string)
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return nil
-		}
-		name := info.Name()
-		ext := filepath.Ext(name)
-		// handle .tar.gz
-		if strings.HasSuffix(name, ".tar.gz") {
-			ext = ".tar.gz"
-		}
-		if _, ok := extAllowed[ext]; !ok {
-			return nil
-		}
-		prefix, ver, suffix, ok := parseVersion(name)
-		if !ok || len(ver) == 0 {
-			return nil
-		}
-		group := installerGroup{dir: filepath.Dir(path), prefix: prefix, suffix: suffix}
-		filesByGroup[group] = append(filesByGroup[group], path)
-		curr, exists := latestByGroup[group]
-		if !exists || compareVersions(ver, curr.ver) == 1 {
-			latestByGroup[group] = struct {
-				file string
-				ver  []int
-			}{file: path, ver: ver}
-		}
-		return nil
-	})
-	// Remove older ones
-	for group, files := range filesByGroup {
-		latest := latestByGroup[group].file
-		for _, f := range files {
-			if f != latest {
-				if err := os.Remove(f); err != nil {
-					log.Warn().Err(err).Str("file", f).Msg("Failed to remove old version file")
-				}
-			}
-		}
-	}
-	return nil
 }
 
 func logDownloadParameters(game client.Game, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag bool, numThreads int) {

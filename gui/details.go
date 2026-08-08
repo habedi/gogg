@@ -22,7 +22,7 @@ type gameDetail struct {
 
 // gameDetails describes a game from what is already stored locally, so the
 // pane costs nothing beyond reading the catalogue entry.
-func gameDetails(game db.Game, dm *DownloadManager, meta *client.GameMetadata) []gameDetail {
+func gameDetails(s *libraryState, game db.Game, dm *DownloadManager, meta *client.GameMetadata) []gameDetail {
 	details := []gameDetail{{Label: "Game ID", Value: strconv.Itoa(game.ID)}}
 
 	version := game.Version
@@ -62,7 +62,7 @@ func gameDetails(game db.Game, dm *DownloadManager, meta *client.GameMetadata) [
 		}
 	}
 
-	if size := estimateGameSize(game); size > 0 {
+	if size := s.estimateSize(game); size > 0 {
 		details = append(details, gameDetail{Label: "Estimated size", Value: formatBytes(size)})
 	}
 
@@ -72,7 +72,7 @@ func gameDetails(game db.Game, dm *DownloadManager, meta *client.GameMetadata) [
 		details = append(details, gameDetail{Label: "Downloaded", Value: "No"})
 	}
 
-	if hasUpdate, diff := hasGameUpdateCached(game.ID); hasUpdate {
+	if hasUpdate, diff := s.updateFor(game.ID); hasUpdate {
 		details = append(details, gameDetail{
 			Label: "Update",
 			Value: fmt.Sprintf("%d changed %s", len(diff), filesWord(len(diff))),

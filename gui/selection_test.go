@@ -80,8 +80,8 @@ func TestBindGameRow_RecyclingDoesNotLeakSelection(t *testing.T) {
 	sel.set(1, true)
 
 	row := newGameRow()
-	bindGameRow(row, db.Game{ID: 1, Title: "One"}, sel, nil, nil, nil)
-	bindGameRow(row, db.Game{ID: 2, Title: "Two"}, sel, nil, nil, nil)
+	bindGameRow(row, db.Game{ID: 1, Title: "One"}, rowBinding{sel: sel})
+	bindGameRow(row, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: sel})
 
 	require.True(t, sel.has(1), "recycling a row must not deselect the game it used to show")
 	require.False(t, sel.has(2))
@@ -95,11 +95,11 @@ func TestBindGameRow_TicksTheBoxForSelectedGames(t *testing.T) {
 	sel.set(7, true)
 
 	row := newGameRow()
-	bindGameRow(row, db.Game{ID: 7, Title: "Seven"}, sel, nil, nil, nil)
+	bindGameRow(row, db.Game{ID: 7, Title: "Seven"}, rowBinding{sel: sel})
 
 	require.True(t, row.(*gameRow).check.Checked)
 
-	bindGameRow(row, db.Game{ID: 8, Title: "Eight"}, sel, nil, nil, nil)
+	bindGameRow(row, db.Game{ID: 8, Title: "Eight"}, rowBinding{sel: sel})
 	require.False(t, row.(*gameRow).check.Checked)
 }
 
@@ -109,7 +109,7 @@ func TestGameRow_TitleGetsTheRemainingWidth(t *testing.T) {
 	defer app.Quit()
 
 	row := newGameRow()
-	bindGameRow(row, db.Game{ID: 1, Title: "A Game With A Reasonably Long Title"}, newGameSelection(), nil, nil, nil)
+	bindGameRow(row, db.Game{ID: 1, Title: "A Game With A Reasonably Long Title"}, rowBinding{sel: newGameSelection()})
 
 	const rowWidth = 400
 	test.WidgetRenderer(row.(*gameRow)) // force the renderer, as the list does
@@ -237,15 +237,15 @@ func TestBindGameRow_KeepsTheThumbnailForTheSameGame(t *testing.T) {
 	row := newGameRow().(*gameRow)
 	game := db.Game{ID: 1, Title: "One"}
 
-	bindGameRow(row, game, sel, nil, nil, nil)
+	bindGameRow(row, game, rowBinding{sel: sel})
 	artwork := image.NewRGBA(image.Rect(0, 0, 4, 4))
 	row.thumbnail.Image = artwork
 	row.thumbnail.Resource = nil
 
-	bindGameRow(row, game, sel, nil, nil, nil)
+	bindGameRow(row, game, rowBinding{sel: sel})
 	require.Equal(t, artwork, row.thumbnail.Image)
 
-	bindGameRow(row, db.Game{ID: 2, Title: "Two"}, sel, nil, nil, nil)
+	bindGameRow(row, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: sel})
 	require.Nil(t, row.thumbnail.Image, "a different game starts from the placeholder")
 }
 
@@ -259,14 +259,14 @@ func TestGameRow_UpdateDetailsOpenLargeEnoughToRead(t *testing.T) {
 	t.Cleanup(win.Close)
 	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
 
-	updateStatusCache = map[int]updateStatus{1: {Downloaded: true, HasUpdate: true, Diff: []string{
+	state := newLibraryState()
+	state.statuses[1] = updateStatus{Downloaded: true, HasUpdate: true, Diff: []string{
 		"CHANGED: windows|setup_the_game_1.2.3.exe 1.2.2 -> 1.2.3",
 		"NEW: windows|setup_the_game_dlc_1.0.exe version=1.0",
-	}}}
-	t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
+	}}
 
 	row := newGameRow().(*gameRow)
-	bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil, nil)
+	bindGameRow(row, db.Game{ID: 1, Title: "One"}, rowBinding{sel: newGameSelection(), state: state})
 	test.Tap(row.badges.update)
 
 	overlay := topOverlay(t)

@@ -31,14 +31,14 @@ func TestGameRow_ShowsTheDownloadHappeningNow(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	updateStatusCache = map[int]updateStatus{1: {Downloaded: true}}
-	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
+	state := newLibraryState()
+	state.statuses[1] = updateStatus{Downloaded: true}
 
 	dm, task := runningDownload(t, 1)
 
 	offMain(t, func() {
 		row := newGameRow().(*gameRow)
-		bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, dm, nil)
+		bindGameRow(row, db.Game{ID: 1, Title: "One"}, rowBinding{sel: newGameSelection(), dm: dm, state: state})
 
 		require.True(t, row.badges.progress.Visible(), "a running download is its progress")
 		require.False(t, row.badges.downloaded.Visible(), "the tick waits for it to finish")
@@ -47,7 +47,7 @@ func TestGameRow_ShowsTheDownloadHappeningNow(t *testing.T) {
 		require.Equal(t, 0.5, row.badges.progress.Value, "the bar follows the download")
 
 		task.SetState(StateCompleted)
-		bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, dm, nil)
+		bindGameRow(row, db.Game{ID: 1, Title: "One"}, rowBinding{sel: newGameSelection(), dm: dm, state: state})
 		require.False(t, row.badges.progress.Visible())
 		require.True(t, row.badges.downloaded.Visible())
 	})
@@ -62,10 +62,10 @@ func TestGameCell_ShowsTheDownloadHappeningNow(t *testing.T) {
 
 	offMain(t, func() {
 		cell := newGameCell().(*gameCell)
-		bindGameCell(cell, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, dm, nil)
+		bindGameCell(cell, db.Game{ID: 1, Title: "One"}, rowBinding{sel: newGameSelection(), dm: dm})
 		require.True(t, cell.badges.progress.Visible())
 
-		bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, newGameSelection(), nil, dm, nil)
+		bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: newGameSelection(), dm: dm})
 		require.False(t, cell.badges.progress.Visible(), "the neighbour is not downloading anything")
 	})
 }
@@ -74,17 +74,16 @@ func TestGameCell_ShowsTheDownloadHappeningNow(t *testing.T) {
 func TestGameCell_NamesThePlatformsUnderTheTitle(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
-	t.Cleanup(forgetParsedGames)
 
 	cell := newGameCell().(*gameCell)
 	bindGameCell(cell, db.Game{ID: 1, Title: "Rich Game", Data: richGameData},
-		newGameSelection(), nil, nil, nil)
+		rowBinding{sel: newGameSelection()})
 
 	require.True(t, cell.platforms.Visible())
 	require.Equal(t, "Windows · macOS · Linux", cell.platforms.Text)
 
 	// A game whose data says nothing does not keep an empty line under it.
-	bindGameCell(cell, db.Game{ID: 2, Title: "Bare Game"}, newGameSelection(), nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 2, Title: "Bare Game"}, rowBinding{sel: newGameSelection()})
 	require.False(t, cell.platforms.Visible())
 }
 

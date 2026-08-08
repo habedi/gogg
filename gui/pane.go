@@ -89,10 +89,10 @@ type detailsPane struct {
 // game this is at a glance, and the options sit under it so that choosing them
 // and pressing Download happen in the same place.
 func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadManager,
-	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
+	st stores, state *libraryState, selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
 	detailsBox *fyne.Container, covers *coverCache, onTagsChanged func(),
 ) *detailsPane {
-	form := createDownloadForm(win, authService, dm, selectedGame, sel, catalogue)
+	form := createDownloadForm(win, authService, dm, state, selectedGame, sel, catalogue)
 
 	title := NewCopyableLabel("Select a game from the list")
 	title.TextStyle = fyne.TextStyle{Bold: true}
@@ -105,14 +105,14 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 	favBtn := newIconButton(iconStarOutline, "Add to favorites", nil)
 	hideBtn := newIconButton(theme.VisibilityOffIcon(), "Hide this game", nil)
 	refreshMarks := func(game db.Game) {
-		if gameHasTag(game.ID, db.TagFavorite) {
+		if state.hasTag(game.ID, db.TagFavorite) {
 			favBtn.SetIcon(iconStarFilled)
 			favBtn.tip = "Remove from favorites"
 		} else {
 			favBtn.SetIcon(iconStarOutline)
 			favBtn.tip = "Add to favorites"
 		}
-		if gameHasTag(game.ID, db.TagHidden) {
+		if state.hasTag(game.ID, db.TagHidden) {
 			hideBtn.SetIcon(theme.VisibilityIcon())
 			hideBtn.tip = "Show this game in the list again"
 		} else {
@@ -127,16 +127,16 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 			return
 		}
 		var err error
-		if gameHasTag(game.ID, tag) {
-			err = db.RemoveTag(context.Background(), game.ID, tag)
+		if state.hasTag(game.ID, tag) {
+			err = st.tags.Remove(context.Background(), game.ID, tag)
 		} else {
-			err = db.AddTag(context.Background(), game.ID, tag)
+			err = st.tags.Add(context.Background(), game.ID, tag)
 		}
 		if err != nil {
 			showErrorDialog(win, "Could not mark the game", err)
 			return
 		}
-		loadGameTags()
+		state.loadTags(st.tags)
 		refreshMarks(game)
 		if onTagsChanged != nil {
 			onTagsChanged()
@@ -204,7 +204,7 @@ func createDetailsPane(win fyne.Window, authService *auth.Service, dm *DownloadM
 }
 
 func createDownloadForm(win fyne.Window, authService *auth.Service, dm *DownloadManager,
-	selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
+	state *libraryState, selectedGame binding.Untyped, sel *gameSelection, catalogue func() []db.Game,
 ) *downloadForm {
 	prefs := fyne.CurrentApp().Preferences()
 	downloadPathEntry := widget.NewEntry()
@@ -355,7 +355,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		if len(games) == 0 {
 			return
 		}
-		estimates, total := estimateSelection(games)
+		estimates, total := estimateSelection(state, games)
 		showSizeEstimate(win, estimates, total)
 	})
 
@@ -450,8 +450,8 @@ func showGallery(gallery *gameGallery, game db.Game, shots []client.Screenshot) 
 
 // fillDetails puts a game's facts in the pane. meta is nil until GOG's store
 // has been looked up, and the pane is filled twice: once without it, once with.
-func fillDetails(pane *detailsPane, game db.Game, dm *DownloadManager, meta *client.GameMetadata) {
-	details := gameDetails(game, dm, meta)
+func fillDetails(pane *detailsPane, s *libraryState, game db.Game, dm *DownloadManager, meta *client.GameMetadata) {
+	details := gameDetails(s, game, dm, meta)
 
 	pane.facts.Objects = []fyne.CanvasObject{renderGameDetails(details)}
 	pane.facts.Refresh()

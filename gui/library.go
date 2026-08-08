@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -81,6 +82,8 @@ type libraryTab struct {
 	// starts.
 	pane *detailsPane
 	dm   *DownloadManager
+	// state is what the library knows about its games beyond the catalogue.
+	state *libraryState
 	// close detaches what the library listens to. The catalogue signal belongs
 	// to the whole app, so a library that has been replaced has to stop
 	// following it or it goes on working for a window that is gone.
@@ -112,8 +115,8 @@ func debounced(delay time.Duration, fn func()) func(string) {
 
 // LibraryTabUI builds the catalogue tab. onLogin is invoked when a signed-out
 // user asks to log in.
-func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager, onLogin func()) *libraryTab {
-	token, _ := db.GetTokenRecord()
+func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManager, st stores, onLogin func()) *libraryTab {
+	token, _ := st.tokens.Get(context.Background())
 	if token == nil {
 		loginBtn := widget.NewButtonWithIcon("Log In to GOG", theme.LoginIcon(), func() {
 			if onLogin != nil {
@@ -132,13 +135,15 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			listed:      func() []db.Game { return nil },
 			relist:      func() {},
 			dm:          dm,
+			state:       newLibraryState(),
 			close:       func() {},
 		}
 	}
 
-	allGames, _ := db.GetCatalogue()
-	loadGameTags()
-	loadGameGenres()
+	allGames, _ := st.games.List(context.Background())
+	state := newLibraryState()
+	state.loadTags(st.tags)
+	state.loadGenres(st.metadata)
 	// Set when this library is replaced. Answers that were on their way to it
 	// are dropped rather than delivered to a pane nothing shows anymore.
 	var closed atomic.Bool
@@ -180,7 +185,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	updateAllBtn.Hide()
 
 	covers := newCoverCache(coverCacheDir())
-	metadata := newMetadataCache()
+	metadata := newMetadataCache(st.metadata)
+	metadata.onGenres = func(gameID int, genres []string) { state.genres[gameID] = genres }
 
 	var gameListWidget *activatableList
 	var gameGridWidget *activatableGrid
@@ -216,7 +222,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 		displayGames := make([]db.Game, 0, len(allGames))
 		for _, game := range allGames {
-			if !query.Match(factsFor(game, needs)) {
+			if !query.Match(state.factsFor(game, needs)) {
 				continue
 			}
 			displayGames = append(displayGames, game)
@@ -276,7 +282,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				if closed.Load() {
 					return
 				}
-				applyStatuses(found)
+				state.applyStatuses(found)
 				if sidebar != nil && sidebar.content.Visible() {
 					sidebar.refresh(allGames)
 				}
@@ -308,7 +314,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			if !ok {
 				return
 			}
-			bindGameCell(cell, games[id], sel, covers, dm, func() { afterSelectionChange() })
+			bindGameCell(cell, games[id], rowBinding{sel: sel, covers: covers, dm: dm,
+				state: state, onToggle: func() { afterSelectionChange() }})
 		},
 	)
 
@@ -321,7 +328,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			if !ok {
 				return
 			}
-			bindGameRow(obj, game, sel, covers, dm, func() { afterSelectionChange() })
+			bindGameRow(obj, game, rowBinding{sel: sel, covers: covers, dm: dm,
+				state: state, onToggle: func() { afterSelectionChange() }})
 		},
 	)
 	gameGridWidget.OnSelected = func(id widget.GridWrapItemID) {
@@ -359,7 +367,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				if closed.Load() {
 					return
 				}
-				applyStatuses(found)
+				state.applyStatuses(found)
 				if sidebar != nil && sidebar.content.Visible() {
 					sidebar.refresh(allGames)
 				}
@@ -449,7 +457,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// brought none already shows in the counts, and a dialog saying "nothing"
 	// after every refresh would teach people to dismiss dialogs unread.
 	announceRefreshOutcome := func() {
-		pending := gamesWithUpdates(allGames)
+		pending := state.gamesWithUpdates(allGames)
 		if len(pending) == 0 {
 			return
 		}
@@ -466,10 +474,10 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				len(pending), gamesWord(len(pending)), verb, joinTitles(titles)), win)
 	}
 	onFinishRefresh := func() {
-		allGames, _ = db.GetCatalogue()
-		loadGameTags()
-		loadGameGenres()
-		forgetParsedGames()
+		allGames, _ = st.games.List(context.Background())
+		state.loadTags(st.tags)
+		state.loadGenres(st.metadata)
+		state.forgetParsed()
 		recomputeStatuses(announceRefreshOutcome)
 		setRefreshEnabled(true)
 		showGames()
@@ -478,7 +486,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	}
 	startRefresh := func() {
 		setRefreshEnabled(false)
-		refreshCatalogue(win, authService, onFinishRefresh)
+		refreshCatalogue(win, authService, st.games, onFinishRefresh)
 	}
 
 	if len(allGames) == 0 {
@@ -493,7 +501,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	}
 	// Load any status cached by an earlier session before recomputing, so stale
 	// entries cannot overwrite fresh ones.
-	initUpdateStatusPersistence()
+	state.initStatusPersistence()
 	recomputeStatuses(nil)
 	startSweep()
 
@@ -535,8 +543,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				gameListWidget.Refresh()
 			}),
 			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("Export Game List as CSV", func() { ExportCatalogueAction(win, "csv") }),
-			fyne.NewMenuItem("Export Full Catalogue as JSON", func() { ExportCatalogueAction(win, "json") }),
+			fyne.NewMenuItem("Export Game List as CSV", func() { ExportCatalogueAction(win, st.games, "csv") }),
+			fyne.NewMenuItem("Export Full Catalogue as JSON", func() { ExportCatalogueAction(win, st.games, "json") }),
 		)
 	}
 	var moreBtn *iconButton
@@ -582,7 +590,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	// A collection is a stored query, so picking one is the same as typing it,
 	// keeping whatever words are already in the box.
-	sidebar = newLibrarySidebar(libraryCollections(), func(query string) {
+	sidebar = newLibrarySidebar(libraryCollections(), state, func(query string) {
 		text := strings.TrimSpace(search.Words(searchEntry.Text) + " " + query)
 		searchEntry.SetText(text)
 		updateDisplayedGames()
@@ -608,7 +616,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	showCollections(prefs.BoolWithFallback(prefSidebar, false))
 
 	detailsBox := container.NewVBox()
-	pane := createDetailsPane(win, authService, dm, selectedGameBinding,
+	pane := createDetailsPane(win, authService, dm, st, state, selectedGameBinding,
 		sel, func() []db.Game { return allGames }, detailsBox, covers,
 		func() {
 			// A mark moves games between collections and may take the game
@@ -636,7 +644,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	afterSelectionChange()
 
 	refreshUpdatesSummary = func() {
-		pending := gamesWithUpdates(allGames)
+		pending := state.gamesWithUpdates(allGames)
 		if len(pending) == 0 {
 			updatesLabel.SetText("")
 			updateAllBtn.Hide()
@@ -647,7 +655,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		updateAllBtn.Show()
 	}
 	updateAllBtn.OnTapped = func() {
-		pending := gamesWithUpdates(allGames)
+		pending := state.gamesWithUpdates(allGames)
 		if len(pending) == 0 {
 			return
 		}
@@ -692,7 +700,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		pane.hide.Show()
 		// The facts gogg already holds show at once; what GOG's store adds
 		// arrives when it arrives.
-		fillDetails(pane, game, dm, nil)
+		fillDetails(pane, state, game, dm, nil)
 		fillStoreHeader(pane, nil)
 		showGallery(pane.gallery, game, nil)
 		pane.storeStatus.SetText("Fetching store details...")
@@ -707,7 +715,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		}
 		metadata.load(game.ID, func(int) bool { return stillShowing() }, func(meta client.GameMetadata) {
 			pane.storeStatus.Hide()
-			fillDetails(pane, game, dm, &meta)
+			fillDetails(pane, state, game, dm, &meta)
 			fillStoreHeader(pane, &meta)
 			showGallery(pane.gallery, game, meta.Screenshots)
 		}, func() {
@@ -725,8 +733,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			catalogueJustRegistered = false
 			return
 		}
-		clearPersistedUpdateStatus()
-		forgetParsedGames()
+		state.clearStatuses()
+		state.forgetParsed()
 		recomputeStatuses(nil)
 	})
 	catalogueUpdated.AddListener(catalogueListener)
@@ -760,6 +768,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		relist:          updateDisplayedGames,
 		pane:            pane,
 		dm:              dm,
+		state:           state,
 		close: func() {
 			closed.Store(true)
 			metadata.close()

@@ -38,11 +38,9 @@ func TestDownloadGameFiles_RommLayoutStoresMetadataWithTheFiles(t *testing.T) {
 	srv := fileServer(t)
 	root := t.TempDir()
 
-	require.NoError(t, DownloadGameFiles(context.Background(), "tok",
-		singleFileGame(t, srv.URL+"/setup.bin"), root,
-		"English", "windows", false, false, false, false, false,
-		true, // rommLayout
-		1, io.Discard))
+	require.NoError(t, DownloadGameFiles(context.Background(), "tok", singleFileGame(t, srv.URL+"/setup.bin"), root,
+		DownloadOptions{Language: "English", Platform: "windows", RomMLayout: true, Threads: // rommLayout
+		1}, io.Discard))
 
 	gameDir := filepath.Join(root, "windows", "some-game")
 	require.FileExists(t, filepath.Join(gameDir, "setup.bin"))
@@ -56,11 +54,9 @@ func TestDownloadGameFiles_DefaultLayoutStoresMetadataInTheGameDirectory(t *test
 	srv := fileServer(t)
 	root := t.TempDir()
 
-	require.NoError(t, DownloadGameFiles(context.Background(), "tok",
-		singleFileGame(t, srv.URL+"/setup.bin"), root,
-		"English", "windows", false, false, false, false, false,
-		false, // rommLayout
-		1, io.Discard))
+	require.NoError(t, DownloadGameFiles(context.Background(), "tok", singleFileGame(t, srv.URL+"/setup.bin"), root,
+		DownloadOptions{Language: "English", Platform: "windows", Threads: // rommLayout
+		1}, io.Discard))
 
 	require.FileExists(t, filepath.Join(root, "some-game", "metadata.json"))
 }

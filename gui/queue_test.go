@@ -129,10 +129,7 @@ func TestExecuteDownload_ReportsUnparseableGameData(t *testing.T) {
 	require.Error(t, err)
 
 	// The slot must be released so the game can be retried.
-	activeDownloadsMutex.Lock()
-	_, stillActive := activeDownloads[1]
-	activeDownloadsMutex.Unlock()
-	require.False(t, stillActive)
+	require.False(t, dm.slotHeld(1))
 }
 
 // A download of several languages and platforms runs as one task, and what it

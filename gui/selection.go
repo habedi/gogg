@@ -72,6 +72,18 @@ func bindCheck(check *widget.Check, checked bool, onChanged func(bool)) {
 	check.OnChanged = onChanged
 }
 
+// rowBinding is what a list row or grid cell needs to describe a game: who
+// is ticked, where artwork comes from, what is downloading, and what is known
+// about the game. One bundle, so new knowledge does not grow every signature.
+// covers, dm, and state may each be nil in tests that are not about them.
+type rowBinding struct {
+	sel      *gameSelection
+	covers   *coverCache
+	dm       *DownloadManager
+	state    *libraryState
+	onToggle func()
+}
+
 // statusBadges are the marks a game carries wherever it is listed: whether it
 // has been downloaded, how many files an update would change, and how far along
 // a download running right now is. The list and the grid show the same ones, so
@@ -120,8 +132,12 @@ func newStatusBadges() *statusBadges {
 }
 
 // show marks a game with what is known about it. Tapping the update badge lists
-// what has changed. dm may be nil, in which case no download can be running.
-func (b *statusBadges) show(gameID int, dm *DownloadManager) {
+// what has changed. dm may be nil, in which case no download can be running;
+// s may be nil, in which case nothing is known.
+func (b *statusBadges) show(gameID int, dm *DownloadManager, s *libraryState) {
+	if s == nil {
+		s = newLibraryState()
+	}
 	if task := dm.runningTaskFor(gameID); task != nil {
 		// While its files are on their way, the game is its progress: the other
 		// marks describe a state it is about to leave.
@@ -134,14 +150,14 @@ func (b *statusBadges) show(gameID int, dm *DownloadManager) {
 	b.progress.Unbind()
 	b.progress.Hide()
 
-	if !isGameDownloadedCached(gameID) {
+	if !s.downloaded(gameID) {
 		b.downloaded.Hide()
 		b.update.Hide()
 		return
 	}
 
 	b.downloaded.Show()
-	hasUpdate, diff := hasGameUpdateCached(gameID)
+	hasUpdate, diff := s.updateFor(gameID)
 	if !hasUpdate {
 		b.update.Hide()
 		b.update.SetText("")
@@ -194,12 +210,9 @@ func (r *gameRow) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, leading, r.badges.progress, r.title))
 }
 
-// bindGameRow fills a recycled row with a game. dm says whether a download is
-// running for it, and onToggle runs when the row's checkbox is changed by the
-// user.
-func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, covers *coverCache,
-	dm *DownloadManager, onToggle func(),
-) {
+// bindGameRow fills a recycled row with a game.
+func bindGameRow(row fyne.CanvasObject, game db.Game, rb rowBinding) {
+	sel, covers, dm, onToggle := rb.sel, rb.covers, rb.dm, rb.onToggle
 	r, ok := row.(*gameRow)
 	if !ok {
 		return
@@ -219,7 +232,7 @@ func bindGameRow(row fyne.CanvasObject, game db.Game, sel *gameSelection, covers
 
 	r.title.SetText(game.Title)
 	r.loadThumbnail(game, covers, sameGame)
-	r.badges.show(game.ID, dm)
+	r.badges.show(game.ID, dm, rb.state)
 }
 
 // How much room the list of changes may take before it starts scrolling.

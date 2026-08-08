@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/auth"
+	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,7 +61,7 @@ func captureRefreshes(t *testing.T) *refreshRecorder {
 	t.Helper()
 	recorder := &refreshRecorder{}
 	original := refreshCatalogue
-	refreshCatalogue = func(_ fyne.Window, _ *auth.Service, onFinish func()) {
+	refreshCatalogue = func(_ fyne.Window, _ *auth.Service, _ db.GameRepository, onFinish func()) {
 		recorder.started++
 		recorder.onFinish = onFinish
 	}
@@ -177,7 +178,7 @@ func TestSettings_ChangingUpdateDetectionRechecksTheLibrary(t *testing.T) {
 		lt, win := newLibraryFixtureShown(t, 2)
 		held := holdStatusWork(t)
 
-		settings := SettingsTabUI(win, func() {})
+		settings := SettingsTabUI(win, openStores(), func() {})
 		check := checkWithLabel(settings, "Include patches")
 		require.NotNil(t, check)
 		check.SetChecked(true)

@@ -34,6 +34,9 @@ const metadataFormat = 3
 type metadataCache struct {
 	fetches chan struct{}
 
+	// store is where lookups are kept between runs.
+	store db.MetadataRepository
+
 	// ctx is cancelled when the cache is closed, taking every lookup still in
 	// flight with it: a library that has been replaced has no pane to fill
 	// and no business writing to the database on its way out.
@@ -42,6 +45,10 @@ type metadataCache struct {
 
 	// sweeping says a background pass over the library is underway.
 	sweeping atomic.Bool
+
+	// onGenres is told, on the main thread, what genres a lookup brought
+	// back, so they become searchable at once. Nil when nobody cares.
+	onGenres func(gameID int, genres []string)
 
 	// memory is read and written by every lookup goroutine.
 	mu     sync.Mutex
@@ -64,10 +71,11 @@ func (c *metadataCache) remember(gameID int, meta client.GameMetadata) {
 	c.memory[gameID] = meta
 }
 
-func newMetadataCache() *metadataCache {
+func newMetadataCache(store db.MetadataRepository) *metadataCache {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &metadataCache{
 		fetches: make(chan struct{}, metadataFetchers),
+		store:   store,
 		ctx:     ctx,
 		cancel:  cancel,
 		memory:  make(map[int]client.GameMetadata),
@@ -93,7 +101,7 @@ func (c *metadataCache) fetch(ctx context.Context, gameID int) (client.GameMetad
 		return client.GameMetadata{}, err
 	}
 
-	c.store(ctx, gameID, meta)
+	c.persist(ctx, gameID, meta)
 	c.remember(gameID, meta)
 	return meta, nil
 }
@@ -101,7 +109,7 @@ func (c *metadataCache) fetch(ctx context.Context, gameID int) (client.GameMetad
 // stored reads what an earlier lookup recorded, when it is still worth
 // trusting: fresh enough, and written in the shape gogg now reads.
 func (c *metadataCache) stored(ctx context.Context, gameID int) (client.GameMetadata, bool) {
-	record, err := db.GetGameMetadata(ctx, gameID)
+	record, err := c.store.Get(ctx, gameID)
 	if err != nil || record == nil {
 		return client.GameMetadata{}, false
 	}
@@ -116,27 +124,27 @@ func (c *metadataCache) stored(ctx context.Context, gameID int) (client.GameMeta
 	return meta, true
 }
 
-// store records a lookup for the runs to come. A lookup that cannot be
+// persist records a lookup for the runs to come. A lookup that cannot be
 // recorded is still an answer, so failing to store is only logged.
-func (c *metadataCache) store(ctx context.Context, gameID int, meta client.GameMetadata) {
+func (c *metadataCache) persist(ctx context.Context, gameID int, meta client.GameMetadata) {
 	data, err := json.Marshal(meta)
 	if err != nil {
 		return
 	}
-	if err := db.PutGameMetadata(ctx, gameID, metadataFormat, data); err != nil {
+	if err := c.store.Put(ctx, gameID, metadataFormat, data); err != nil {
 		log.Debug().Err(err).Int("gameID", gameID).Msg("Could not store metadata")
 		return
 	}
 	// The genres a lookup brought back become searchable at once, rather than
 	// after the next refresh. On the main thread, where the searches read, and
 	// only while this cache's library is still the one on screen.
-	if len(meta.Genres) > 0 {
+	if len(meta.Genres) > 0 && c.onGenres != nil {
 		genres := meta.Genres
 		runOnMain(func() {
 			if c.ctx.Err() != nil {
 				return
 			}
-			gameGenres[gameID] = genres
+			c.onGenres(gameID, genres)
 		})
 	}
 }

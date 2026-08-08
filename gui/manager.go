@@ -119,6 +119,42 @@ type DownloadManager struct {
 	// How the downloads since the last quiet moment ended, counted so the
 	// batch can be announced as one piece of news when the last one lands.
 	finishedOK, finishedFailed int
+
+	// active is the games whose download goroutine is running, so a game
+	// cannot be downloaded twice at once. Guarded by activeMu, not mu: slots
+	// are taken and given back on the download goroutines.
+	activeMu sync.Mutex
+	active   map[int]struct{}
+}
+
+// acquireSlot claims the one download a game may have running. It reports
+// false when the game already holds it.
+func (dm *DownloadManager) acquireSlot(gameID int) bool {
+	dm.activeMu.Lock()
+	defer dm.activeMu.Unlock()
+	if dm.active == nil {
+		dm.active = make(map[int]struct{})
+	}
+	if _, held := dm.active[gameID]; held {
+		return false
+	}
+	dm.active[gameID] = struct{}{}
+	return true
+}
+
+// releaseSlot gives a finished download's slot back.
+func (dm *DownloadManager) releaseSlot(gameID int) {
+	dm.activeMu.Lock()
+	defer dm.activeMu.Unlock()
+	delete(dm.active, gameID)
+}
+
+// slotHeld reports whether a game's download goroutine is still running.
+func (dm *DownloadManager) slotHeld(gameID int) bool {
+	dm.activeMu.Lock()
+	defer dm.activeMu.Unlock()
+	_, held := dm.active[gameID]
+	return held
 }
 
 // noteFinished records how one download ended and answers with what to

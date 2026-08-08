@@ -134,12 +134,7 @@ func TestExecuteDownload_NotifiesWhenItFinishes(t *testing.T) {
 	require.Contains(t, recorder.all()[0], "Finished Game")
 
 	// Let the download goroutine finish before the stub is put back.
-	require.Eventually(t, func() bool {
-		activeDownloadsMutex.Lock()
-		defer activeDownloadsMutex.Unlock()
-		_, stillRunning := activeDownloads[11]
-		return !stillRunning
-	}, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return !dm.slotHeld(11) }, 5*time.Second, 10*time.Millisecond)
 }
 
 // --- keyboard shortcuts ---

@@ -27,7 +27,7 @@ func TestLibrarySearch_FiltersOnFields(t *testing.T) {
 	offMain(t, func() {
 		lt, _ := newLibraryFixture(t, 3)
 		// Game 1 is downloaded by the fixture; the others are not.
-		updateStatusCache = map[int]updateStatus{
+		lt.state.statuses = map[int]updateStatus{
 			1: {Downloaded: true},
 			2: {Downloaded: false, HasUpdate: true},
 			3: {Downloaded: false},
@@ -54,7 +54,7 @@ func TestLibrarySearch_WordsAndFieldsTogether(t *testing.T) {
 
 	offMain(t, func() {
 		lt, _ := newLibraryFixture(t, 3)
-		updateStatusCache = map[int]updateStatus{1: {Downloaded: true}, 2: {Downloaded: true}}
+		lt.state.statuses = map[int]updateStatus{1: {Downloaded: true}, 2: {Downloaded: true}}
 
 		lt.searchEntry.SetText("game downloaded:yes")
 		require.ElementsMatch(t, []string{"Game 1", "Game 2"}, listedTitles(t, lt))
@@ -71,7 +71,6 @@ func TestLibrarySearch_HalfTypedFilterDoesNotEmptyTheLibrary(t *testing.T) {
 
 	offMain(t, func() {
 		lt, _ := newLibraryFixture(t, 3)
-		updateStatusCache = map[int]updateStatus{}
 
 		for _, typed := range []string{"d", "downloaded", "downloaded:", "downloaded:y"} {
 			lt.searchEntry.SetText(typed)
@@ -91,7 +90,7 @@ func TestLibrarySearch_FindsTaggedGames(t *testing.T) {
 	offMain(t, func() {
 		lt, _ := newLibraryFixture(t, 3)
 		require.NoError(t, db.AddTag(context.Background(), 2, db.TagFavorite))
-		loadGameTags()
+		lt.state.loadTags(db.NewTagRepository(db.GetDB()))
 		lt.relist()
 
 		lt.searchEntry.SetText("favorite:yes")
@@ -101,7 +100,7 @@ func TestLibrarySearch_FindsTaggedGames(t *testing.T) {
 		require.Len(t, listedTitles(t, lt), 3, "nothing is hidden yet")
 
 		require.NoError(t, db.AddTag(context.Background(), 3, db.TagHidden))
-		loadGameTags()
+		lt.state.loadTags(db.NewTagRepository(db.GetDB()))
 		lt.relist()
 		require.ElementsMatch(t, []string{"Game 1", "Game 2"}, listedTitles(t, lt))
 	})
@@ -134,8 +133,7 @@ func TestLibraryTab_HiddenGamesStayOutOfTheOtherLists(t *testing.T) {
 
 	offMain(t, func() {
 		lt, _ := newLibraryFixture(t, 3)
-		gameTags = map[int][]string{2: {db.TagHidden}}
-		t.Cleanup(func() { gameTags = map[int][]string{} })
+		lt.state.tags = map[int][]string{2: {db.TagHidden}}
 		lt.relist()
 
 		require.ElementsMatch(t, []string{"Game 1", "Game 3"}, listedTitles(t, lt),

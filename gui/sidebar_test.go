@@ -54,14 +54,14 @@ func TestCollectionCounts(t *testing.T) {
 		{ID: 2, Title: "Two", Data: richGameData},
 		{ID: 3, Title: "Three", Data: `{"title":"T","downloads":[],"extras":[],"dlcs":[]}`},
 	}
-	updateStatusCache = map[int]updateStatus{
+	state := newLibraryState()
+	state.statuses = map[int]updateStatus{
 		1: {Downloaded: true},
 		2: {Downloaded: true, HasUpdate: true},
 	}
-	gameTags = map[int][]string{2: {db.TagFavorite}}
-	t.Cleanup(func() { gameTags = map[int][]string{} })
+	state.tags = map[int][]string{2: {db.TagFavorite}}
 
-	counts := collectionCounts(games, libraryCollections())
+	counts := collectionCounts(state, games, libraryCollections())
 
 	require.Equal(t, 3, counts["All games"])
 	require.Equal(t, 2, counts["Downloaded"])
@@ -78,7 +78,7 @@ func TestSidebar_PickingACollectionWritesItsQuery(t *testing.T) {
 	defer app.Quit()
 
 	var picked []string
-	sidebar := newLibrarySidebar(libraryCollections(), func(query string) { picked = append(picked, query) })
+	sidebar := newLibrarySidebar(libraryCollections(), newLibraryState(), func(query string) { picked = append(picked, query) })
 
 	test.Tap(sidebar.buttons["Downloaded"])
 	test.Tap(sidebar.buttons["Linux"])
@@ -92,9 +92,9 @@ func TestSidebar_HidesEmptyCollections(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	updateStatusCache = map[int]updateStatus{1: {Downloaded: true}}
-	gameTags = map[int][]string{}
-	sidebar := newLibrarySidebar(libraryCollections(), func(string) {})
+	state := newLibraryState()
+	state.statuses = map[int]updateStatus{1: {Downloaded: true}}
+	sidebar := newLibrarySidebar(libraryCollections(), state, func(string) {})
 
 	sidebar.refresh([]db.Game{{ID: 1, Title: "One", Data: richGameData}})
 
@@ -112,7 +112,7 @@ func TestSidebar_MarksTheCollectionTheSearchIsShowing(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	sidebar := newLibrarySidebar(libraryCollections(), func(string) {})
+	sidebar := newLibrarySidebar(libraryCollections(), newLibraryState(), func(string) {})
 
 	sidebar.syncTo("downloaded:yes")
 	require.True(t, sidebar.buttons["Downloaded"].title.TextStyle.Bold)
@@ -135,8 +135,8 @@ func TestLibraryTab_PickingACollectionFiltersTheList(t *testing.T) {
 	offMain(t, func() {
 		lt, _ := newLibraryFixture(t, 3)
 		require.NoError(t, db.AddTag(context.Background(), 2, db.TagFavorite))
-		loadGameTags()
-		updateStatusCache = map[int]updateStatus{1: {Downloaded: true}}
+		lt.state.loadTags(db.NewTagRepository(db.GetDB()))
+		lt.state.statuses = map[int]updateStatus{1: {Downloaded: true}}
 		test.Tap(lt.showCollections)
 
 		test.Tap(lt.sidebar.buttons["Downloaded"])
@@ -267,9 +267,7 @@ func TestSidebar_HidesAHeadingWithNothingUnderIt(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	updateStatusCache = map[int]updateStatus{}
-	gameTags = map[int][]string{}
-	sidebar := newLibrarySidebar(libraryCollections(), func(string) {})
+	sidebar := newLibrarySidebar(libraryCollections(), newLibraryState(), func(string) {})
 
 	sidebar.refresh(nil)
 	require.False(t, headingLabel(t, sidebar, "Platform").Visible(),

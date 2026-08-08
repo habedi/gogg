@@ -107,7 +107,7 @@ func TestEmptyStates_AllSayItTheSameWay(t *testing.T) {
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	signedOut := LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()}, func() {})
+	signedOut := LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()}, openStores(), func() {})
 	// A signed-in library with nothing picked out of the list.
 	signedIn, _ := newLibraryFixture(t, 2)
 
@@ -158,13 +158,11 @@ func TestIconOnlyButtons_AllSayWhatTheyDo(t *testing.T) {
 
 	offMain(t, func() {
 		lt, _ := newLibraryFixture(t, 2)
-		updateStatusCache = map[int]updateStatus{
-			1: {Downloaded: true, HasUpdate: true, Diff: []string{"one"}},
-		}
-		t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
+		state := newLibraryState()
+		state.statuses[1] = updateStatus{Downloaded: true, HasUpdate: true, Diff: []string{"one"}}
 
 		row := newGameRow().(*gameRow)
-		bindGameRow(row, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil, nil)
+		bindGameRow(row, db.Game{ID: 1, Title: "One"}, rowBinding{sel: newGameSelection(), state: state})
 
 		for what, ui := range map[string]fyne.CanvasObject{
 			"the library":  lt.content,

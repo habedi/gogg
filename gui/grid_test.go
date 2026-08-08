@@ -17,7 +17,7 @@ func TestNewGameCell_ShowsTitleAndSelection(t *testing.T) {
 	sel.set(1, true)
 
 	cell := newGameCell().(*gameCell)
-	bindGameCell(cell, db.Game{ID: 1, Title: "Selected Game"}, sel, nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 1, Title: "Selected Game"}, rowBinding{sel: sel})
 
 	require.Equal(t, "Selected Game", cell.title.Text)
 	require.True(t, cell.check.Checked)
@@ -33,8 +33,8 @@ func TestBindGameCell_RecyclingDoesNotLeakSelection(t *testing.T) {
 	sel.set(1, true)
 
 	cell := newGameCell().(*gameCell)
-	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, sel, nil, nil, nil)
-	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, rowBinding{sel: sel})
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: sel})
 
 	require.True(t, sel.has(1), "recycling must not deselect the game the cell used to show")
 	require.False(t, sel.has(2))
@@ -50,10 +50,10 @@ func TestGameCell_RefusesACoverForAGameItNoLongerShows(t *testing.T) {
 	cell := newGameCell().(*gameCell)
 	sel := newGameSelection()
 
-	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, sel, nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, rowBinding{sel: sel})
 	require.True(t, cell.showing(1))
 
-	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: sel})
 	require.False(t, cell.showing(1), "the answer for game 1 is no longer wanted")
 	require.True(t, cell.showing(2))
 }
@@ -171,15 +171,15 @@ func TestBindGameCell_KeepsArtworkWhenTheGameHasNotChanged(t *testing.T) {
 	cell := newGameCell().(*gameCell)
 	game := db.Game{ID: 1, Title: "One"}
 
-	bindGameCell(cell, game, sel, nil, nil, nil)
+	bindGameCell(cell, game, rowBinding{sel: sel})
 	artwork := image.NewRGBA(image.Rect(0, 0, 4, 4))
 	cell.cover.Image = artwork
 	cell.cover.Resource = nil
 
-	bindGameCell(cell, game, sel, nil, nil, nil)
+	bindGameCell(cell, game, rowBinding{sel: sel})
 	require.Equal(t, artwork, cell.cover.Image, "the same game keeps the artwork already on screen")
 
-	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, sel, nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: sel})
 	require.Nil(t, cell.cover.Image, "a different game starts from the placeholder")
 	require.NotNil(t, cell.cover.Resource)
 }
@@ -190,19 +190,17 @@ func TestBindGameCell_CarriesTheSameBadgesAsARow(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	updateStatusCache = map[int]updateStatus{
-		1: {Downloaded: true, HasUpdate: true, Diff: []string{"one", "two"}},
-		2: {Downloaded: false},
-	}
-	t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
+	state := newLibraryState()
+	state.statuses[1] = updateStatus{Downloaded: true, HasUpdate: true, Diff: []string{"one", "two"}}
+	state.statuses[2] = updateStatus{Downloaded: false}
 
 	cell := newGameCell().(*gameCell)
-	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, newGameSelection(), nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 1, Title: "One"}, rowBinding{sel: newGameSelection(), state: state})
 	require.True(t, cell.badges.downloaded.Visible(), "a downloaded game is marked in the grid too")
 	require.True(t, cell.badges.update.Visible())
 	require.Equal(t, "2", cell.badges.update.Text)
 
-	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, newGameSelection(), nil, nil, nil)
+	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: newGameSelection(), state: state})
 	require.False(t, cell.badges.downloaded.Visible(), "and one that is not, is not")
 	require.False(t, cell.badges.update.Visible())
 }

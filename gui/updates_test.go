@@ -27,15 +27,15 @@ func TestGamesWithUpdates(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	updateStatusCache = map[int]updateStatus{
+	state := newLibraryState()
+	state.statuses = map[int]updateStatus{
 		1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: windows|setup.exe 1.0 -> 2.0"}},
 		2: {Downloaded: true},
 		3: {Downloaded: false},
 	}
-	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
 
 	all := []db.Game{{ID: 1, Title: "One"}, {ID: 2, Title: "Two"}, {ID: 3, Title: "Three"}}
-	require.Equal(t, []db.Game{{ID: 1, Title: "One"}}, gamesWithUpdates(all))
+	require.Equal(t, []db.Game{{ID: 1, Title: "One"}}, state.gamesWithUpdates(all))
 }
 
 // A game downloaded before gogg started writing download_info.json still has to
@@ -44,9 +44,6 @@ func TestGamesWithUpdates(t *testing.T) {
 func TestComputeUpdateStatus_DetectsUpdatesWithoutDownloadInfo(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
-
-	updateStatusCache = make(map[int]updateStatus)
-	t.Cleanup(func() { updateStatusCache = make(map[int]updateStatus) })
 
 	root := t.TempDir()
 	dir := filepath.Join(root, client.SanitizePath("Some Game"))
@@ -63,10 +60,11 @@ func TestComputeUpdateStatus_DetectsUpdatesWithoutDownloadInfo(t *testing.T) {
 
 	// What GOG offers now.
 	games := []db.Game{{ID: 1, Title: "Some Game", Data: gameDataWithVersion("Some Game", "2.0")}}
-	computeUpdateStatus(&DownloadManager{Tasks: binding.NewUntypedList()}, games)
+	state := newLibraryState()
+	computeUpdateStatus(state, &DownloadManager{Tasks: binding.NewUntypedList()}, games)
 
-	require.True(t, isGameDownloadedCached(1))
-	hasUpdate, diff := hasGameUpdateCached(1)
+	require.True(t, state.downloaded(1))
+	hasUpdate, diff := state.updateFor(1)
 	require.True(t, hasUpdate, "a newer installer version has to register as an update")
 	require.NotEmpty(t, diff)
 }
@@ -107,11 +105,10 @@ func newUpdatableLibrary(t *testing.T) *libraryTab {
 		t.Setenv("GOGG_API_BASE", hangingStoreStub(t))
 	}
 
-	updateStatusCache = make(map[int]updateStatus)
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	lt := LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()}, func() {})
+	lt := LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()}, openStores(), func() {})
 	// Closed with the test, or its background lookups outlive it and land in
 	// the next test's library.
 	t.Cleanup(lt.close)
@@ -168,12 +165,11 @@ func newUndownloadedLibrary(t *testing.T, games int) (*libraryTab, *DownloadMana
 		t.Setenv("GOGG_API_BASE", hangingStoreStub(t))
 	}
 
-	updateStatusCache = make(map[int]updateStatus)
 	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	lt := LibraryTabUI(win, nil, dm, func() {})
+	lt := LibraryTabUI(win, nil, dm, openStores(), func() {})
 	t.Cleanup(lt.close)
 	return lt, dm
 }
@@ -246,12 +242,12 @@ func TestComputeUpdateStatus_DescribesTheChangeInWords(t *testing.T) {
 	prefs.SetString("downloadForm.language", "en")
 	prefs.SetString("downloadForm.platform", "windows")
 	prefs.SetBool("downloadForm.scanDirsForDownloads", true)
-	updateStatusCache = map[int]updateStatus{}
+	state := newLibraryState()
 
-	computeUpdateStatus(&DownloadManager{Tasks: binding.NewUntypedList()},
+	computeUpdateStatus(state, &DownloadManager{Tasks: binding.NewUntypedList()},
 		[]db.Game{{ID: 1, Title: "Some Game", Data: gameDataWithVersion("Some Game", "2.0")}})
 
-	_, diff := hasGameUpdateCached(1)
+	_, diff := state.updateFor(1)
 	require.Equal(t, []string{"setup.exe (Windows): 1.0 → 2.0"}, diff)
 }
 
@@ -267,13 +263,13 @@ func TestStatusesFor_LeavesTheCacheToTheUIThread(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "metadata.json"),
 		[]byte(gameDataWithVersion("Some Game", "1.0")), 0o644))
 	app.Preferences().SetString("lastUsedDownloadPath", root)
-	updateStatusCache = map[int]updateStatus{}
+	state := newLibraryState()
 
 	found := statusesFor(&DownloadManager{Tasks: binding.NewUntypedList()},
 		[]db.Game{{ID: 1, Title: "Some Game", Data: gameDataWithVersion("Some Game", "2.0")}})
 
 	require.True(t, found[1].HasUpdate, "the worker still has to do the work")
-	require.Empty(t, updateStatusCache, "and leave the cache to the thread that draws the window")
+	require.Empty(t, state.statuses, "and leave the cache to the thread that draws the window")
 }
 
 // heldStatusWork holds the status work so a test can see the library while it
@@ -316,7 +312,7 @@ func TestLibrary_SaysWhileItIsCheckingDownloads(t *testing.T) {
 
 		held.run()
 		require.NotContains(t, labelTexts(lt.content), "Checking downloads...")
-		require.True(t, isGameDownloadedCached(1), "and what it found is what the library shows")
+		require.True(t, lt.state.downloaded(1), "and what it found is what the library shows")
 	})
 }
 
@@ -403,23 +399,22 @@ func TestLibrary_FiltersByWhenAnUpdateWasNoticed(t *testing.T) {
 func TestApplyStatuses_KeepsTheFirstNoticedDate(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
-	updateStatusCache = map[int]updateStatus{}
-	t.Cleanup(func() { updateStatusCache = map[int]updateStatus{} })
+	state := newLibraryState()
 
-	applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: a"}}})
-	first := updateStatusCache[1].ChangedAt
+	state.applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: a"}}})
+	first := state.statuses[1].ChangedAt
 	require.False(t, first.IsZero(), "an update is stamped when it is noticed")
 
-	applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: a"}}})
-	require.True(t, updateStatusCache[1].ChangedAt.Equal(first),
+	state.applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: a"}}})
+	require.True(t, state.statuses[1].ChangedAt.Equal(first),
 		"the same update seen again is not news again")
 
 	time.Sleep(2 * time.Millisecond)
-	applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: b"}}})
-	require.True(t, updateStatusCache[1].ChangedAt.After(first),
+	state.applyStatuses(gameStatuses{1: {Downloaded: true, HasUpdate: true, Diff: []string{"CHANGED: b"}}})
+	require.True(t, state.statuses[1].ChangedAt.After(first),
 		"a different update is fresh news")
 
-	applyStatuses(gameStatuses{1: {Downloaded: true}})
-	require.True(t, updateStatusCache[1].ChangedAt.IsZero(),
+	state.applyStatuses(gameStatuses{1: {Downloaded: true}})
+	require.True(t, state.statuses[1].ChangedAt.IsZero(),
 		"a downloaded update takes its date with it")
 }

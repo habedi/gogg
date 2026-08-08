@@ -43,27 +43,27 @@ var statusWorker = func(work func() gameStatuses, apply func(gameStatuses)) {
 
 // computeUpdateStatus works the statuses out and records them, for callers that
 // need the answer before they go on.
-func computeUpdateStatus(dm *DownloadManager, games []db.Game) {
-	applyStatuses(statusesFor(dm, games))
+func computeUpdateStatus(s *libraryState, dm *DownloadManager, games []db.Game) {
+	s.applyStatuses(statusesFor(dm, games))
 }
 
 // applyStatuses records what was found. The window reads these, so they are
 // only ever written on the thread that draws it. An update carries the moment
 // it was first noticed: the same one seen again keeps its date, a different
 // one gets today's.
-func applyStatuses(found gameStatuses) {
+func (s *libraryState) applyStatuses(found gameStatuses) {
 	for id, status := range found {
 		if status.HasUpdate {
-			previous := updateStatusCache[id]
+			previous := s.statuses[id]
 			if previous.HasUpdate && !previous.ChangedAt.IsZero() && slices.Equal(previous.Diff, status.Diff) {
 				status.ChangedAt = previous.ChangedAt
 			} else {
 				status.ChangedAt = time.Now()
 			}
 		}
-		updateStatusCache[id] = status
+		s.statuses[id] = status
 	}
-	persistUpdateStatusCache()
+	s.persistStatuses()
 }
 
 // statusesFor works out what has been downloaded and what has changed since.
@@ -148,9 +148,9 @@ func statusesFor(dm *DownloadManager, games []db.Game) gameStatuses {
 	return found
 }
 
-// hasGameUpdateCached answers from the status cache without touching the disk.
-func hasGameUpdateCached(gameID int) (bool, []string) {
-	st, ok := updateStatusCache[gameID]
+// updateFor answers from the status cache without touching the disk.
+func (s *libraryState) updateFor(gameID int) (bool, []string) {
+	st, ok := s.statuses[gameID]
 	if !ok {
 		return false, nil
 	}
@@ -183,46 +183,64 @@ func gamesWithTasks(dm *DownloadManager, games []db.Game) []db.Game {
 
 // gamesWithUpdates returns the games whose cached status says an update is
 // waiting for them.
-func gamesWithUpdates(games []db.Game) []db.Game {
+func (s *libraryState) gamesWithUpdates(games []db.Game) []db.Game {
 	pending := make([]db.Game, 0)
 	for _, game := range games {
-		if hasUpdate, _ := hasGameUpdateCached(game.ID); hasUpdate {
+		if hasUpdate, _ := s.updateFor(game.ID); hasUpdate {
 			pending = append(pending, game)
 		}
 	}
 	return pending
 }
 
-// isGameDownloadedCached answers from the status cache without touching the disk.
-func isGameDownloadedCached(gameID int) bool {
-	st, ok := updateStatusCache[gameID]
-	if !ok {
-		return false
-	}
-	return st.Downloaded
+// downloaded answers from the status cache without touching the disk.
+func (s *libraryState) downloaded(gameID int) bool {
+	return s.statuses[gameID].Downloaded
 }
 
-var updateStatusCache = make(map[int]updateStatus)
+// libraryState is everything the library knows about its games beyond the
+// catalogue rows: statuses, parsed facts, sizes, tags, and genres. One value
+// per library, owned by the tab that built it, so a replaced library cannot
+// bleed into the one on screen and tests cannot bleed into one another. It is
+// read and written on the main thread only.
+type libraryState struct {
+	statuses  map[int]updateStatus
+	statusURI fyne.URI
+	facts     map[int]gameFacts
+	sizes     map[sizeCacheKey]int64
+	tags      map[int][]string
+	genres    map[int][]string
+}
 
-var updateStatusFileURI fyne.URI
+func newLibraryState() *libraryState {
+	return &libraryState{
+		statuses: make(map[int]updateStatus),
+		facts:    make(map[int]gameFacts),
+		sizes:    make(map[sizeCacheKey]int64),
+		tags:     make(map[int][]string),
+		genres:   make(map[int][]string),
+	}
+}
 
-func initUpdateStatusPersistence() {
-	if updateStatusFileURI != nil {
+// initStatusPersistence points the state at the file statuses survive in
+// between runs, and reads what an earlier session left there.
+func (s *libraryState) initStatusPersistence() {
+	if s.statusURI != nil {
 		return
 	}
 	root := fyne.CurrentApp().Storage().RootURI()
 	uri, err := storage.Child(root, "update_status_cache.json")
 	if err == nil {
-		updateStatusFileURI = uri
-		loadPersistedUpdateStatus()
+		s.statusURI = uri
+		s.loadPersistedStatuses()
 	}
 }
 
-func loadPersistedUpdateStatus() {
-	if updateStatusFileURI == nil {
+func (s *libraryState) loadPersistedStatuses() {
+	if s.statusURI == nil {
 		return
 	}
-	reader, err := storage.Reader(updateStatusFileURI)
+	reader, err := storage.Reader(s.statusURI)
 	if err != nil {
 		return
 	}
@@ -237,22 +255,22 @@ func loadPersistedUpdateStatus() {
 	}
 	for k, v := range raw {
 		if id, convErr := strconv.Atoi(k); convErr == nil {
-			updateStatusCache[id] = v
+			s.statuses[id] = v
 		}
 	}
 }
 
-func persistUpdateStatusCache() {
-	if updateStatusFileURI == nil {
+func (s *libraryState) persistStatuses() {
+	if s.statusURI == nil {
 		return
 	}
-	writer, err := storage.Writer(updateStatusFileURI)
+	writer, err := storage.Writer(s.statusURI)
 	if err != nil {
 		return
 	}
 	defer writer.Close()
-	out := make(map[string]updateStatus, len(updateStatusCache))
-	for id, st := range updateStatusCache {
+	out := make(map[string]updateStatus, len(s.statuses))
+	for id, st := range s.statuses {
 		// Limit diff length persisted
 		if len(st.Diff) > 50 {
 			st.Diff = st.Diff[:50]
@@ -263,7 +281,7 @@ func persistUpdateStatusCache() {
 	_ = enc.Encode(out)
 }
 
-func clearPersistedUpdateStatus() {
-	updateStatusCache = make(map[int]updateStatus)
-	persistUpdateStatusCache()
+func (s *libraryState) clearStatuses() {
+	s.statuses = make(map[int]updateStatus)
+	s.persistStatuses()
 }

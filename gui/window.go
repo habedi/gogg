@@ -78,12 +78,13 @@ func buildMainContent(win fyne.Window, version string, authService *auth.Service
 	dm *DownloadManager, loginer GogLoginer,
 ) *mainWindowContent {
 	content := &mainWindowContent{}
+	st := openStores()
 
 	// The catalogue tab looks different when signed out, so it is built again
 	// once the user logs in.
 	var onLogin func()
 	var settingsTab *container.TabItem
-	content.library = LibraryTabUI(win, authService, dm, func() { onLogin() })
+	content.library = LibraryTabUI(win, authService, dm, st, func() { onLogin() })
 
 	catalogueTab := container.NewTabItemWithIcon(sectionCatalogue, theme.ListIcon(),
 		content.library.content)
@@ -92,7 +93,7 @@ func buildMainContent(win fyne.Window, version string, authService *auth.Service
 	// and the one it replaces stops listening on its way out.
 	rebuildLibrary := func() {
 		content.library.close()
-		content.library = LibraryTabUI(win, authService, dm, func() { onLogin() })
+		content.library = LibraryTabUI(win, authService, dm, st, func() { onLogin() })
 		catalogueTab.Content = content.library.content
 		catalogueTab.Content.Refresh()
 	}
@@ -107,13 +108,13 @@ func buildMainContent(win fyne.Window, version string, authService *auth.Service
 	var onSignOut func()
 	onSignOut = func() {
 		rebuildLibrary()
-		settingsTab.Content = SettingsTabUI(win, onSignOut)
+		settingsTab.Content = SettingsTabUI(win, st, onSignOut)
 		settingsTab.Content.Refresh()
 		content.tabs.SelectIndex(0)
 	}
 
 	settingsTab = container.NewTabItemWithIcon(sectionSettings, theme.SettingsIcon(),
-		SettingsTabUI(win, func() { onSignOut() }))
+		SettingsTabUI(win, st, func() { onSignOut() }))
 	downloadsTab := container.NewTabItemWithIcon(sectionDownloads, theme.DownloadIcon(),
 		DownloadsTabUI(win, dm))
 	content.tabs = container.NewAppTabs(

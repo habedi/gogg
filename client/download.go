@@ -193,13 +193,40 @@ type downloadTask struct {
 	flatten  bool
 }
 
+// DownloadOptions says what DownloadGameFiles should fetch and how it should
+// land on disk. The zero value downloads nothing useful: Language, Platform,
+// and Threads have no defaults worth guessing.
+type DownloadOptions struct {
+	// Language is the full name the game data spells it in, such as "English".
+	Language string
+	// Platform is windows, mac, linux, or all.
+	Platform string
+	// Extras and DLCs say whether what surrounds the game comes too.
+	Extras bool
+	DLCs   bool
+	// Resume picks partially downloaded files up where they stopped.
+	Resume bool
+	// Flatten puts every file in one folder instead of GOG's layout.
+	Flatten bool
+	// SkipPatches leaves patch files out.
+	SkipPatches bool
+	// RomMLayout arranges folders as platform/game.
+	RomMLayout bool
+	// Threads is how many files are transferred at once.
+	Threads int
+}
+
 func DownloadGameFiles(
 	ctx context.Context,
 	accessToken string, game Game, downloadPath string,
-	gameLanguage string, platformName string, extrasFlag bool, dlcFlag bool, resumeFlag bool,
-	flattenFlag bool, skipPatchesFlag bool, rommLayout bool, numThreads int,
+	options DownloadOptions,
 	updateWriter io.Writer,
 ) error {
+	gameLanguage, platformName := options.Language, options.Platform
+	extrasFlag, dlcFlag, resumeFlag := options.Extras, options.DLCs, options.Resume
+	flattenFlag, skipPatchesFlag, rommLayout := options.Flatten, options.SkipPatches, options.RomMLayout
+	numThreads := options.Threads
+
 	// This transport is configured for large file downloads. It has connection
 	// timeouts but no total timeout, preventing failures on slow networks.
 	transport := &http.Transport{

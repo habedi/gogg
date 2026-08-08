@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,11 +23,7 @@ import (
 // summarises the rest.
 const fileStatusLines = 3
 
-var (
-	ErrDownloadInProgress = errors.New("download already in progress")
-	activeDownloads       = make(map[int]struct{})
-	activeDownloadsMutex  = &sync.Mutex{}
-)
+var ErrDownloadInProgress = errors.New("download already in progress")
 
 func formatBytes(b int64) string {
 	const unit = 1024
@@ -235,20 +229,12 @@ func (pu *progressUpdater) updateFileStatusText() {
 
 // executeDownload starts a download described by q and registers it with dm.
 func executeDownload(dm *DownloadManager, q queuedDownload) error {
-	activeDownloadsMutex.Lock()
-	if _, exists := activeDownloads[q.game.ID]; exists {
+	if !dm.acquireSlot(q.game.ID) {
 		log.Warn().Int("gameID", q.game.ID).Msg("Download is already in progress. Ignoring new request.")
-		activeDownloadsMutex.Unlock()
 		return ErrDownloadInProgress
 	}
-	activeDownloads[q.game.ID] = struct{}{}
-	activeDownloadsMutex.Unlock()
 
-	releaseSlot := func() {
-		activeDownloadsMutex.Lock()
-		delete(activeDownloads, q.game.ID)
-		activeDownloadsMutex.Unlock()
-	}
+	releaseSlot := func() { dm.releaseSlot(q.game.ID) }
 
 	parsedGameData, err := client.ParseGameData(q.game.Data)
 	if err != nil {
@@ -332,9 +318,13 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 					progressSpan: 1 / float64(passes),
 				}
 				err = client.DownloadGameFiles(
-					ctx, token.AccessToken, parsedGameData, q.downloadPath, language, platform,
-					q.extrasFlag, q.dlcFlag, q.resumeFlag, q.flattenFlag, q.skipPatchesFlag, q.rommLayoutFlag,
-					q.numThreads, updater,
+					ctx, token.AccessToken, parsedGameData, q.downloadPath,
+					client.DownloadOptions{
+						Language: language, Platform: platform,
+						Extras: q.extrasFlag, DLCs: q.dlcFlag, Resume: q.resumeFlag,
+						Flatten: q.flattenFlag, SkipPatches: q.skipPatchesFlag,
+						RomMLayout: q.rommLayoutFlag, Threads: q.numThreads,
+					}, updater,
 				)
 				if err != nil {
 					break
@@ -404,7 +394,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		}
 
 		if q.keepLatestFlag {
-			removed, pruneErr := guiPruneOldVersions(q.downloadPath, parsedGameData.Title, q.rommLayoutFlag, q.platformName)
+			removed, pruneErr := client.PruneOldInstallerVersions(q.downloadPath, parsedGameData.Title, q.rommLayoutFlag, q.platformName)
 			if pruneErr != nil {
 				log.Warn().Err(pruneErr).Msg("Failed to prune old versions (GUI)")
 			}
@@ -429,125 +419,4 @@ func announceIfLast(dm *DownloadManager, state int, title string) {
 	}
 	go PlayNotificationSound()
 	notifyBatchFinished(done, failed, title)
-}
-
-var guiVersionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
-
-func guiParseVersion(filename string) (prefix string, verSlice []int, suffix string, ok bool) {
-	m := guiVersionPattern.FindStringSubmatch(filename)
-	if m == nil {
-		return "", nil, "", false
-	}
-	prefix = m[1]
-	suffix = m[3]
-	parts := strings.Split(m[2], ".")
-	for _, p := range parts {
-		v, err := strconv.Atoi(p)
-		if err != nil {
-			return "", nil, "", false
-		}
-		verSlice = append(verSlice, v)
-	}
-	return prefix, verSlice, suffix, true
-}
-
-// guiInstallerGroup identifies files that are versions of the same installer.
-// See installerGroup in cmd/download.go for why the directory and extension
-// are part of the identity.
-type guiInstallerGroup struct {
-	dir    string
-	prefix string
-	suffix string
-}
-
-func guiCompareVersions(a, b []int) int {
-	for i := 0; i < len(a) || i < len(b); i++ {
-		va, vb := 0, 0
-		if i < len(a) {
-			va = a[i]
-		}
-		if i < len(b) {
-			vb = b[i]
-		}
-		if va > vb {
-			return 1
-		}
-		if va < vb {
-			return -1
-		}
-	}
-	return 0
-}
-
-// guiPruneOldVersions deletes older versions of installers a download has just
-// replaced. It reports what it removed, because deleting files behind someone's
-// back is how trust in a downloader ends.
-func guiPruneOldVersions(rootPath, title string, romm bool, platformName string) (removed []string, err error) {
-	// Determine roots to scan
-	var roots []string
-	if romm {
-		plats := []string{"windows", "mac", "linux"}
-		if strings.ToLower(platformName) != "all" {
-			plats = []string{strings.ToLower(platformName)}
-		}
-		for _, p := range plats {
-			roots = append(roots, filepath.Join(rootPath, p, client.SanitizePath(title)))
-		}
-	} else {
-		roots = []string{filepath.Join(rootPath, client.SanitizePath(title))}
-	}
-	extAllowed := map[string]struct{}{".exe": {}, ".bin": {}, ".dmg": {}, ".sh": {}, ".zip": {}, ".tar.gz": {}, ".rar": {}}
-	for _, root := range roots {
-		if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
-			continue
-		}
-		filesByGroup := map[guiInstallerGroup][]string{}
-		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
-				return nil
-			}
-			name := info.Name()
-			ext := filepath.Ext(name)
-			if strings.HasSuffix(name, ".tar.gz") {
-				ext = ".tar.gz"
-			}
-			if _, ok := extAllowed[ext]; !ok {
-				return nil
-			}
-			prefix, _, suffix, ok := guiParseVersion(name)
-			if !ok {
-				return nil
-			}
-			group := guiInstallerGroup{dir: filepath.Dir(path), prefix: prefix, suffix: suffix}
-			filesByGroup[group] = append(filesByGroup[group], path)
-			return nil
-		})
-		for _, paths := range filesByGroup {
-			// find the latest file among paths
-			var best string
-			var bestVer []int
-			for _, p := range paths {
-				name := filepath.Base(p)
-				_, ver, _, ok := guiParseVersion(name)
-				if !ok {
-					continue
-				}
-				if best == "" || guiCompareVersions(ver, bestVer) == 1 {
-					best = p
-					bestVer = ver
-				}
-			}
-			for _, p := range paths {
-				if p == best {
-					continue
-				}
-				if rmErr := os.Remove(p); rmErr != nil {
-					err = errors.Join(err, rmErr)
-					continue
-				}
-				removed = append(removed, p)
-			}
-		}
-	}
-	return removed, err
 }

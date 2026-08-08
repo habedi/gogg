@@ -13,22 +13,22 @@ func sizedGame(id int, title string) db.Game {
 	return db.Game{ID: id, Title: title, Data: sizedGameData}
 }
 
-func estimationApp(t *testing.T) {
+func estimationApp(t *testing.T) *libraryState {
 	t.Helper()
 	prefs := test.NewApp().Preferences()
 	prefs.SetString("downloadForm.language", "en")
 	prefs.SetString("downloadForm.platform", "windows")
 	prefs.SetBool("downloadForm.extras", false)
 	prefs.SetBool("downloadForm.dlcs", false)
-	sizeCache = make(map[sizeCacheKey]int64)
+	return newLibraryState()
 }
 
 // Estimating uses the settings already on the download form, so what you are
 // told is what you would get.
 func TestEstimateSelection(t *testing.T) {
-	estimationApp(t)
+	state := estimationApp(t)
 
-	estimates, total := estimateSelection([]db.Game{sizedGame(1, "One"), sizedGame(2, "Two")})
+	estimates, total := estimateSelection(state, []db.Game{sizedGame(1, "One"), sizedGame(2, "Two")})
 
 	require.Len(t, estimates, 2)
 	require.Equal(t, "One", estimates[0].Title)
@@ -37,13 +37,13 @@ func TestEstimateSelection(t *testing.T) {
 }
 
 func TestEstimateSelection_FollowsThePlatformSetting(t *testing.T) {
-	estimationApp(t)
+	state := estimationApp(t)
 
-	_, windows := estimateSelection([]db.Game{sizedGame(1, "One")})
+	_, windows := estimateSelection(state, []db.Game{sizedGame(1, "One")})
 
 	test.NewApp().Preferences().SetString("downloadForm.platform", "linux")
-	sizeCache = make(map[sizeCacheKey]int64)
-	_, linux := estimateSelection([]db.Game{sizedGame(1, "One")})
+	state.forgetParsed()
+	_, linux := estimateSelection(state, []db.Game{sizedGame(1, "One")})
 
 	require.NotEqual(t, windows, linux)
 }
@@ -51,9 +51,9 @@ func TestEstimateSelection_FollowsThePlatformSetting(t *testing.T) {
 // A game whose stored data cannot be read is reported as unknown rather than
 // skipped, so the list still adds up to what was asked for.
 func TestEstimateSelection_KeepsUnreadableGamesInTheList(t *testing.T) {
-	estimationApp(t)
+	state := estimationApp(t)
 
-	estimates, total := estimateSelection([]db.Game{
+	estimates, total := estimateSelection(state, []db.Game{
 		sizedGame(1, "Fine"),
 		{ID: 2, Title: "Broken", Data: "{not json"},
 	})

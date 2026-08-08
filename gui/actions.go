@@ -21,7 +21,7 @@ import (
 // variable so tests can press the button without reaching GOG.
 var refreshCatalogue = RefreshCatalogueAction
 
-func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish func()) {
+func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, games db.GameRepository, onFinish func()) {
 	progress := widget.NewProgressBar()
 	statusLabel := widget.NewLabel("Preparing to refresh...")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,14 +38,13 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 			})
 		}
 
-		repo := db.NewGameRepository(db.GetDB())
-		_, err := client.RefreshCatalogue(ctx, authService, repo, 10, progressCb)
+		_, err := client.RefreshCatalogue(ctx, authService, games, 10, progressCb)
 
 		runOnMain(func() {
 			dlg.Hide()
 
 			if errors.Is(err, context.Canceled) {
-				games, dbErr := repo.List(context.Background())
+				games, dbErr := games.List(context.Background())
 				var msg string
 				if dbErr != nil {
 					msg = "Refresh was cancelled. Could not retrieve partial game count."
@@ -57,7 +56,7 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 			} else if err != nil {
 				showErrorDialog(win, "Failed to refresh catalogue", err)
 			} else {
-				games, dbErr := repo.List(context.Background())
+				games, dbErr := games.List(context.Background())
 				if dbErr != nil {
 					dialog.ShowInformation("Success", "Successfully refreshed catalogue.", win)
 				} else {
@@ -72,7 +71,7 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, onFinish
 	}()
 }
 
-func ExportCatalogueAction(win fyne.Window, format string) {
+func ExportCatalogueAction(win fyne.Window, games db.GameRepository, format string) {
 	defaultName := fmt.Sprintf("gogg_catalogue.%s", format)
 	fileDialog := dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
 		if err != nil {
@@ -84,7 +83,7 @@ func ExportCatalogueAction(win fyne.Window, format string) {
 		}
 		defer uc.Close()
 
-		games, err := db.GetCatalogue()
+		games, err := games.List(context.Background())
 		if err != nil {
 			showErrorDialog(win, "Failed to read catalogue from database", err)
 			return

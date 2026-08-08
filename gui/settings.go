@@ -1,13 +1,13 @@
 package gui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/habedi/gogg/client"
-	"github.com/habedi/gogg/db"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -19,7 +19,7 @@ import (
 
 // SettingsTabUI builds the settings. onSignOut is called once the user has
 // signed out, so the rest of the app can go back to its signed-out self.
-func SettingsTabUI(win fyne.Window, onSignOut func()) fyne.CanvasObject {
+func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObject {
 	prefs := fyne.CurrentApp().Preferences()
 	a := fyne.CurrentApp()
 
@@ -232,7 +232,7 @@ func SettingsTabUI(win fyne.Window, onSignOut func()) fyne.CanvasObject {
 		widget.NewSeparator(),
 		updatesBox,
 	}
-	if account := accountBox(win, onSignOut); account != nil {
+	if account := accountBox(win, st, onSignOut); account != nil {
 		sections = append(sections, widget.NewSeparator(), account)
 	}
 	mainCard := widget.NewCard("Settings", "", container.NewVBox(sections...))
@@ -262,8 +262,8 @@ func applySpeedLimit(kbps int) {
 
 // accountBox offers the way out of an account. There is nothing to offer when
 // nobody is signed in, so it is left out then.
-func accountBox(win fyne.Window, onSignOut func()) fyne.CanvasObject {
-	token, err := db.GetTokenRecord()
+func accountBox(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObject {
+	token, err := st.tokens.Get(context.Background())
 	if err != nil || token == nil {
 		return nil
 	}
@@ -275,7 +275,7 @@ func accountBox(win fyne.Window, onSignOut func()) fyne.CanvasObject {
 				if !confirmed {
 					return
 				}
-				if err := db.DeleteTokenRecord(); err != nil {
+				if err := st.tokens.Delete(context.Background()); err != nil {
 					showErrorDialog(win, "Could not sign out", err)
 					return
 				}

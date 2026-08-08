@@ -33,14 +33,14 @@ func TestSettings_MaxConcurrentTakesEffect(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	ui := SettingsTabUI(win, func() {})
+	ui := SettingsTabUI(win, openStores(), func() {})
 	maxConcurrentSelect(t, ui).SetSelected("5")
 
 	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
 	require.Equal(t, 5, dm.maxConcurrent(), "the queue must use the chosen limit")
 
 	// The choice also has to survive a rebuild of the settings tab.
-	require.Equal(t, "5", maxConcurrentSelect(t, SettingsTabUI(win, func() {})).Selected)
+	require.Equal(t, "5", maxConcurrentSelect(t, SettingsTabUI(win, openStores(), func() {})).Selected)
 }
 
 // Older versions stored this preference as a string; that choice must still be
@@ -78,7 +78,7 @@ func TestSettings_SavedSpeedLimitIsApplied(t *testing.T) {
 	t.Cleanup(func() { client.SetGlobalDownloadRateLimit(0) })
 	app.Preferences().SetInt("download.maxSpeedKBps", 512)
 
-	_ = SettingsTabUI(win, func() {})
+	_ = SettingsTabUI(win, openStores(), func() {})
 
 	require.NotNil(t, client.GlobalDownloadRateLimiter,
 		"the saved speed limit must be applied without the user touching the field")
@@ -94,7 +94,7 @@ func TestSettings_NoSavedSpeedLimitLeavesDownloadsUnthrottled(t *testing.T) {
 	t.Cleanup(func() { client.SetGlobalDownloadRateLimit(0) })
 	app.Preferences().SetInt("download.maxSpeedKBps", 0)
 
-	_ = SettingsTabUI(win, func() {})
+	_ = SettingsTabUI(win, openStores(), func() {})
 
 	require.Nil(t, client.GlobalDownloadRateLimiter)
 }
@@ -108,7 +108,7 @@ func TestSettings_ScrollSoEveryOptionCanBeReached(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	ui := SettingsTabUI(win, func() {})
+	ui := SettingsTabUI(win, openStores(), func() {})
 	win.SetContent(ui)
 	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
 
@@ -135,7 +135,7 @@ func TestSettings_MarksASpeedLimitItCannotRead(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	ui := SettingsTabUI(win, func() {})
+	ui := SettingsTabUI(win, openStores(), func() {})
 	speed := speedLimitEntry(t, ui)
 
 	speed.SetText("as fast as it goes")
@@ -156,7 +156,7 @@ func TestSettings_SpeedLimitSaysItsUnit(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	require.Contains(t, formItemLabels(SettingsTabUI(win, func() {})), "Speed Limit (KB/s)")
+	require.Contains(t, formItemLabels(SettingsTabUI(win, openStores(), func() {})), "Speed Limit (KB/s)")
 }
 
 func speedLimitEntry(t *testing.T, ui fyne.CanvasObject) *widget.Entry {
@@ -192,7 +192,7 @@ func TestSettings_SignsOut(t *testing.T) {
 	}))
 
 	signedOut := 0
-	ui := SettingsTabUI(win, func() { signedOut++ })
+	ui := SettingsTabUI(win, openStores(), func() { signedOut++ })
 	win.SetContent(ui)
 
 	logout := buttonWithLabel(ui, "Log Out")
@@ -221,7 +221,7 @@ func TestSettings_CarriesTheUpdateDetectionOptions(t *testing.T) {
 	win := test.NewWindow(nil)
 	defer win.Close()
 
-	ui := SettingsTabUI(win, func() {})
+	ui := SettingsTabUI(win, openStores(), func() {})
 
 	var labels []string
 	for _, check := range widgetsOfType[*widget.Check](ui) {

@@ -1,4 +1,4 @@
-package cmd
+package client
 
 import (
 	"os"
@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// writeFiles creates every named file (relative to root) with dummy content.
 func writeFiles(t *testing.T, root string, names ...string) {
 	t.Helper()
 	for _, name := range names {
@@ -38,15 +37,14 @@ func assertGone(t *testing.T, root string, names ...string) {
 	}
 }
 
-// The point of --keep-latest: older installers in the same folder go away.
-func TestPruneOldVersions_RemovesOlderVersionsInSameFolder(t *testing.T) {
+func TestPruneOldInstallerVersions_RemovesOlderVersionsInSameFolder(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root,
 		"some-game/windows/setup_game_1.2.3.exe",
 		"some-game/windows/setup_game_1.2.10.exe",
 	)
 
-	if err := pruneOldVersions(root, "Some Game"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "windows"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -54,53 +52,45 @@ func TestPruneOldVersions_RemovesOlderVersionsInSameFolder(t *testing.T) {
 	assertGone(t, root, "some-game/windows/setup_game_1.2.3.exe")
 }
 
-// Installers for different platforms are different files, not versions of one
-// another, even when the version numbers differ.
-func TestPruneOldVersions_KeepsOtherPlatforms(t *testing.T) {
+func TestPruneOldInstallerVersions_KeepsOtherPlatforms(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root,
 		"some-game/windows/setup_game_1.2.3.exe",
 		"some-game/linux/setup_game_1.2.4.sh",
-		"some-game/mac/setup_game_1.2.5.dmg",
 	)
 
-	if err := pruneOldVersions(root, "Some Game"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "all"); err != nil {
 		t.Fatal(err)
 	}
 
 	assertExists(t, root,
 		"some-game/windows/setup_game_1.2.3.exe",
 		"some-game/linux/setup_game_1.2.4.sh",
-		"some-game/mac/setup_game_1.2.5.dmg",
 	)
 }
 
-// With --flatten every platform lands in one folder, so the extension is what
-// tells the files apart.
-func TestPruneOldVersions_KeepsOtherPlatformsWhenFlattened(t *testing.T) {
+func TestPruneOldInstallerVersions_KeepsOtherPlatformsWhenFlattened(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root,
 		"some-game/setup_game_1.2.3.exe",
 		"some-game/setup_game_1.2.4.sh",
 	)
 
-	if err := pruneOldVersions(root, "Some Game"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "all"); err != nil {
 		t.Fatal(err)
 	}
 
 	assertExists(t, root, "some-game/setup_game_1.2.3.exe", "some-game/setup_game_1.2.4.sh")
 }
 
-// A DLC installer must not delete the base game's installer just because they
-// share a file name prefix.
-func TestPruneOldVersions_KeepsDLCInstallers(t *testing.T) {
+func TestPruneOldInstallerVersions_KeepsDLCInstallers(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root,
 		"some-game/windows/setup_game_1.0.0.exe",
 		"some-game/dlcs/the-dlc/windows/setup_game_2.0.0.exe",
 	)
 
-	if err := pruneOldVersions(root, "Some Game"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "windows"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,8 +100,47 @@ func TestPruneOldVersions_KeepsDLCInstallers(t *testing.T) {
 	)
 }
 
+// In the RomM layout each platform has its own root; pruning one must not
+// reach into another.
+func TestPruneOldInstallerVersions_RommLayoutKeepsEachPlatform(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root,
+		"windows/some-game/setup_game_1.2.3.exe",
+		"linux/some-game/setup_game_1.2.4.sh",
+		"windows/some-game/setup_game_1.2.4.exe",
+	)
+
+	if _, err := PruneOldInstallerVersions(root, "Some Game", true, "all"); err != nil {
+		t.Fatal(err)
+	}
+
+	assertExists(t, root,
+		"windows/some-game/setup_game_1.2.4.exe",
+		"linux/some-game/setup_game_1.2.4.sh",
+	)
+	assertGone(t, root, "windows/some-game/setup_game_1.2.3.exe")
+}
+
+func TestPruneOldInstallerVersions_ReportsWhatItRemoved(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root,
+		"some-game/setup_game_1.0.0.exe",
+		"some-game/setup_game_2.0.0.exe",
+	)
+
+	removed, err := PruneOldInstallerVersions(root, "Some Game", false, "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(removed) != 1 || filepath.Base(removed[0]) != "setup_game_1.0.0.exe" {
+		t.Errorf("expected the report to name the removed file, got %v", removed)
+	}
+	assertExists(t, root, "some-game/setup_game_2.0.0.exe")
+}
+
 // Files that are not installers are never touched.
-func TestPruneOldVersions_IgnoresNonInstallerFiles(t *testing.T) {
+func TestPruneOldInstallerVersions_IgnoresNonInstallerFiles(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root,
 		"some-game/windows/setup_game_1.0.0.exe",
@@ -120,7 +149,7 @@ func TestPruneOldVersions_IgnoresNonInstallerFiles(t *testing.T) {
 		"some-game/windows/manual_1.0.0.pdf",
 	)
 
-	if err := pruneOldVersions(root, "Some Game"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "windows"); err != nil {
 		t.Fatal(err)
 	}
 

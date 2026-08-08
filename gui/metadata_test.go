@@ -57,7 +57,7 @@ func TestMetadataCache_FetchesOncePerGame(t *testing.T) {
 	srv, calls := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	cache := newMetadataCache()
+	cache := newMetadataCache(db.NewMetadataRepository(db.GetDB()))
 	first, err := cache.fetch(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, "A Publisher", first.Publisher)
@@ -76,12 +76,12 @@ func TestMetadataCache_ReusesWhatTheDatabaseHolds(t *testing.T) {
 	srv, calls := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	_, err := newMetadataCache().fetch(context.Background(), 7)
+	_, err := newMetadataCache(db.NewMetadataRepository(db.GetDB())).fetch(context.Background(), 7)
 	require.NoError(t, err)
 	asked := calls.Load()
 
 	// A fresh cache stands in for a fresh run of the app.
-	meta, err := newMetadataCache().fetch(context.Background(), 7)
+	meta, err := newMetadataCache(db.NewMetadataRepository(db.GetDB())).fetch(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, "A Publisher", meta.Publisher)
 	require.Equal(t, asked, calls.Load(), "the stored copy must be enough")
@@ -98,7 +98,7 @@ func TestMetadataCache_RefetchesAStaleRecord(t *testing.T) {
 	require.NoError(t, db.PutGameMetadataAt(context.Background(), 7, metadataFormat, stale,
 		time.Now().Add(-2*metadataMaxAge)))
 
-	meta, err := newMetadataCache().fetch(context.Background(), 7)
+	meta, err := newMetadataCache(db.NewMetadataRepository(db.GetDB())).fetch(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, "A Publisher", meta.Publisher, "a month-old description is looked up again")
 	require.Positive(t, calls.Load())
@@ -110,7 +110,7 @@ func TestMetadataCache_DoesNotStoreAFailedLookup(t *testing.T) {
 	srv, _ := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	_, err := newMetadataCache().fetch(context.Background(), 999)
+	_, err := newMetadataCache(db.NewMetadataRepository(db.GetDB())).fetch(context.Background(), 999)
 	require.Error(t, err)
 
 	record, err := db.GetGameMetadata(context.Background(), 999)
@@ -126,7 +126,7 @@ func TestMetadataCache_LoadDeliversToTheSelectedGame(t *testing.T) {
 	srv, _ := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	cache := newMetadataCache()
+	cache := newMetadataCache(db.NewMetadataRepository(db.GetDB()))
 
 	var delivered atomic.Int64
 	cache.load(7, func(int) bool { return true }, func(client.GameMetadata) { delivered.Add(1) }, nil)
@@ -146,7 +146,7 @@ func TestMetadataCache_LoadReportsAFailedLookup(t *testing.T) {
 	srv, _ := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	cache := newMetadataCache()
+	cache := newMetadataCache(db.NewMetadataRepository(db.GetDB()))
 
 	var failed atomic.Int64
 	cache.load(999, func(int) bool { return true }, func(client.GameMetadata) {}, func() { failed.Add(1) })
@@ -169,7 +169,7 @@ func TestMetadataCache_ReadsAgainWhatAnOlderGoggWrote(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.PutGameMetadata(context.Background(), 7, metadataFormat-1, older))
 
-	meta, err := newMetadataCache().fetch(context.Background(), 7)
+	meta, err := newMetadataCache(db.NewMetadataRepository(db.GetDB())).fetch(context.Background(), 7)
 
 	require.NoError(t, err)
 	require.Equal(t, "A Publisher", meta.Publisher, "GOG has to be asked again")
@@ -182,7 +182,7 @@ func TestMetadataCache_StoresTheLookupInTheDatabase(t *testing.T) {
 	srv, _ := metadataAPI(t)
 	t.Setenv("GOGG_API_BASE", srv.URL)
 
-	_, err := newMetadataCache().fetch(context.Background(), 7)
+	_, err := newMetadataCache(db.NewMetadataRepository(db.GetDB())).fetch(context.Background(), 7)
 	require.NoError(t, err)
 
 	record, err := db.GetGameMetadata(context.Background(), 7)
@@ -214,7 +214,7 @@ func TestMetadataCache_SweepFillsTheLibrary(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.PutGameMetadata(context.Background(), 5, metadataFormat, stored))
 
-	cache := newMetadataCache()
+	cache := newMetadataCache(db.NewMetadataRepository(db.GetDB()))
 	t.Cleanup(cache.close)
 	var swept atomic.Int64
 	cache.sweep([]db.Game{{ID: 5}, {ID: 7}, {ID: 999}}, func() { swept.Add(1) })
@@ -247,7 +247,7 @@ func TestMetadataCache_CloseStopsTheSweep(t *testing.T) {
 	metadataSweepPause = time.Hour // the pause after the first lookup holds the sweep
 	t.Cleanup(func() { metadataSweepPause = original })
 
-	cache := newMetadataCache()
+	cache := newMetadataCache(db.NewMetadataRepository(db.GetDB()))
 	cache.sweep([]db.Game{{ID: 7}, {ID: 999}}, nil)
 	require.Eventually(t, func() bool { return calls.Load() > 0 }, 5*time.Second, 10*time.Millisecond)
 

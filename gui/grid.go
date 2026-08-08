@@ -98,8 +98,8 @@ func (c *gameCell) CreateRenderer() fyne.WidgetRenderer {
 
 // platformCaption names the platforms a game offers, for the line under its
 // title in the grid.
-func platformCaption(game db.Game) string {
-	facts := factsOf(game)
+func platformCaption(s *libraryState, game db.Game) string {
+	facts := s.factsOf(game)
 	names := make([]string, 0, len(facts.platforms))
 	for _, platform := range facts.platforms {
 		names = append(names, platformInWords(platform))
@@ -110,20 +110,21 @@ func platformCaption(game db.Game) string {
 // showing reports whether this cell is still displaying the given game.
 func (c *gameCell) showing(gameID int) bool { return c.gameID == gameID }
 
-// bindGameCell points a recycled cell at a game. covers may be nil, in which
-// case no artwork is requested; dm says whether a download is running for it.
-func bindGameCell(cell *gameCell, game db.Game, sel *gameSelection, covers *coverCache,
-	dm *DownloadManager, onToggle func(),
-) {
+// bindGameCell points a recycled cell at a game.
+func bindGameCell(cell *gameCell, game db.Game, rb rowBinding) {
+	if rb.state == nil {
+		rb.state = newLibraryState()
+	}
+	sel, covers, dm, onToggle := rb.sel, rb.covers, rb.dm, rb.onToggle
 	// Anything that refreshes the grid rebinds every visible cell. Only a cell
 	// that has been pointed at a different game needs its artwork replaced;
 	// throwing it away on every refresh makes the whole grid blink.
 	sameGame := cell.gameID == game.ID
 	cell.gameID = game.ID
 	cell.title.SetText(game.Title)
-	cell.badges.show(game.ID, dm)
+	cell.badges.show(game.ID, dm, rb.state)
 
-	if caption := platformCaption(game); caption == "" {
+	if caption := platformCaption(rb.state, game); caption == "" {
 		cell.platforms.Hide()
 	} else {
 		cell.platforms.SetText(caption)

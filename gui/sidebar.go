@@ -61,7 +61,7 @@ func libraryCollections() []sidebarRow {
 // collectionCounts says how many games each collection holds. Every game is
 // described once, with everything any of the rows asks about, so the catalogue
 // is parsed once rather than once per row.
-func collectionCounts(games []db.Game, rows []sidebarRow) map[string]int {
+func collectionCounts(s *libraryState, games []db.Game, rows []sidebarRow) map[string]int {
 	queries := make(map[string]search.Query, len(rows))
 	var needs search.Needs
 	for _, row := range rows {
@@ -86,7 +86,7 @@ func collectionCounts(games []db.Game, rows []sidebarRow) map[string]int {
 
 	counts := make(map[string]int, len(queries))
 	for _, game := range games {
-		facts := factsFor(game, needs)
+		facts := s.factsFor(game, needs)
 		for title, query := range queries {
 			if query.Match(facts) {
 				counts[title]++
@@ -128,7 +128,7 @@ type librarySidebar struct {
 
 // newLibrarySidebar builds the collections. Picking one is the same as typing
 // its query, so onPick is handed the query rather than the row.
-func newLibrarySidebar(rows []sidebarRow, onPick func(query string)) *librarySidebar {
+func newLibrarySidebar(rows []sidebarRow, s *libraryState, onPick func(query string)) *librarySidebar {
 	sidebar := &librarySidebar{rows: rows, buttons: make(map[string]*sidebarButton, len(rows))}
 
 	items := make([]fyne.CanvasObject, 0, len(rows))
@@ -157,7 +157,7 @@ func newLibrarySidebar(rows []sidebarRow, onPick func(query string)) *librarySid
 	sidebar.content = container.NewStack(column)
 
 	sidebar.refresh = func(games []db.Game) {
-		counts := collectionCounts(games, rows)
+		counts := collectionCounts(s, games, rows)
 		for _, row := range rows {
 			button, ok := sidebar.buttons[row.Title]
 			if !ok {

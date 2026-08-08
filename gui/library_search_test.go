@@ -66,12 +66,11 @@ func newLibraryFixtureInWindow(t *testing.T, games int) (*libraryTab, string, fy
 		t.Setenv("GOGG_API_BASE", hangingStoreStub(t))
 	}
 
-	updateStatusCache = make(map[int]updateStatus)
 	dm := &DownloadManager{Tasks: binding.NewUntypedList()}
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
-	lt := LibraryTabUI(win, nil, dm, func() {})
+	lt := LibraryTabUI(win, nil, dm, openStores(), func() {})
 	// Closed before the store stub lets its answers go, so nothing is
 	// delivered to widgets the next test cannot see.
 	t.Cleanup(lt.close)
@@ -87,15 +86,15 @@ func TestLibrary_SearchDoesNotRescanDownloadStatus(t *testing.T) {
 
 	lt, root := newLibraryFixture(t, 3)
 
-	require.True(t, isGameDownloadedCached(1), "startup must work out the download status")
-	require.True(t, isGameDownloadedCached(3))
+	require.True(t, lt.state.downloaded(1), "startup must work out the download status")
+	require.True(t, lt.state.downloaded(3))
 
 	// Removing the files makes any filesystem rescan observable.
 	require.NoError(t, os.RemoveAll(root))
 	lt.searchEntry.SetText("Game 1")
 
-	require.True(t, isGameDownloadedCached(1), "searching must not rescan the filesystem")
-	require.True(t, isGameDownloadedCached(3), "a filtered-out game must keep its status")
+	require.True(t, lt.state.downloaded(1), "searching must not rescan the filesystem")
+	require.True(t, lt.state.downloaded(3), "a filtered-out game must keep its status")
 }
 
 // storeStub stands in for GOG's store API. It answers nothing, so the details

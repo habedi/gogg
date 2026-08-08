@@ -23,10 +23,10 @@ type gameSizeEstimate struct {
 // form, so the answer matches what downloading them would actually fetch.
 // Games whose stored data cannot be read are listed as unknown rather than
 // dropped, so the list still accounts for everything that was asked about.
-func estimateSelection(games []db.Game) (estimates []gameSizeEstimate, total int64) {
+func estimateSelection(s *libraryState, games []db.Game) (estimates []gameSizeEstimate, total int64) {
 	estimates = make([]gameSizeEstimate, 0, len(games))
 	for _, game := range games {
-		size := estimateGameSize(game)
+		size := s.estimateSize(game)
 		estimates = append(estimates, gameSizeEstimate{Title: game.Title, Bytes: size})
 		total += size
 	}

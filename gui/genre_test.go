@@ -27,7 +27,7 @@ func TestLibrary_FiltersByGenreFromStoredLookups(t *testing.T) {
 	lt, _ := newLibraryFixture(t, 3)
 	putGenres(t, 1, "Role-playing", "Adventure")
 	putGenres(t, 2, "Strategy")
-	loadGameGenres()
+	lt.state.loadGenres(db.NewMetadataRepository(db.GetDB()))
 
 	lt.searchEntry.SetText("genre:role")
 	require.Len(t, lt.listed(), 1)

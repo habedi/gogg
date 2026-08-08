@@ -102,7 +102,7 @@ func TestDownloadGameFiles_ResumePartFileAlreadyComplete(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(gameDir, "setup.exe.part"), []byte("hello"), 0o644))
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, true, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Resume: true, Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(gameDir, "setup.exe"))
@@ -120,7 +120,7 @@ func TestDownloadGameFiles_RommLayout(t *testing.T) {
 	game.Downloads[0].Platforms.Windows[0].Name = "game.exe"
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, true, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", RomMLayout: true, Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
 	// RomM layout: downloadPath/platform/game/filename
@@ -137,7 +137,7 @@ func TestDownloadGameFiles_FlattenFlag(t *testing.T) {
 	game := gameWithURL("flatgame", rawURL)
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, true, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Flatten: true, Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
 	// With flatten the platform subdir is omitted.
@@ -172,7 +172,7 @@ func TestDownloadGameFiles_RedirectURL(t *testing.T) {
 	game.Downloads[0].Platforms.Windows[0].Name = "original_name.exe"
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
 	// Filename should be replaced with the one from the redirect URL.
@@ -192,7 +192,7 @@ func TestDownloadGameFiles_RedirectMissingLocation(t *testing.T) {
 	game := gameWithURL("badredirect", rawURL)
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	assert.Error(t, err)
 }
 
@@ -216,7 +216,7 @@ func TestDownloadGameFiles_ExtrasFlag(t *testing.T) {
 	}
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", true, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Extras: true, Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(tmp, "extragame", "windows", "setup.exe"))
@@ -250,7 +250,7 @@ func TestDownloadGameFiles_WritesAFileManifest(t *testing.T) {
 	}
 
 	require.NoError(t, DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard))
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard))
 
 	manifest, err := os.ReadFile(filepath.Join(tmp, "mygame", "files.json"))
 	require.NoError(t, err)
@@ -307,7 +307,7 @@ func TestDownloadGameFiles_ManifestChecksumSurvivesResume(t *testing.T) {
 		filepath.Join(gameDir, "setup.exe.part"), body[:8], 0o644))
 
 	require.NoError(t, DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, true, false, false, false, 1, io.Discard))
+		DownloadOptions{Language: "en", Platform: "windows", Resume: true, Threads: 1}, io.Discard))
 
 	manifest, err := os.ReadFile(filepath.Join(tmp, "mygame", "files.json"))
 	require.NoError(t, err)
@@ -360,7 +360,7 @@ func TestDownloadGameFiles_RetriesTransientFailures(t *testing.T) {
 	}
 
 	require.NoError(t, DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard))
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard))
 
 	data, err := os.ReadFile(filepath.Join(tmp, "mygame", "windows", "setup.exe"))
 	require.NoError(t, err)
@@ -399,7 +399,7 @@ func TestDownloadGameFiles_DoesNotRetryARefusal(t *testing.T) {
 	}
 
 	err := DownloadGameFiles(context.Background(), "token", game, tmp,
-		"en", "windows", false, false, false, false, false, false, 1, io.Discard)
+		DownloadOptions{Language: "en", Platform: "windows", Threads: 1}, io.Discard)
 	require.Error(t, err)
 	require.Equal(t, int64(1), gets.Load(), "asking again cannot turn a 404 into a file")
 }

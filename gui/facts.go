@@ -26,14 +26,12 @@ type gameFacts struct {
 	languages []string
 }
 
-// parsedFacts keeps what each game's data said. A query is asked of every game
-// on every keystroke, and reading the whole catalogue for each letter typed is
-// what made searching a large library crawl.
-var parsedFacts = map[int]gameFacts{}
-
-// factsOf reads a game's stored data, or remembers what it said last time.
-func factsOf(game db.Game) gameFacts {
-	if facts, ok := parsedFacts[game.ID]; ok && facts.data == game.Data {
+// factsOf reads a game's stored data, or remembers what it said last time. A
+// query is asked of every game on every keystroke, and reading the whole
+// catalogue for each letter typed is what made searching a large library
+// crawl.
+func (s *libraryState) factsOf(game db.Game) gameFacts {
+	if facts, ok := s.facts[game.ID]; ok && facts.data == game.Data {
 		return facts
 	}
 
@@ -44,15 +42,15 @@ func factsOf(game db.Game) gameFacts {
 		}
 		facts.languages = languageNamesAndCodes(offeredLanguages(parsed))
 	}
-	parsedFacts[game.ID] = facts
+	s.facts[game.ID] = facts
 	return facts
 }
 
-// forgetParsedGames drops what was read of the catalogue, because it is no
-// longer the same catalogue.
-func forgetParsedGames() {
-	parsedFacts = make(map[int]gameFacts)
-	sizeCache = make(map[sizeCacheKey]int64)
+// forgetParsed drops what was read of the catalogue, because it is no longer
+// the same catalogue.
+func (s *libraryState) forgetParsed() {
+	s.facts = make(map[int]gameFacts)
+	s.sizes = make(map[sizeCacheKey]int64)
 }
 
 // sizeCacheKey identifies an estimate together with the settings it was
@@ -63,9 +61,7 @@ type sizeCacheKey struct {
 	extras, dlcs   bool
 }
 
-var sizeCache = make(map[sizeCacheKey]int64)
-
-func estimateGameSize(game db.Game) int64 {
+func (s *libraryState) estimateSize(game db.Game) int64 {
 	prefs := fyne.CurrentApp().Preferences()
 	key := sizeCacheKey{
 		id:       game.ID,
@@ -74,51 +70,43 @@ func estimateGameSize(game db.Game) int64 {
 		extras:   prefs.BoolWithFallback("downloadForm.extras", true),
 		dlcs:     prefs.BoolWithFallback("downloadForm.dlcs", true),
 	}
-	if v, ok := sizeCache[key]; ok {
+	if v, ok := s.sizes[key]; ok {
 		return v
 	}
 	parsed, err := parseGameData(game.Data)
 	if err != nil {
-		sizeCache[key] = 0
+		s.sizes[key] = 0
 		return 0
 	}
 	// The stored game data names languages in full, not by code.
 	langFullName, ok := client.GameLanguages[key.lang]
 	if !ok {
-		sizeCache[key] = 0
+		s.sizes[key] = 0
 		return 0
 	}
 	sz, err := parsed.EstimateStorageSize(langFullName, key.platform, key.extras, key.dlcs)
 	if err != nil {
-		sizeCache[key] = 0
+		s.sizes[key] = 0
 		return 0
 	}
-	sizeCache[key] = sz
+	s.sizes[key] = sz
 	return sz
 }
 
-// gameTags is what the user has marked games with, read once per refresh
-// because a query is asked of every game on every keystroke.
-var gameTags = map[int][]string{}
-
-// loadGameTags reads what the user has marked games with. It is read in one go
+// loadTags reads what the user has marked games with. It is read in one go
 // and kept, because a query is asked of every game on every keystroke.
-func loadGameTags() {
-	tags, err := db.AllTags(context.Background())
+func (s *libraryState) loadTags(store db.TagRepository) {
+	tags, err := store.All(context.Background())
 	if err != nil {
 		log.Debug().Err(err).Msg("Could not read game tags")
 		return
 	}
-	gameTags = tags
+	s.tags = tags
 }
 
-// gameGenres is what GOG's store says each game is, for games whose store
-// pages have been looked up. Read in one go and kept, like the tags.
-var gameGenres = map[int][]string{}
-
-// loadGameGenres reads the genres out of the stored lookups.
-func loadGameGenres() {
-	records, err := db.AllGameMetadata(context.Background())
+// loadGenres reads the genres out of the stored lookups.
+func (s *libraryState) loadGenres(store db.MetadataRepository) {
+	records, err := store.All(context.Background())
 	if err != nil {
 		log.Debug().Err(err).Msg("Could not read stored metadata")
 		return
@@ -132,13 +120,13 @@ func loadGameGenres() {
 		}
 		genres[record.GameID] = meta.Genres
 	}
-	gameGenres = genres
+	s.genres = genres
 }
 
-// gameHasTag says whether a game carries a tag, read from the cache the
-// searches read.
-func gameHasTag(gameID int, tag string) bool {
-	for _, held := range gameTags[gameID] {
+// hasTag says whether a game carries a tag, read from the cache the searches
+// read.
+func (s *libraryState) hasTag(gameID int, tag string) bool {
+	for _, held := range s.tags[gameID] {
 		if held == tag {
 			return true
 		}
@@ -148,24 +136,24 @@ func gameHasTag(gameID int, tag string) bool {
 
 // factsFor describes a game to a query. Working out the size or the platforms
 // means parsing the stored data, so it is only done for queries that ask.
-func factsFor(game db.Game, needs search.Needs) search.Facts {
+func (s *libraryState) factsFor(game db.Game, needs search.Needs) search.Facts {
 	facts := search.Facts{Title: game.Title}
-	if status, ok := updateStatusCache[game.ID]; ok {
+	if status, ok := s.statuses[game.ID]; ok {
 		facts.Downloaded = status.Downloaded
 		facts.HasUpdate = status.HasUpdate
 		facts.UpdatedAt = status.ChangedAt
 	}
 	if needs.Tags {
-		facts.Tags = gameTags[game.ID]
+		facts.Tags = s.tags[game.ID]
 	}
 	if needs.Genres {
-		facts.Genres = gameGenres[game.ID]
+		facts.Genres = s.genres[game.ID]
 	}
 	if needs.Size {
-		facts.SizeBytes = estimateGameSize(game)
+		facts.SizeBytes = s.estimateSize(game)
 	}
 	if needs.Platforms || needs.Languages {
-		read := factsOf(game)
+		read := s.factsOf(game)
 		if needs.Platforms {
 			facts.Platforms = read.platforms
 		}

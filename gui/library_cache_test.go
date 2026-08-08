@@ -20,6 +20,7 @@ func TestEstimateGameSize_FollowsPreferences(t *testing.T) {
 	defer app.Quit()
 	prefs := app.Preferences()
 
+	state := newLibraryState()
 	game := db.Game{ID: 90001, Title: "Sized", Data: sizedGameData}
 
 	prefs.SetString("downloadForm.language", "en")
@@ -27,15 +28,15 @@ func TestEstimateGameSize_FollowsPreferences(t *testing.T) {
 	prefs.SetBool("downloadForm.dlcs", false)
 
 	prefs.SetString("downloadForm.platform", "windows")
-	windows := estimateGameSize(game)
+	windows := state.estimateSize(game)
 	require.Equal(t, int64(1024*1024*1024), windows)
 
 	prefs.SetString("downloadForm.platform", "linux")
-	linux := estimateGameSize(game)
+	linux := state.estimateSize(game)
 	require.Equal(t, int64(4*1024*1024*1024), linux,
 		"the size must be recomputed when the platform changes")
 
 	// Going back must still be served correctly (and from the cache).
 	prefs.SetString("downloadForm.platform", "windows")
-	require.Equal(t, windows, estimateGameSize(game))
+	require.Equal(t, windows, state.estimateSize(game))
 }

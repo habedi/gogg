@@ -128,7 +128,7 @@ func TestLibraryTabUI_OffersLoginWhenSignedOut(t *testing.T) {
 
 	requested := 0
 	lt := LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()},
-		func() { requested++ })
+		openStores(), func() { requested++ })
 
 	btn := buttonWithLabel(lt.content, "Log In to GOG")
 	require.NotNil(t, btn, "the signed-out library must offer a way to log in")
