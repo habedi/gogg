@@ -110,6 +110,16 @@ gogg login
 > [Microsoft Edge](https://www.microsoft.com/edge) browsers installed on your machine for the first-time authentication.
 > So, make sure you have one of them installed and available in your system's PATH.
 
+> [!IMPORTANT]
+> Since version `0.5.0` users can log in to their GOG account from the GUI.
+> So it's not strictly necessary for them to have of [Google Chrome](https://www.google.com/chrome/), [Chromium](https://www.chromium.org/), or
+> [Microsoft Edge](https://www.microsoft.com/edge) browsers installed on their machines.
+> **And Any modern web browser should work**.
+
+<div align="center">
+  <img alt="Log in from GUI" src="docs/screenshots/v0.5.0/8.png" width="100%">
+</div>
+
 ##### Syncing the Game Catalogue
 
 ```bash
