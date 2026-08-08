@@ -48,6 +48,8 @@ func libraryCollections() []sidebarRow {
 		{Title: "Downloaded", Icon: theme.ConfirmIcon(), Query: "downloaded:yes"},
 		{Title: "Not downloaded", Icon: theme.DownloadIcon(), Query: "downloaded:no"},
 		{Title: "Updates", Icon: theme.ViewRefreshIcon(), Query: "updates:yes", HideWhenEmpty: true},
+		{Title: "Recently updated", Icon: theme.HistoryIcon(), Query: "updated:>30d", HideWhenEmpty: true},
+		{Title: "Large games", Icon: theme.FileIcon(), Query: "size:>10gb", HideWhenEmpty: true},
 		{Title: "Favorites", Icon: iconStarOutline, Query: "favorite:yes", HideWhenEmpty: true},
 		{Title: "Hidden", Icon: theme.VisibilityOffIcon(), Query: "hidden:yes", HideWhenEmpty: true},
 
@@ -55,6 +57,21 @@ func libraryCollections() []sidebarRow {
 		{Title: "Windows", Icon: theme.ComputerIcon(), Query: "platform:windows", HideWhenEmpty: true},
 		{Title: "macOS", Icon: theme.ComputerIcon(), Query: "platform:mac", HideWhenEmpty: true},
 		{Title: "Linux", Icon: theme.ComputerIcon(), Query: "platform:linux", HideWhenEmpty: true},
+
+		// The genres come from the store metadata, so these fill in as the
+		// background sweep learns about the library; a genre nobody owns
+		// stays hidden. The queries are substrings, the way genre search
+		// works: role finds Role-playing.
+		{Title: "Genre", Header: true},
+		{Title: "Action", Icon: theme.MediaPlayIcon(), Query: "genre:action", HideWhenEmpty: true},
+		{Title: "Adventure", Icon: theme.MediaPlayIcon(), Query: "genre:adventure", HideWhenEmpty: true},
+		{Title: "Role-playing", Icon: theme.MediaPlayIcon(), Query: "genre:role", HideWhenEmpty: true},
+		{Title: "Strategy", Icon: theme.MediaPlayIcon(), Query: "genre:strategy", HideWhenEmpty: true},
+		{Title: "Shooter", Icon: theme.MediaPlayIcon(), Query: "genre:shooter", HideWhenEmpty: true},
+		{Title: "Simulation", Icon: theme.MediaPlayIcon(), Query: "genre:simulation", HideWhenEmpty: true},
+		{Title: "Racing", Icon: theme.MediaPlayIcon(), Query: "genre:racing", HideWhenEmpty: true},
+		{Title: "Puzzle", Icon: theme.MediaPlayIcon(), Query: "genre:puzzle", HideWhenEmpty: true},
+		{Title: "Indie", Icon: theme.MediaPlayIcon(), Query: "genre:indie", HideWhenEmpty: true},
 	}
 }
 
@@ -82,6 +99,7 @@ func collectionCounts(s *libraryState, games []db.Game, rows []sidebarRow) map[s
 		needs.Languages = needs.Languages || asks.Languages
 		needs.Size = needs.Size || asks.Size
 		needs.Tags = needs.Tags || asks.Tags
+		needs.Genres = needs.Genres || asks.Genres
 	}
 
 	counts := make(map[string]int, len(queries))

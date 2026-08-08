@@ -57,7 +57,7 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 			content.tabs.SelectedIndex(), content.library.split))
 	})
 
-	myWindow.SetContent(content.tabs)
+	myWindow.SetContent(installTipLayer(myWindow.Canvas(), content.tabs))
 	selectRememberedTab(content.tabs, state.Tab)
 
 	myWindow.ShowAndRun()

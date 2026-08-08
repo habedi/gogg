@@ -598,6 +598,17 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	})
 	leftPane := container.NewBorder(nil, nil, sidebar.content, nil, listPane)
 
+	// Genres arrive one game at a time from the background sweep, and the
+	// genre collections count what has arrived: without this, they would
+	// stay hidden until something else recounted the sidebar.
+	storeGenres := metadata.onGenres
+	metadata.onGenres = func(gameID int, genres []string) {
+		storeGenres(gameID, genres)
+		if sidebar.content.Visible() {
+			sidebar.refresh(allGames)
+		}
+	}
+
 	// Counting the collections parses the catalogue, so it is only done while
 	// they are on screen.
 	showCollections := func(shown bool) {

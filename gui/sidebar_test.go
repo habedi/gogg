@@ -29,8 +29,11 @@ func TestLibraryCollections_AreQueries(t *testing.T) {
 	rows := libraryCollections()
 
 	require.Equal(t, []string{
-		"All games", "Downloaded", "Not downloaded", "Updates", "Favorites", "Hidden",
+		"All games", "Downloaded", "Not downloaded", "Updates", "Recently updated",
+		"Large games", "Favorites", "Hidden",
 		"Windows", "macOS", "Linux",
+		"Action", "Adventure", "Role-playing", "Strategy", "Shooter",
+		"Simulation", "Racing", "Puzzle", "Indie",
 	}, collectionTitles(rows))
 
 	byTitle := map[string]sidebarRow{}
@@ -42,6 +45,11 @@ func TestLibraryCollections_AreQueries(t *testing.T) {
 	require.Equal(t, "platform:linux", byTitle["Linux"].Query)
 	require.True(t, byTitle["Hidden"].HideWhenEmpty, "a collection with nothing in it is noise")
 	require.False(t, byTitle["All games"].HideWhenEmpty)
+	require.Equal(t, "genre:role", byTitle["Role-playing"].Query,
+		"a substring, so it finds Role-playing without the hyphen")
+	require.Equal(t, "size:>10gb", byTitle["Large games"].Query)
+	require.Equal(t, "updated:>30d", byTitle["Recently updated"].Query)
+	require.True(t, byTitle["Indie"].HideWhenEmpty, "genres nobody owns stay out of the way")
 }
 
 // Every collection says how much is in it.
@@ -290,4 +298,27 @@ func headingLabel(t *testing.T, sidebar *librarySidebar, title string) *widget.L
 	}
 	t.Fatalf("no %q heading in the collections", title)
 	return nil
+}
+
+// The genre collections count games by what the metadata sweep learned, and
+// stay hidden while it has learned nothing.
+func TestCollectionCounts_Genres(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	games := []db.Game{
+		{ID: 1, Title: "One", Data: richGameData},
+		{ID: 2, Title: "Two", Data: richGameData},
+	}
+	state := newLibraryState()
+	state.genres = map[int][]string{
+		1: {"Role-playing", "Adventure"},
+		2: {"Action"},
+	}
+
+	counts := collectionCounts(state, games, libraryCollections())
+	require.Equal(t, 1, counts["Role-playing"])
+	require.Equal(t, 1, counts["Adventure"])
+	require.Equal(t, 1, counts["Action"])
+	require.Equal(t, 0, counts["Strategy"], "a genre nobody owns counts nothing, and its row hides")
 }

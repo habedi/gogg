@@ -138,17 +138,14 @@ func TestIconButton_SaysWhatItDoesWhenPointedAt(t *testing.T) {
 	defer app.Quit()
 
 	button := newIconButton(theme.CancelIcon(), "Clear the search", nil)
-	win := test.NewWindow(button)
-	t.Cleanup(win.Close)
-	win.Resize(fyne.NewSize(300, 200))
+	_, layer := tipWindow(t, button)
 
 	button.MouseIn(&desktop.MouseEvent{})
-	overlay := win.Canvas().Overlays().Top()
-	require.NotNil(t, overlay, "resting on the button has to say what it is")
-	require.Contains(t, labelTexts(overlay), "Clear the search")
+	require.Len(t, layer.Objects, 1, "resting on the button has to say what it is")
+	require.Contains(t, labelTexts(layer), "Clear the search")
 
 	button.MouseOut()
-	require.Nil(t, win.Canvas().Overlays().Top(), "and stop saying it on the way out")
+	require.Empty(t, layer.Objects, "and stop saying it on the way out")
 }
 
 // The icon-only buttons in the app all carry one.

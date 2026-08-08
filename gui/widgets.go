@@ -125,7 +125,7 @@ type iconButton struct {
 	widget.Button
 
 	tip   string
-	shown *widget.PopUp
+	shown fyne.CanvasObject
 }
 
 func newIconButton(icon fyne.Resource, tip string, tapped func()) *iconButton {
@@ -138,29 +138,23 @@ func newIconButton(icon fyne.Resource, tip string, tapped func()) *iconButton {
 }
 
 // MouseIn shows what the button is for. The button's own hover highlight still
-// happens: this is on top of it, not instead of it.
+// happens: this is on top of it, not instead of it. The tip goes on the tip
+// layer, not into a popup: a popup takes the hover with it, and the tip then
+// flickers between shown and hidden for as long as the pointer stays.
 func (b *iconButton) MouseIn(event *desktop.MouseEvent) {
 	b.Button.MouseIn(event)
 
 	if b.tip == "" || b.shown != nil {
 		return
 	}
-	driver := fyne.CurrentApp().Driver()
-	canvas := driver.CanvasForObject(b)
-	if canvas == nil {
-		return
-	}
-
-	b.shown = widget.NewPopUp(widget.NewLabel(b.tip), canvas)
-	b.shown.ShowAtPosition(driver.AbsolutePositionForObject(b).
-		Add(fyne.NewPos(0, b.Size().Height)))
+	b.shown = showTip(b, b.tip)
 }
 
 func (b *iconButton) MouseOut() {
 	b.Button.MouseOut()
 
 	if b.shown != nil {
-		b.shown.Hide()
+		hideTip(b, b.shown)
 		b.shown = nil
 	}
 }
