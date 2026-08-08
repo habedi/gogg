@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
@@ -203,4 +204,17 @@ func TestBindGameCell_CarriesTheSameBadgesAsARow(t *testing.T) {
 	bindGameCell(cell, db.Game{ID: 2, Title: "Two"}, rowBinding{sel: newGameSelection(), state: state})
 	require.False(t, cell.badges.downloaded.Visible(), "and one that is not, is not")
 	require.False(t, cell.badges.update.Visible())
+}
+
+// The platform caption must stay readable: hierarchy under the bold title
+// comes from weight, never from Fyne's disabled gray, which is too faint on
+// either background.
+func TestGameCell_PlatformCaptionIsNotDimmed(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	cell := newGameCell().(*gameCell)
+	require.Equal(t, widget.MediumImportance, cell.platforms.Importance)
+	require.True(t, cell.title.TextStyle.Bold, "the title carries the hierarchy instead")
+	require.False(t, cell.platforms.TextStyle.Bold)
 }

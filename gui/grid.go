@@ -76,8 +76,10 @@ func newGameCell() fyne.CanvasObject {
 	}
 	cell.title.Truncation = fyne.TextTruncateEllipsis
 	cell.title.TextStyle = fyne.TextStyle{Bold: true}
+	// The platform line stays quieter than the title by weight alone: the
+	// title is bold, this is not. Low importance would dim it into Fyne's
+	// disabled gray, which is too faint to read on either background.
 	cell.platforms.Truncation = fyne.TextTruncateEllipsis
-	cell.platforms.Importance = widget.LowImportance
 	cell.cover.FillMode = canvas.ImageFillContain
 	// GridWrap sizes every cell from this template, so the artwork asks for the
 	// room it needs rather than collapsing to an icon.

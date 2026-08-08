@@ -7,7 +7,40 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-var colorGoggBlue = &color.NRGBA{R: 0x0, G: 0x78, B: 0xD4, A: 0xff}
+// Gogg's accent is purple, one shade per variant so text stays readable on
+// it: a deep purple carries white text in the light theme, and a light
+// purple carries dark text in the dark theme. The pairs come from the
+// Material palette, where their contrast is a settled matter, and the same
+// ratios are pinned by TestThemeContrast.
+var (
+	colorPurpleDeep    = &color.NRGBA{R: 0x67, G: 0x50, B: 0xA4, A: 0xff}
+	colorPurpleLight   = &color.NRGBA{R: 0xD0, G: 0xBC, B: 0xFF, A: 0xff}
+	colorOnPurpleDeep  = &color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xff}
+	colorOnPurpleLight = &color.NRGBA{R: 0x38, G: 0x1E, B: 0x72, A: 0xff}
+)
+
+// accentFor is the purple for a variant, and onAccentFor the text that sits
+// on top of it.
+func accentFor(v fyne.ThemeVariant) *color.NRGBA {
+	if v == theme.VariantDark {
+		return colorPurpleLight
+	}
+	return colorPurpleDeep
+}
+
+func onAccentFor(v fyne.ThemeVariant) *color.NRGBA {
+	if v == theme.VariantDark {
+		return colorOnPurpleLight
+	}
+	return colorOnPurpleDeep
+}
+
+// withAlpha is the accent thinned out, for fills that sit behind text: a
+// selection tint or a focus ring must color a row without costing the words
+// on it their contrast.
+func withAlpha(c *color.NRGBA, a uint8) *color.NRGBA {
+	return &color.NRGBA{R: c.R, G: c.G, B: c.B, A: a}
+}
 
 // GoggTheme defines a custom theme that supports color variants, custom fonts, and sizes.
 type GoggTheme struct {
@@ -29,9 +62,27 @@ func (t *GoggTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.C
 	// Custom color overrides
 	switch name {
 	case theme.ColorNamePrimary:
-		return colorGoggBlue
+		return accentFor(finalVariant)
+	case theme.ColorNameForegroundOnPrimary:
+		return onAccentFor(finalVariant)
+	case theme.ColorNameHyperlink:
+		return accentFor(finalVariant)
 	case theme.ColorNameFocus:
-		return colorGoggBlue
+		return withAlpha(accentFor(finalVariant), 0x99)
+	case theme.ColorNameSelection:
+		// The tint behind selected rows is the light purple in both
+		// variants: the deep one over a light background costs the row's
+		// text its contrast, as TestThemeContrast will attest.
+		if finalVariant == theme.VariantDark {
+			return withAlpha(colorPurpleLight, 0x3d)
+		}
+		return withAlpha(colorPurpleLight, 0x55)
+	case theme.ColorNameForeground:
+		// Fyne's light theme sets text in a middle gray that reads poorly,
+		// and worse over any tint. Near-black holds its contrast anywhere.
+		if finalVariant == theme.VariantLight {
+			return &color.NRGBA{R: 0x1C, G: 0x1B, B: 0x1F, A: 0xff}
+		}
 	case theme.ColorNameSeparator:
 		if finalVariant == theme.VariantDark {
 			return &color.NRGBA{R: 0x4A, B: 0x4A, G: 0x4A, A: 0xff} // Darker gray for dark mode
@@ -84,6 +135,14 @@ func (t *GoggTheme) Size(name fyne.ThemeSizeName) float32 {
 		if name == theme.SizeNameText {
 			return t.textSize
 		}
+	}
+	// Rounder corners than the Fyne defaults, so inputs, buttons, and
+	// selections read as soft cards rather than boxes.
+	switch name {
+	case theme.SizeNameInputRadius:
+		return 8
+	case theme.SizeNameSelectionRadius:
+		return 6
 	}
 	return t.Theme.Size(name)
 }
