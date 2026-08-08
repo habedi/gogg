@@ -179,6 +179,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	)
 
 	generateBtn := widget.NewButton("Generate File Hashes", nil)
+	generateBtn.Importance = widget.HighImportance
 	progressBar := widget.NewProgressBar()
 	progressBar.Hide()
 

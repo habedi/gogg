@@ -63,15 +63,15 @@ func libraryCollections() []sidebarRow {
 		// stays hidden. The queries are substrings, the way genre search
 		// works: role finds Role-playing.
 		{Title: "Genre", Header: true},
-		{Title: "Action", Icon: theme.MediaPlayIcon(), Query: "genre:action", HideWhenEmpty: true},
-		{Title: "Adventure", Icon: theme.MediaPlayIcon(), Query: "genre:adventure", HideWhenEmpty: true},
-		{Title: "Role-playing", Icon: theme.MediaPlayIcon(), Query: "genre:role", HideWhenEmpty: true},
-		{Title: "Strategy", Icon: theme.MediaPlayIcon(), Query: "genre:strategy", HideWhenEmpty: true},
-		{Title: "Shooter", Icon: theme.MediaPlayIcon(), Query: "genre:shooter", HideWhenEmpty: true},
-		{Title: "Simulation", Icon: theme.MediaPlayIcon(), Query: "genre:simulation", HideWhenEmpty: true},
-		{Title: "Racing", Icon: theme.MediaPlayIcon(), Query: "genre:racing", HideWhenEmpty: true},
-		{Title: "Puzzle", Icon: theme.MediaPlayIcon(), Query: "genre:puzzle", HideWhenEmpty: true},
-		{Title: "Indie", Icon: theme.MediaPlayIcon(), Query: "genre:indie", HideWhenEmpty: true},
+		{Title: "Action", Icon: theme.FolderIcon(), Query: "genre:action", HideWhenEmpty: true},
+		{Title: "Adventure", Icon: theme.FolderIcon(), Query: "genre:adventure", HideWhenEmpty: true},
+		{Title: "Role-playing", Icon: theme.FolderIcon(), Query: "genre:role", HideWhenEmpty: true},
+		{Title: "Strategy", Icon: theme.FolderIcon(), Query: "genre:strategy", HideWhenEmpty: true},
+		{Title: "Shooter", Icon: theme.FolderIcon(), Query: "genre:shooter", HideWhenEmpty: true},
+		{Title: "Simulation", Icon: theme.FolderIcon(), Query: "genre:simulation", HideWhenEmpty: true},
+		{Title: "Racing", Icon: theme.FolderIcon(), Query: "genre:racing", HideWhenEmpty: true},
+		{Title: "Puzzle", Icon: theme.FolderIcon(), Query: "genre:puzzle", HideWhenEmpty: true},
+		{Title: "Indie", Icon: theme.FolderIcon(), Query: "genre:indie", HideWhenEmpty: true},
 	}
 }
 

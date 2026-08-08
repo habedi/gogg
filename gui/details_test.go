@@ -575,9 +575,10 @@ func TestFixedSize_KeepsTheSizeItWasGiven(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	boxed := fixedSize(widget.NewButton("OK", nil), paneButtonSize)
+	size := fyne.NewSize(160, 36)
+	boxed := fixedSize(widget.NewButton("OK", nil), size)
 
-	require.Equal(t, paneButtonSize, boxed.MinSize())
+	require.Equal(t, size, boxed.MinSize())
 }
 
 // The download path the user types is what they see next time. It was written

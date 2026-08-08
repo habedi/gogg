@@ -523,7 +523,6 @@ func fillStoreHeader(pane *detailsPane, meta *client.GameMetadata) {
 // leaves a button of 154 points rendered at 560. These are the sizes the details
 // pane hands out instead.
 var (
-	paneButtonSize = fyne.NewSize(160, 36)
 	paneActionSize = fyne.NewSize(144, 36)
 	// paneCompactSize fits a short word: the web links share the action row
 	// with the download button, and every point they take is the pane's.

@@ -490,6 +490,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 
 	if len(allGames) == 0 {
 		refreshNowBtn = widget.NewButton("Refresh Catalogue", startRefresh)
+		refreshNowBtn.Importance = widget.HighImportance
 		listContent.Add(emptyState(theme.InfoIcon(), "Nothing in the catalogue yet",
 			"Refresh to fetch the games you own from GOG.", refreshNowBtn))
 	} else {

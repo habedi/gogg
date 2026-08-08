@@ -128,6 +128,7 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 				UpdatedSince: updatedEntry.Text,
 			})...)
 		})
+		applyBtn.Importance = widget.HighImportance
 		resetBtn := widget.NewButtonWithIcon("Reset", theme.ViewRefreshIcon(), func() { apply() })
 
 		content := container.NewVBox(

@@ -272,7 +272,9 @@ func accountBox(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObject 
 		return nil
 	}
 
-	signOut := widget.NewButtonWithIcon("Log Out", theme.LogoutIcon(), func() {
+	signOut := widget.NewButtonWithIcon("Log Out", theme.LogoutIcon(), func() {}) // handler set below
+	signOut.Importance = widget.DangerImportance
+	signOut.OnTapped = func() {
 		dialog.ShowConfirm("Log Out",
 			"Log out of GOG? The catalogue gogg has already fetched stays where it is.",
 			func(confirmed bool) {
@@ -287,7 +289,7 @@ func accountBox(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObject 
 					onSignOut()
 				}
 			}, win)
-	})
+	}
 
 	return widget.NewCard("Account", "", container.NewHBox(signOut))
 }
