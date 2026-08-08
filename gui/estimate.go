@@ -78,7 +78,7 @@ func showSizeEstimate(win fyne.Window, estimates []gameSizeEstimate, total int64
 	})
 
 	content := container.NewBorder(summary, copyBtn, nil, nil, list)
-	estimate := dialog.NewCustom("Storage Size", "Close", content, win)
+	estimate := dialog.NewCustom("Estimated Size", "Close", content, win)
 	estimate.Resize(fyne.NewSize(660, 520))
 	estimate.Show()
 }

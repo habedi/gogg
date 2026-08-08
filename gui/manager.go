@@ -745,12 +745,16 @@ func DownloadsTabUI(win fyne.Window, dm *DownloadManager) fyne.CanvasObject {
 			case StateCancelled, StateError, StateInterrupted:
 				clearBtn.Show()
 				if task.canRetry() {
-					actionBtn.SetIcon(theme.ViewRefreshIcon())
 					// An interrupted download still has its bytes on disk, so
-					// carrying on is what retrying it does; the word says so.
+					// carrying on is what its button does: the same word and
+					// the same play icon a paused download resumes with. A
+					// cancelled or failed one starts over, and reads as Retry
+					// with the refresh icon.
 					if task.State() == StateInterrupted {
+						actionBtn.SetIcon(theme.MediaPlayIcon())
 						actionBtn.SetText("Resume")
 					} else {
+						actionBtn.SetIcon(theme.ViewRefreshIcon())
 						actionBtn.SetText("Retry")
 					}
 					actionBtn.OnTapped = func() {

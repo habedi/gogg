@@ -306,7 +306,12 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 			go dm.startNextIfAvailable()
 		}()
 
-		fyne.CurrentApp().Preferences().SetString("lastUsedDownloadPath", q.downloadPath)
+		// Both keys are written so the form's remembered path and the
+		// legacy one an older gogg stored cannot drift apart; the form and
+		// the history lookup read them through one accessor.
+		prefs := fyne.CurrentApp().Preferences()
+		prefs.SetString("lastUsedDownloadPath", q.downloadPath)
+		prefs.SetString("downloadForm.path", q.downloadPath)
 
 		token, err := q.authService.RefreshTokenCtx(ctx)
 		if err != nil {

@@ -122,7 +122,7 @@ func runLoginAttempt(win fyne.Window, waitingMessage string, attempt func() erro
 				showErrorDialog(win, "Login failed", err)
 				return
 			}
-			dialog.ShowInformation("Logged In", "You are signed in to GOG.", win)
+			dialog.ShowInformation("Logged In", "You are logged in to GOG.", win)
 			if onSuccess != nil {
 				onSuccess()
 			}

@@ -86,7 +86,10 @@ func getGameDownloadDirectory(dm *DownloadManager, game db.Game) (string, bool) 
 	if path, ok := getLastCompletedDownloadDir(dm, game.ID); ok {
 		return path, true
 	}
-	root := fyne.CurrentApp().Preferences().String("lastUsedDownloadPath")
+	// The same accessor the download form uses, so a path typed but not yet
+	// downloaded to is still found here rather than only the last one an
+	// actual download wrote.
+	root := rememberedDownloadPath(fyne.CurrentApp().Preferences())
 	if root == "" {
 		return "", false
 	}

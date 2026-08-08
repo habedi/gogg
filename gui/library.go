@@ -468,7 +468,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		if len(pending) == 1 {
 			verb = "has"
 		}
-		dialog.ShowInformation("Updates waiting",
+		dialog.ShowInformation("Updates Waiting",
 			fmt.Sprintf("%d %s %s new files since being downloaded: %s",
 				len(pending), gamesWord(len(pending)), verb, joinTitles(titles)), win)
 	}

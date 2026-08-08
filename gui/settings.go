@@ -206,7 +206,7 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 	// longer the answer.
 	updateChecks := make([]fyne.CanvasObject, 0, 6)
 	updateChecks = append(updateChecks, sweepCheck, widget.NewSeparator(),
-		widget.NewLabelWithStyle("Update detection", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+		widget.NewLabelWithStyle("Update Detection", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	for _, option := range []struct {
 		label    string
 		pref     string
@@ -274,13 +274,13 @@ func accountBox(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObject 
 
 	signOut := widget.NewButtonWithIcon("Log Out", theme.LogoutIcon(), func() {
 		dialog.ShowConfirm("Log Out",
-			"Sign out of GOG? The catalogue gogg has already fetched stays where it is.",
+			"Log out of GOG? The catalogue gogg has already fetched stays where it is.",
 			func(confirmed bool) {
 				if !confirmed {
 					return
 				}
 				if err := st.tokens.Delete(context.Background()); err != nil {
-					showErrorDialog(win, "Could not sign out", err)
+					showErrorDialog(win, "Could not log out", err)
 					return
 				}
 				if onSignOut != nil {

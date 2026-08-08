@@ -167,7 +167,7 @@ func (b *statusBadges) show(gameID int, dm *DownloadManager, s *libraryState) {
 	b.update.Show()
 	b.update.SetText(fmt.Sprintf("%d", len(diff)))
 	b.update.OnTapped = func() {
-		dialog.ShowCustom("Update details", "Close", updateDetailsBody(diff),
+		dialog.ShowCustom("Update Details", "Close", updateDetailsBody(diff),
 			fyne.CurrentApp().Driver().AllWindows()[0])
 	}
 }
