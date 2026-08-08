@@ -138,3 +138,25 @@ func TestDownloadForm_LayoutsExcludeEachOther(t *testing.T) {
 		require.False(t, app.Preferences().Bool("downloadForm.romm"))
 	})
 }
+
+// The connections select splits large files across range requests; one is
+// the default, so nothing changes for anyone who does not ask.
+func TestDownloadForm_OffersConnectionsPerFile(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 1)
+
+	var connections *widget.Select
+	for _, sel := range widgetsOfType[*widget.Select](lt.content) {
+		if len(sel.Options) > 0 && sel.Options[len(sel.Options)-1] == "8" {
+			connections = sel
+		}
+	}
+	require.NotNil(t, connections, "the form offers a connections select")
+	require.Equal(t, []string{"1", "2", "4", "8"}, connections.Options)
+	require.Equal(t, "1", connections.Selected, "one connection is the default")
+
+	connections.SetSelected("4")
+	require.Equal(t, "4", app.Preferences().String("downloadForm.connections"))
+}

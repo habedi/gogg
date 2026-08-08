@@ -241,6 +241,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		releaseSlot()
 		return fmt.Errorf("failed to parse game data for %s: %w", q.game.Title, err)
 	}
+	parsedGameData.ID = q.game.ID
 
 	var targetDir string
 	switch {
@@ -327,7 +328,8 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 						Extras: q.extrasFlag, DLCs: q.dlcFlag, Resume: q.resumeFlag,
 						Flatten: q.flattenFlag, SkipPatches: q.skipPatchesFlag,
 						RomMLayout: q.rommLayoutFlag, LutrisLayout: q.lutrisLayoutFlag,
-						Threads: q.numThreads,
+						Threads:     q.numThreads,
+						Connections: q.connections,
 					}, updater,
 				)
 				if err != nil {
@@ -380,6 +382,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 			Flatten     bool     `json:"flatten"`
 			Resume      bool     `json:"resume"`
 			Threads     int      `json:"threads"`
+			Connections int      `json:"connections,omitempty"`
 		}{
 			Language:    q.language,
 			Platform:    q.platformName,
@@ -391,6 +394,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 			Flatten:     q.flattenFlag,
 			Resume:      q.resumeFlag,
 			Threads:     q.numThreads,
+			Connections: q.connections,
 		}
 		if data, mErr := json.MarshalIndent(info, "", "  "); mErr == nil {
 			_ = os.MkdirAll(targetDir, 0755)

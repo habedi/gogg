@@ -117,6 +117,32 @@ func (pr *progressReader) report(final bool) {
 	pr.writeProgress(append(jsonUpdate, '\n'))
 }
 
+// add counts bytes another reader received on this file's behalf; the
+// parallel connections all report through one progressReader.
+func (pr *progressReader) add(n int64) {
+	pr.updateLock.Lock()
+	pr.bytesRead += n
+	pr.updateLock.Unlock()
+	pr.report(false)
+}
+
+// md5OfFile hashes a finished file from disk. The parallel connections write
+// out of order, so their checksum cannot stream the way the single stream's
+// does; reading the result back is what remains. An unreadable file leaves
+// the checksum unrecorded rather than recorded wrong.
+func md5OfFile(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	hasher := md5.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
 func ParseGameData(data string) (Game, error) {
 	var rawResponse Game
 	if err := json.Unmarshal([]byte(data), &rawResponse); err != nil {
@@ -218,6 +244,10 @@ type DownloadOptions struct {
 	LutrisLayout bool
 	// Threads is how many files are transferred at once.
 	Threads int
+	// Connections is how many HTTP connections may fetch one file at once,
+	// each filling its own region with range requests. Zero or one keeps
+	// the single stream; files under 32 MB use one stream regardless.
+	Connections int
 }
 
 func DownloadGameFiles(
@@ -231,6 +261,10 @@ func DownloadGameFiles(
 	flattenFlag, skipPatchesFlag, rommLayout := options.Flatten, options.SkipPatches, options.RomMLayout
 	lutrisLayout := options.LutrisLayout
 	numThreads := options.Threads
+	connections := options.Connections
+	if connections < 1 {
+		connections = 1
+	}
 
 	if rommLayout && lutrisLayout {
 		return fmt.Errorf("the RomM and Lutris layouts cannot both be used")
@@ -370,14 +404,110 @@ func DownloadGameFiles(
 			targetDir = filepath.Join(downloadPath, SanitizePath(game.Title), SanitizePath(subDir))
 		}
 		filePath := filepath.Join(targetDir, fileName)
+		partPath := filePath + ".part"
 
 		if err := ensureDirExists(targetDir); err != nil {
 			return err
 		}
 
+		// finishFile is the shared tail of both download paths: the checksum
+		// verdict, then the manifest entry. The streamed MD5 is compared
+		// against the one GOG publishes for the file. A mismatch means the
+		// bytes on disk are not the file, so the copy is deleted and the
+		// error sent back retryable: the next attempt starts clean. No
+		// published checksum means no verdict, never failure.
+		finishFile := func(sum string, size int64) error {
+			verified := false
+			if sum != "" {
+				expected := fetchExpectedMD5(ctx, client, accessToken, game.ID, task.url)
+				if expected != "" {
+					if expected != sum {
+						_ = os.Remove(filePath)
+						return fmt.Errorf("failed to verify %s: %w", fileName, &checksumError{expected: expected, got: sum})
+					}
+					verified = true
+				}
+			}
+			relPath := filePath
+			if rel, relErr := filepath.Rel(manifestDir, filePath); relErr == nil && !strings.HasPrefix(rel, "..") {
+				relPath = rel
+			}
+			recordFile(DownloadedFile{
+				Path:         relPath,
+				SizeBytes:    size,
+				MD5:          sum,
+				MD5Verified:  verified,
+				DownloadedAt: time.Now().UTC(),
+			})
+			return nil
+		}
+
+		headReq, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+		if err != nil {
+			return err
+		}
+		headReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+
+		headResp, err := client.Do(headReq)
+		if err != nil {
+			return err
+		}
+		_ = headResp.Body.Close()
+		if headResp.StatusCode == http.StatusForbidden {
+			log.Warn().Str("file", fileName).Str("url", url).Msg("Skipping file: server returned HTTP 403; file may be bundled in the main installer")
+			return nil
+		}
+		totalSize := headResp.ContentLength
+
+		// A sidecar means the .part file has holes only the parallel path
+		// can fill; any other path must start the file over.
+		sidecarPath := parallelSidecarPath(partPath)
+		parState := loadParallelState(sidecarPath, totalSize)
+		if parState != nil && (connections <= 1 || !task.resume) {
+			_ = os.Remove(partPath)
+			parState = nil
+		}
+		if parState == nil {
+			_ = os.Remove(sidecarPath)
+		}
+
+		useParallel := connections > 1 && totalSize >= parallelMinSize
+		if useParallel && parState == nil && task.resume {
+			// A sequential partial in progress keeps its bytes; splitting
+			// the file now would throw them away.
+			if info, statErr := os.Stat(partPath); statErr == nil && info.Size() > 0 {
+				useParallel = false
+			} else if info, statErr := os.Stat(filePath); statErr == nil && info.Size() > 0 {
+				useParallel = false
+			}
+		}
+
+		if useParallel {
+			perr := downloadFileParallel(ctx, client, accessToken, url, partPath, fileName, totalSize, connections, sw)
+			switch {
+			case perr == nil:
+				if renameErr := os.Rename(partPath, filePath); renameErr != nil {
+					return fmt.Errorf("failed to finalize %s: %w", fileName, renameErr)
+				}
+				return finishFile(md5OfFile(filePath), totalSize)
+			case errors.Is(perr, errServerIgnoredRange):
+				// One stream it is, then.
+				_ = os.Remove(partPath)
+				_ = os.Remove(sidecarPath)
+			default:
+				if !task.resume {
+					_ = os.Remove(partPath)
+					_ = os.Remove(sidecarPath)
+				}
+				if isCancellation(ctx.Err()) {
+					return ctx.Err()
+				}
+				return fmt.Errorf("failed to save file %s: %w", filePath, perr)
+			}
+		}
+
 		var file *os.File
 		var startOffset int64
-		partPath := filePath + ".part"
 		usingPartFile := false
 
 		if task.resume {
@@ -416,29 +546,6 @@ func DownloadGameFiles(
 		}
 		defer func() { _ = file.Close() }()
 
-		headReq, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
-		if err != nil {
-			return err
-		}
-		headReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
-
-		headResp, err := client.Do(headReq)
-		if err != nil {
-			return err
-		}
-		_ = headResp.Body.Close()
-		if headResp.StatusCode == http.StatusForbidden {
-			log.Warn().Str("file", fileName).Str("url", url).Msg("Skipping file: server returned HTTP 403; file may be bundled in the main installer")
-			_ = file.Close()
-			if usingPartFile {
-				_ = os.Remove(partPath)
-			} else if !task.resume {
-				_ = os.Remove(filePath)
-			}
-			return nil
-		}
-
-		totalSize := headResp.ContentLength
 		if task.resume && totalSize > 0 && startOffset >= totalSize {
 			// File is already complete, send a final progress update for it.
 			finalUpdate := ProgressUpdate{Type: "file_progress", FileName: fileName, CurrentBytes: startOffset, TotalBytes: totalSize}
@@ -451,7 +558,12 @@ func DownloadGameFiles(
 			return nil
 		}
 
-		getReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		// The transfer gets its own cancellable context so a stalled
+		// connection can be cut without looking like the user cancelled.
+		stallCtx, cancelTransfer := context.WithCancelCause(ctx)
+		defer cancelTransfer(nil)
+
+		getReq, err := http.NewRequestWithContext(stallCtx, "GET", url, nil)
 		if err != nil {
 			return err
 		}
@@ -530,9 +642,16 @@ func DownloadGameFiles(
 			sink = io.MultiWriter(file, hasher)
 		}
 
+		stallWindow := StallTimeout
+		watchdog := time.AfterFunc(stallWindow, func() {
+			cancelTransfer(&stallError{window: stallWindow})
+		})
+		defer watchdog.Stop()
+
 		limitedBody := wrapWithGlobalRateLimiter(getResp.Body)
+		guarded := &stallGuard{reader: limitedBody, timer: watchdog, window: stallWindow}
 		progressReader := &progressReader{
-			reader:    limitedBody,
+			reader:    guarded,
 			writer:    sw,
 			fileName:  fileName,
 			totalSize: totalSize,
@@ -550,6 +669,12 @@ func DownloadGameFiles(
 			}
 		}
 		if err != nil {
+			// A transfer the watchdog cut off surfaces as a cancellation, but
+			// its cause tells it apart from the user closing the download.
+			var stalled *stallError
+			if errors.As(context.Cause(stallCtx), &stalled) {
+				err = stalled
+			}
 			activeFile := filePath
 			if usingPartFile {
 				activeFile = partPath
@@ -581,17 +706,8 @@ func DownloadGameFiles(
 		if hasher != nil {
 			sum = hex.EncodeToString(hasher.Sum(nil))
 		}
-		relPath := filePath
-		if rel, relErr := filepath.Rel(manifestDir, filePath); relErr == nil && !strings.HasPrefix(rel, "..") {
-			relPath = rel
-		}
-		recordFile(DownloadedFile{
-			Path:         relPath,
-			SizeBytes:    startOffset + nWritten,
-			MD5:          sum,
-			DownloadedAt: time.Now().UTC(),
-		})
-		return nil
+		_ = file.Close()
+		return finishFile(sum, startOffset+nWritten)
 	}
 
 	// Transient failures are retried with a pause: a download hours in is not
@@ -691,9 +807,13 @@ func DownloadGameFiles(
 // the MD5 of what streamed in, and when. The checksum is of what was written,
 // so a file can later be told apart from what it was.
 type DownloadedFile struct {
-	Path         string    `json:"path"` // relative to the game's folder when under it
-	SizeBytes    int64     `json:"size_bytes"`
-	MD5          string    `json:"md5,omitempty"`
+	Path      string `json:"path"` // relative to the game's folder when under it
+	SizeBytes int64  `json:"size_bytes"`
+	MD5       string `json:"md5,omitempty"`
+	// MD5Verified says the checksum above matched the one GOG publishes for
+	// the file. False means unverified, not wrong: most often the file has no
+	// published checksum at all.
+	MD5Verified  bool      `json:"md5_verified,omitempty"`
 	DownloadedAt time.Time `json:"downloaded_at"`
 }
 

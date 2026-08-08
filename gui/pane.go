@@ -268,6 +268,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	narrowTo(db.Game{})
 	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) { prefs.SetString("downloadForm.threads", s) })
 	threadsSelect.SetSelected(prefs.StringWithFallback("downloadForm.threads", "5"))
+	connectionsSelect := widget.NewSelect([]string{"1", "2", "4", "8"}, func(s string) { prefs.SetString("downloadForm.connections", s) })
+	connectionsSelect.SetSelected(prefs.StringWithFallback("downloadForm.connections", "1"))
 
 	extrasCheck := widget.NewCheck("Include extras", func(b bool) { prefs.SetBool("downloadForm.extras", b) })
 	extrasCheck.SetChecked(prefs.BoolWithFallback("downloadForm.extras", true))
@@ -337,6 +339,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			primaryPlatform = "all"
 		}
 		threads, _ := strconv.Atoi(threadsSelect.Selected)
+		connections, _ := strconv.Atoi(connectionsSelect.Selected)
 		return queueDownloads(dm, games, func(game db.Game) queuedDownload {
 			return queuedDownload{
 				authService: authService, game: game, downloadPath: downloadPathEntry.Text,
@@ -346,7 +349,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 				resumeFlag: resumeCheck.Checked, flattenFlag: flattenCheck.Checked,
 				skipPatchesFlag: skipPatchesCheck.Checked, keepLatestFlag: keepLatestCheck.Checked,
 				rommLayoutFlag: rommCheck.Checked, lutrisLayoutFlag: lutrisCheck.Checked,
-				numThreads: threads,
+				numThreads:  threads,
+				connections: connections,
 			}
 		}), nil
 	}
@@ -402,6 +406,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		widget.NewFormItem("Platforms", platformGroup),
 		widget.NewFormItem("Languages", langGroup),
 		widget.NewFormItem("Threads", threadsSelect),
+		widget.NewFormItem("Connections", connectionsSelect),
 	)
 	// Seven switches in a grid say nothing about what they do to each other.
 	// Grouped, each heading answers that.

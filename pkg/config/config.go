@@ -16,10 +16,12 @@ type Config struct {
 	DLCs        bool   `json:"dlcs"`
 	Resume      bool   `json:"resume"`
 	Threads     int    `json:"threads"`
-	Flatten     bool   `json:"flatten"`
-	SkipPatches bool   `json:"skip_patches"`
-	KeepLatest  bool   `json:"keep_latest"`
-	RommLayout  bool   `json:"romm_layout"`
+	// Connections is how many HTTP connections may fetch one file at once.
+	Connections int  `json:"connections"`
+	Flatten     bool `json:"flatten"`
+	SkipPatches bool `json:"skip_patches"`
+	KeepLatest  bool `json:"keep_latest"`
+	RommLayout  bool `json:"romm_layout"`
 	// LutrisLayout arranges downloads the way Lutris caches installers.
 	LutrisLayout bool `json:"lutris_layout"`
 }
@@ -27,13 +29,14 @@ type Config struct {
 // Defaults returns the built-in default configuration.
 func Defaults() Config {
 	return Config{
-		Language: "en",
-		Platform: "windows",
-		Extras:   true,
-		DLCs:     true,
-		Resume:   true,
-		Threads:  5,
-		Flatten:  true,
+		Language:    "en",
+		Platform:    "windows",
+		Extras:      true,
+		DLCs:        true,
+		Resume:      true,
+		Threads:     5,
+		Connections: 1,
+		Flatten:     true,
 	}
 }
 

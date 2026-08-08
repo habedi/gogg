@@ -71,8 +71,10 @@ Gogg has real users. The following must stay backward compatible:
   `gui.go`). Each command wires flags and calls into `client/` or `db/`.
 - `client/`: GOG API client; contains `login.go` (OAuth via chromedp), `games.go` (owned-game listing),
   `catalogue.go` (sync), `products.go` (owned-products listing with artwork and purchase order),
-  `download.go` (file downloads with progress and the `files.json` manifest), `prune.go` (old-installer removal),
-  `metadata.go` (store-page lookups), `data.go` (data parsing), and `rate_limiter.go` (request throttling).
+  `download.go` (file downloads with progress and the `files.json` manifest), `parallel.go` (range connections
+  within one file), `checksum.go` (verification against GOG's published MD5), `stall.go` (the silence watchdog),
+  `lutris.go` (the Lutris slug and cache layout), `prune.go` (old-installer removal), `metadata.go` (store-page
+  lookups), `data.go` (data parsing), and `rate_limiter.go` (request throttling).
 - `auth/`: Authentication service and interfaces wrapping GOG OAuth token lifecycle.
 - `db/`: GORM/SQLite persistence; contains `db.go` (connection setup), `game.go` (game model), `token.go` (token
   model), `tag.go` (user marks such as favorite and hidden), `metadata.go` (stored store-page lookups), and
@@ -121,8 +123,14 @@ Tokens are stored via `db/token.go` and retrieved by `auth/services.go` for subs
 `client/download.go` fetches file metadata, checks for existing partial downloads, and streams bytes with a
 `progressbar` wrapper. Resumption is done via HTTP range requests against `.part` files that are renamed into
 place on completion. Transient failures (5xx, 429, and dropped connections) are retried with backoff; refusals
-such as 404 are not. Every completed download records exact byte sizes, streaming MD5 checksums, and timestamps
-in `files.json` beside `metadata.json`.
+such as 404 are not. A transfer that goes silent for `client.StallTimeout` is cut off by a watchdog and counts
+as transient. With `DownloadOptions.Connections` above one, a file of 32 MB or more is split into regions that
+several range requests fill at once (`client/parallel.go`); a sidecar beside the `.part` file records finished
+chunks, and a `.part` file with a sidecar must never be appended to, because it has holes. Every completed
+download records exact byte sizes, streaming MD5 checksums, and timestamps
+in `files.json` beside `metadata.json`. When GOG publishes an MD5 for a file (the downlink endpoint in
+`client/checksum.go`), the streamed checksum is verified against it: a mismatch deletes the file and retries,
+and a missing manifest skips verification rather than failing the download.
 
 ### Build Tags
 

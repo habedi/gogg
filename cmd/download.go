@@ -143,6 +143,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	var language, platformName string
 	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool
 	var numThreads int
+	var connections int
 
 	cmd := &cobra.Command{
 		Use:   "download [gameID] [downloadDir]",
@@ -171,7 +172,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				}
 			}
 			ctx := cmd.Context()
-			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag, numThreads)
+			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag, numThreads, connections)
 		},
 	}
 
@@ -181,6 +182,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cmd.Flags().BoolVarP(&dlcFlag, "dlcs", "d", cfg.DLCs, "Include DLC files? [true, false]")
 	cmd.Flags().BoolVarP(&resumeFlag, "resume", "r", cfg.Resume, "Resume downloading? [true, false]")
 	cmd.Flags().IntVarP(&numThreads, "threads", "t", cfg.Threads, "Number of worker threads to use for downloading [1-20]")
+	cmd.Flags().IntVar(&connections, "connections", cfg.Connections, "Number of connections per file for large files [1-8]; more than one splits a file into ranges downloaded at once")
 	cmd.Flags().BoolVarP(&flattenFlag, "flatten", "f", cfg.Flatten, "Flatten the directory structure when downloading? [true, false]")
 	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", cfg.SkipPatches, "Skip patches when downloading? [true, false]")
 	cmd.Flags().BoolVar(&keepLatestFlag, "keep-latest", cfg.KeepLatest, "Remove older installer versions after successful download (keep only highest version)")
@@ -190,12 +192,21 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	return cmd
 }
 
-func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool, numThreads int) {
+func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool, numThreads, connections int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
 	if err := validation.ValidateThreadCount(numThreads); err != nil {
 		fmt.Println(clierr.New(clierr.Validation, "Invalid thread count", err).Message)
+		return
+	}
+	// Configs written before the key existed decode to zero, which means
+	// the setting was never chosen; that is the single stream, not an error.
+	if connections == 0 {
+		connections = 1
+	}
+	if err := validation.ValidateConnectionCount(connections); err != nil {
+		fmt.Println(clierr.New(clierr.Validation, "Invalid connection count", err).Message)
 		return
 	}
 	if err := validation.ValidatePlatform(platformName); err != nil {
@@ -250,6 +261,7 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		fmt.Println("Error parsing game data from local catalogue.")
 		return
 	}
+	parsedGameData.ID = game.ID
 
 	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
 
@@ -260,7 +272,7 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 			Language: languageFullName, Platform: platformName,
 			Extras: extrasFlag, DLCs: dlcFlag, Resume: resumeFlag,
 			Flatten: flattenFlag, SkipPatches: skipPatchesFlag, RomMLayout: rommLayoutFlag,
-			LutrisLayout: lutrisLayoutFlag, Threads: numThreads,
+			LutrisLayout: lutrisLayoutFlag, Threads: numThreads, Connections: connections,
 		}, progressWriter)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

@@ -58,7 +58,7 @@ func captureStdout2(f func()) string {
 func TestExecuteDownload_InvalidLanguagePrintsList(t *testing.T) {
 	// Use invalid language code to trigger early return and listing of supported languages
 	out := captureStdout2(func() {
-		executeDownload(context.Background(), nil, 1, filepath.Join(t.TempDir(), "dl"), "xx", "windows", true, true, true, true, false, false, false, false, 2)
+		executeDownload(context.Background(), nil, 1, filepath.Join(t.TempDir(), "dl"), "xx", "windows", true, true, true, true, false, false, false, false, 2, 1)
 	})
 	if out == "" {
 		t.Fatalf("expected output for invalid language")

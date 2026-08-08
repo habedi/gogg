@@ -219,6 +219,7 @@ type queuedDownload struct {
 	rommLayoutFlag   bool
 	lutrisLayoutFlag bool
 	numThreads       int
+	connections      int
 }
 
 func NewDownloadManager() *DownloadManager {
