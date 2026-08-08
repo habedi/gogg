@@ -50,6 +50,7 @@ func libraryCollections() []sidebarRow {
 		{Title: "Updates", Icon: theme.ViewRefreshIcon(), Query: "updates:yes", HideWhenEmpty: true},
 		{Title: "Recently updated", Icon: theme.HistoryIcon(), Query: "updated:>30d", HideWhenEmpty: true},
 		{Title: "Large games", Icon: theme.FileIcon(), Query: "size:>10gb", HideWhenEmpty: true},
+		{Title: "Not downloadable", Icon: theme.WarningIcon(), Query: "downloadable:no", HideWhenEmpty: true},
 		{Title: "Favorites", Icon: iconStarOutline, Query: "favorite:yes", HideWhenEmpty: true},
 		{Title: "Hidden", Icon: theme.VisibilityOffIcon(), Query: "hidden:yes", HideWhenEmpty: true},
 

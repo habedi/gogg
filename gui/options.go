@@ -5,9 +5,28 @@ import (
 	"sort"
 	"strings"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/client"
 )
+
+// The download form's single-value preference keys, named once because the
+// same key and default are read from more than one file (the form, the
+// facts index, and the update-status reader). A default kept in one place
+// cannot drift between the readers.
+const (
+	prefFormLanguage = "downloadForm.language"
+	prefFormPlatform = "downloadForm.platform"
+	prefFormExtras   = "downloadForm.extras"
+	prefFormDLCs     = "downloadForm.dlcs"
+)
+
+func formLanguage(p fyne.Preferences) string { return p.StringWithFallback(prefFormLanguage, "en") }
+func formPlatform(p fyne.Preferences) string {
+	return p.StringWithFallback(prefFormPlatform, "windows")
+}
+func formExtras(p fyne.Preferences) bool { return p.BoolWithFallback(prefFormExtras, true) }
+func formDLCs(p fyne.Preferences) bool   { return p.BoolWithFallback(prefFormDLCs, true) }
 
 // languageCodes maps a language's display name back to the code stored in
 // preferences. Names are what GOG puts in the game data, codes are what the

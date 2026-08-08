@@ -74,8 +74,8 @@ func statusesFor(dm *DownloadManager, games []db.Game) gameStatuses {
 	includeDLCUpdates := prefs.BoolWithFallback("downloadForm.includeDLCUpdates", false)
 	scanDirs := prefs.BoolWithFallback("downloadForm.scanDirsForDownloads", true)
 	includePatchUpdates := prefs.BoolWithFallback("downloadForm.includePatchUpdates", false)
-	langPref := prefs.StringWithFallback("downloadForm.language", "en")
-	platformPref := prefs.StringWithFallback("downloadForm.platform", "windows")
+	langPref := formLanguage(prefs)
+	platformPref := formPlatform(prefs)
 
 	found := make(gameStatuses, len(games))
 	for _, game := range games {
@@ -208,17 +208,23 @@ type libraryState struct {
 	statusURI fyne.URI
 	facts     map[int]gameFacts
 	sizes     map[sizeCacheKey]int64
-	tags      map[int][]string
-	genres    map[int][]string
+	// catalogueSizes is a game's size for filtering: the largest single
+	// platform it installs to, in any language, extras and DLCs included. It
+	// does not depend on the download-form settings, so a "large games"
+	// filter answers the same whichever platform the user has chosen.
+	catalogueSizes map[int]int64
+	tags           map[int][]string
+	genres         map[int][]string
 }
 
 func newLibraryState() *libraryState {
 	return &libraryState{
-		statuses: make(map[int]updateStatus),
-		facts:    make(map[int]gameFacts),
-		sizes:    make(map[sizeCacheKey]int64),
-		tags:     make(map[int][]string),
-		genres:   make(map[int][]string),
+		statuses:       make(map[int]updateStatus),
+		facts:          make(map[int]gameFacts),
+		sizes:          make(map[sizeCacheKey]int64),
+		catalogueSizes: make(map[int]int64),
+		tags:           make(map[int][]string),
+		genres:         make(map[int][]string),
 	}
 }
 

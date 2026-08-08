@@ -3,7 +3,6 @@ package gui
 import (
 	"context"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -203,11 +202,11 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 	generateBtn.OnTapped = func() {
 		dir := dirEntry.Text
 		if dir == "" {
-			dialog.ShowError(errors.New("please select a directory"), win)
+			showErrorDialog(win, "Please select a directory", nil)
 			return
 		}
 		if _, statErr := os.Stat(dir); statErr != nil {
-			dialog.ShowError(fmt.Errorf("directory does not exist: %w", statErr), win)
+			showErrorDialog(win, "That directory does not exist", statErr)
 			return
 		}
 
@@ -224,7 +223,7 @@ func HashUI(win fyne.Window) fyne.CanvasObject {
 			numThreads, _ := strconv.Atoi(threadsSelect.Selected)
 			if err := generateHashFilesUI(dir, algoSelect.Selected, recursiveCheck.Checked,
 				numThreads, resultsData, progressBar); err != nil {
-				runOnMain(func() { dialog.ShowError(err, win) })
+				runOnMain(func() { showErrorDialog(win, "Could not generate the hashes", err) })
 			}
 		}()
 	}

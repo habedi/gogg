@@ -84,7 +84,7 @@ func (q Query) Needs() Needs {
 	var needs Needs
 	for _, t := range q.terms {
 		switch t.field {
-		case "platform":
+		case "platform", "downloadable":
 			needs.Platforms = true
 		case "lang":
 			needs.Languages = true
@@ -204,6 +204,10 @@ func (t term) match(facts Facts) bool {
 		return facts.Downloaded == t.flag
 	case "updates":
 		return facts.HasUpdate == t.flag
+	case "downloadable":
+		// A game GOG serves installer files for has platforms; one it does
+		// not, such as an online, Galaxy-only title, has none.
+		return (len(facts.Platforms) > 0) == t.flag
 	case "platform":
 		return containsFold(facts.Platforms, t.value)
 	case "lang":
@@ -272,7 +276,7 @@ func anyContainsFold(values []string, want string) bool {
 
 // flagFields are the yes-or-no fields; valueFields take something to compare.
 var (
-	flagFields  = map[string]bool{"downloaded": true, "updates": true, "favorite": true, "hidden": true}
+	flagFields  = map[string]bool{"downloaded": true, "updates": true, "favorite": true, "hidden": true, "downloadable": true}
 	valueFields = map[string]bool{
 		"title": true, "platform": true, "lang": true, "tag": true,
 		"size": true, "genre": true, "updated": true,

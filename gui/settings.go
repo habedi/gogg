@@ -101,7 +101,7 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 	selectSoundBtn := widget.NewButton("Select Custom Sound...", func() {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
-				dialog.ShowError(err, win)
+				showErrorDialog(win, "Could not open the file picker", err)
 				return
 			}
 			if reader == nil {
@@ -133,7 +133,7 @@ func SettingsTabUI(win fyne.Window, st stores, onSignOut func()) fyne.CanvasObje
 		path := prefs.String("soundFilePath")
 		if path != "" {
 			if err := validateAudioFile(path); err != nil {
-				dialog.ShowError(fmt.Errorf("can't play sound: %w", err), win)
+				showErrorDialog(win, "Could not play the test sound", err)
 				return
 			}
 		}

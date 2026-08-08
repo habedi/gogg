@@ -30,7 +30,7 @@ func TestLibraryCollections_AreQueries(t *testing.T) {
 
 	require.Equal(t, []string{
 		"All games", "Downloaded", "Not downloaded", "Updates", "Recently updated",
-		"Large games", "Favorites", "Hidden",
+		"Large games", "Not downloadable", "Favorites", "Hidden",
 		"Windows", "macOS", "Linux",
 		"Action", "Adventure", "Role-playing", "Strategy", "Shooter",
 		"Simulation", "Racing", "Puzzle", "Indie",

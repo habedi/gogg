@@ -237,7 +237,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		}
 		prefs.SetString("downloadForm.languages", strings.Join(codes, ","))
 		if len(codes) > 0 {
-			prefs.SetString("downloadForm.language", codes[0])
+			prefs.SetString(prefFormLanguage, codes[0])
 		}
 	}
 	// The boxes show platform names but store the keys the rest of gogg
@@ -246,13 +246,38 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		keys := platformKeys(labels)
 		prefs.SetString("downloadForm.platforms", strings.Join(keys, ","))
 		if len(keys) > 0 {
-			prefs.SetString("downloadForm.platform", keys[0])
+			prefs.SetString(prefFormPlatform, keys[0])
 		}
 	}
 
-	langGroup := widget.NewCheckGroup(nil, nil)
+	langGrid := newCheckGrid(3)
 	platformGroup := widget.NewCheckGroup(nil, nil)
 	platformGroup.Horizontal = true
+
+	// The download button is assigned below, but narrowTo, which runs on
+	// every selection, has to reach it to enable or disable it.
+	var downloadBtn *widget.Button
+	shownDownloadable := true
+
+	// refreshDownloadButton keeps the button's label and enabled state in
+	// line with the selection: a batch is always startable, and a single
+	// game only when GOG has files for it to download.
+	refreshDownloadButton := func() {
+		if downloadBtn == nil {
+			return
+		}
+		if n := sel.count(); n > 0 {
+			downloadBtn.SetText(fmt.Sprintf("Download (%d)", n))
+			downloadBtn.Enable()
+			return
+		}
+		downloadBtn.SetText("Download")
+		if shownDownloadable {
+			downloadBtn.Enable()
+		} else {
+			downloadBtn.Disable()
+		}
+	}
 
 	// narrowTo restricts the choices to what a game actually offers. A zero
 	// game restores the full lists.
@@ -262,12 +287,17 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			languages = offeredLanguages(parsed)
 			platforms = offeredPlatforms(parsed)
 		}
-		bindCheckGroup(langGroup, languageChoices(languages),
+		// No platforms means GOG serves no installer files, so there is
+		// nothing to download; a zero game (no selection) is not disabled,
+		// its button is hidden with the rest of the pane.
+		shownDownloadable = game.ID == 0 || len(platforms) > 0
+		bindCheckGrid(langGrid, languageChoices(languages),
 			languageNamesFor(prefs.StringWithFallback("downloadForm.languages",
-				prefs.StringWithFallback("downloadForm.language", "en"))), onLanguagesPicked)
+				formLanguage(prefs))), onLanguagesPicked)
 		bindCheckGroup(platformGroup, platformGroupLabels(platforms),
 			platformLabels(splitCSV(prefs.StringWithFallback("downloadForm.platforms",
-				prefs.StringWithFallback("downloadForm.platform", "windows")))), onPlatformsPicked)
+				formPlatform(prefs)))), onPlatformsPicked)
+		refreshDownloadButton()
 	}
 	narrowTo(db.Game{})
 	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) { prefs.SetString("downloadForm.threads", s) })
@@ -275,10 +305,10 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	connectionsSelect := widget.NewSelect([]string{"1", "2", "4", "8"}, func(s string) { prefs.SetString("downloadForm.connections", s) })
 	connectionsSelect.SetSelected(prefs.StringWithFallback("downloadForm.connections", "1"))
 
-	extrasCheck := widget.NewCheck("Include extras", func(b bool) { prefs.SetBool("downloadForm.extras", b) })
-	extrasCheck.SetChecked(prefs.BoolWithFallback("downloadForm.extras", true))
-	dlcsCheck := widget.NewCheck("Include DLCs", func(b bool) { prefs.SetBool("downloadForm.dlcs", b) })
-	dlcsCheck.SetChecked(prefs.BoolWithFallback("downloadForm.dlcs", true))
+	extrasCheck := widget.NewCheck("Include extras", func(b bool) { prefs.SetBool(prefFormExtras, b) })
+	extrasCheck.SetChecked(formExtras(prefs))
+	dlcsCheck := widget.NewCheck("Include DLCs", func(b bool) { prefs.SetBool(prefFormDLCs, b) })
+	dlcsCheck.SetChecked(formDLCs(prefs))
 	resumeCheck := widget.NewCheck("Resume downloads", func(b bool) { prefs.SetBool("downloadForm.resume", b) })
 	resumeCheck.SetChecked(prefs.BoolWithFallback("downloadForm.resume", true))
 	flattenCheck := widget.NewCheck("Flatten directory", func(b bool) { prefs.SetBool("downloadForm.flatten", b) })
@@ -331,7 +361,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		if downloadPathEntry.Text == "" {
 			return batchResult{}, errors.New("download path cannot be empty")
 		}
-		languages := append([]string{}, langGroup.Selected...)
+		languages := langGrid.selected()
 		// The boxes carry display names; downloads want the keys.
 		platforms := platformKeys(platformGroup.Selected)
 		if len(languages) == 0 || len(platforms) == 0 {
@@ -391,7 +421,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			return
 		}
 		if downloadPathEntry.Text == "" {
-			showErrorDialog(win, "Cannot back up saves", errors.New("download path cannot be empty"))
+			showErrorDialog(win, "Could not back up saves", errors.New("download path cannot be empty"))
 			return
 		}
 		game := gameRaw.(db.Game)
@@ -406,10 +436,17 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		if len(games) == 0 {
 			return
 		}
+		// The button is disabled for a single game GOG has no files for, but
+		// Enter on the list reaches here too, so the same case is refused.
+		if len(games) == 1 && sel.count() == 0 && !shownDownloadable {
+			dialog.ShowInformation("Nothing to Download",
+				fmt.Sprintf("GOG serves no downloadable files for %s.", games[0].Title), win)
+			return
+		}
 
 		result, err := queue(games)
 		if err != nil {
-			showErrorDialog(win, "Cannot start download", err)
+			showErrorDialog(win, "Could not start the download", err)
 			return
 		}
 		if len(games) == 1 && result.Queued == 1 {
@@ -418,13 +455,14 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		}
 		dialog.ShowInformation("Downloads", result.summary(), win)
 	}
-	downloadBtn := widget.NewButtonWithIcon("Download", theme.DownloadIcon(), startDownload)
+	downloadBtn = widget.NewButtonWithIcon("Download", theme.DownloadIcon(), startDownload)
 	downloadBtn.Importance = widget.HighImportance
+	refreshDownloadButton()
 
 	form := widget.NewForm(
 		widget.NewFormItem("Download Path", pathContainer),
 		widget.NewFormItem("Platforms", platformGroup),
-		widget.NewFormItem("Languages", langGroup),
+		widget.NewFormItem("Languages", container.NewHScroll(langGrid)),
 		widget.NewFormItem("Threads", threadsSelect),
 		widget.NewFormItem("Connections", connectionsSelect),
 	)
@@ -436,13 +474,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		optionGroup("Where they go", flattenCheck, rommCheck, lutrisCheck),
 	)
 
-	relabel := func() {
-		if n := sel.count(); n > 0 {
-			downloadBtn.SetText(fmt.Sprintf("Download (%d)", n))
-			return
-		}
-		downloadBtn.SetText("Download")
-	}
+	relabel := refreshDownloadButton
 
 	return &downloadForm{
 		options: container.NewVBox(form, widget.NewSeparator(), checkboxes),

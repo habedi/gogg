@@ -29,7 +29,7 @@ func backupSaves(win fyne.Window, authService *auth.Service, game db.Game, outpu
 		token, err := authService.RefreshTokenCtx(context.Background())
 		if err != nil {
 			fyne.Do(func() {
-				showErrorDialog(win, "Cannot back up saves", errors.New("not logged in to GOG; please login first"))
+				showErrorDialog(win, "Could not back up saves", errors.New("not logged in to GOG; please login first"))
 			})
 			return
 		}
@@ -40,7 +40,7 @@ func backupSaves(win fyne.Window, authService *auth.Service, game db.Game, outpu
 			case errors.Is(err, client.ErrCloudSavesUnavailable):
 				notify("Cloud saves", fmt.Sprintf("No cloud saves found for %s.", game.Title))
 			case err != nil:
-				showErrorDialog(win, "Cannot back up saves", err)
+				showErrorDialog(win, "Could not back up saves", err)
 			default:
 				notify("Cloud saves", fmt.Sprintf("Backed up %d save %s for %s.",
 					len(result.Files), pluralize(len(result.Files), "file", "files"), game.Title))

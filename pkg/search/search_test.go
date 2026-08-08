@@ -251,3 +251,23 @@ func TestMatch_UpdatedSince(t *testing.T) {
 	_, err = Parse("updated:whenever")
 	require.Error(t, err, "a moment it cannot read is said, not guessed")
 }
+
+// downloadable filters by whether GOG serves any installer files, which the
+// facts express as platforms: a game with none is not downloadable.
+func TestMatch_Downloadable(t *testing.T) {
+	withFiles := Facts{Title: "Game", Platforms: []string{"windows"}}
+	online := Facts{Title: "Game"} // no platforms, no installers
+
+	yes, err := Parse("downloadable:yes")
+	require.NoError(t, err)
+	require.True(t, yes.Match(withFiles))
+	require.False(t, yes.Match(online))
+
+	no, err := Parse("downloadable:no")
+	require.NoError(t, err)
+	require.False(t, no.Match(withFiles))
+	require.True(t, no.Match(online), "an online-only title is the one downloadable:no finds")
+
+	// It needs the platforms worked out, or it cannot tell.
+	require.True(t, no.Needs().Platforms)
+}

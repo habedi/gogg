@@ -680,7 +680,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				}
 				result, err := form.queue(pending)
 				if err != nil {
-					showErrorDialog(win, "Cannot start downloads", err)
+					showErrorDialog(win, "Could not start the downloads", err)
 					return
 				}
 				dialog.ShowInformation("Downloads", result.summary(), win)

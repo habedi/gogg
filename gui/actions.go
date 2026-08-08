@@ -54,7 +54,7 @@ func RefreshCatalogueAction(win fyne.Window, authService *auth.Service, games db
 				dialog.ShowInformation("Refresh Cancelled", msg, win)
 				SignalCatalogueUpdated() // Signal that a partial update occurred
 			} else if err != nil {
-				showErrorDialog(win, "Failed to refresh catalogue", err)
+				showErrorDialog(win, "Could not refresh the catalogue", err)
 			} else {
 				games, dbErr := games.List(context.Background())
 				if dbErr != nil {
@@ -75,7 +75,7 @@ func ExportCatalogueAction(win fyne.Window, games db.GameRepository, format stri
 	defaultName := fmt.Sprintf("gogg_catalogue.%s", format)
 	fileDialog := dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
 		if err != nil {
-			showErrorDialog(win, "File save error", err)
+			showErrorDialog(win, "Could not save the file", err)
 			return
 		}
 		if uc == nil {
@@ -85,7 +85,7 @@ func ExportCatalogueAction(win fyne.Window, games db.GameRepository, format stri
 
 		games, err := games.List(context.Background())
 		if err != nil {
-			showErrorDialog(win, "Failed to read catalogue from database", err)
+			showErrorDialog(win, "Could not read the catalogue", err)
 			return
 		}
 		if len(games) == 0 {
@@ -113,7 +113,7 @@ func ExportCatalogueAction(win fyne.Window, games db.GameRepository, format stri
 		}
 
 		if exportErr != nil {
-			showErrorDialog(win, "Failed to write export file", exportErr)
+			showErrorDialog(win, "Could not write the export file", exportErr)
 		} else {
 			dialog.ShowInformation("Success", "Data exported successfully.", win)
 		}

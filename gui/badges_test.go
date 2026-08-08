@@ -82,9 +82,11 @@ func TestGameCell_NamesThePlatformsUnderTheTitle(t *testing.T) {
 	require.True(t, cell.platforms.Visible())
 	require.Equal(t, "Windows · macOS · Linux", cell.platforms.Text)
 
-	// A game whose data says nothing does not keep an empty line under it.
+	// A game whose data offers no downloads says so, rather than leaving a
+	// blank line that reads as missing data.
 	bindGameCell(cell, db.Game{ID: 2, Title: "Bare Game"}, rowBinding{sel: newGameSelection()})
-	require.False(t, cell.platforms.Visible())
+	require.True(t, cell.platforms.Visible())
+	require.Equal(t, "No downloads", cell.platforms.Text)
 }
 
 // The pane's title is its headline, so it is set in headline type.

@@ -83,9 +83,11 @@ func TestLibraryTab_SelectingAGameNarrowsTheOptions(t *testing.T) {
 		`{"manualUrl":"/w","name":"setup.exe","size":"1 GB"}]}]],"extras":[],"dlcs":[]}`
 	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Nur Deutsch", Data: germanOnly}))
 
-	language := checkGroupWithOption(t, lt.content, "Deutsch")
-	require.Equal(t, []string{"Deutsch"}, language.Options)
-	require.Equal(t, []string{"Deutsch"}, language.Selected,
+	grids := widgetsOfType[*checkGrid](lt.content)
+	require.Len(t, grids, 1, "the languages are a check grid")
+	language := grids[0]
+	require.Equal(t, []string{"Deutsch"}, language.options)
+	require.Equal(t, []string{"Deutsch"}, language.selected(),
 		"a wanted language the game lacks falls back to what it has")
 
 	platform := checkGroupWithOption(t, lt.content, "Windows")
@@ -173,4 +175,25 @@ func TestPlatformGroupLabels_ShowProperNames(t *testing.T) {
 	// And the stored keys map to labels for pre-ticking the boxes.
 	require.Equal(t, []string{"Windows", "macOS", "Linux"},
 		platformLabels([]string{"windows", "mac", "linux"}))
+}
+
+// The languages are laid out in a three-column grid rather than one tall
+// column, so a game that ships in many of them stays readable.
+func TestLibraryTab_LanguagesAreAThreeColumnGrid(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 1)
+	manyLangs := `{"title":"Many","downloads":[
+		["English",{"windows":[{"manualUrl":"/e","name":"s.exe","size":"1 GB"}]}],
+		["Deutsch",{"windows":[{"manualUrl":"/d","name":"s.exe","size":"1 GB"}]}],
+		["Français",{"windows":[{"manualUrl":"/f","name":"s.exe","size":"1 GB"}]}],
+		["Español",{"windows":[{"manualUrl":"/s","name":"s.exe","size":"1 GB"}]}]],
+		"extras":[],"dlcs":[]}`
+	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Many", Data: manyLangs}))
+
+	grids := widgetsOfType[*checkGrid](lt.content)
+	require.Len(t, grids, 1)
+	require.Equal(t, 3, grids[0].columns, "the languages sit in three columns")
+	require.ElementsMatch(t, []string{"Deutsch", "English", "Español", "Français"}, grids[0].options)
 }

@@ -651,3 +651,23 @@ func TestLibraryTab_MarksASearchItCannotRead(t *testing.T) {
 	lt.searchEntry.SetText("god of war")
 	require.NoError(t, lt.searchEntry.Validate(), "plain words are not a mistake")
 }
+
+// A game GOG serves no installers for cannot be downloaded, so its Download
+// button is disabled; selecting one with files enables it again.
+func TestDownloadButton_DisabledWhenNothingToDownload(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lt, _ := newLibraryFixture(t, 1)
+	download := buttonWithLabel(lt.content, "Download")
+	require.NotNil(t, download)
+
+	// An online-only title: empty downloads.
+	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Online Only",
+		Data: `{"title":"Online Only","downloads":[],"extras":[],"dlcs":[]}`}))
+	require.True(t, download.Disabled(), "a game with no files cannot be downloaded")
+
+	// A game with files: the button comes back.
+	require.NoError(t, lt.selected.Set(db.Game{ID: 2, Title: "Has Files", Data: richGameData}))
+	require.False(t, download.Disabled(), "a game with files can be downloaded")
+}

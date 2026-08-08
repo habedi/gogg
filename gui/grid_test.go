@@ -218,3 +218,27 @@ func TestGameCell_PlatformCaptionIsNotDimmed(t *testing.T) {
 	require.True(t, cell.title.TextStyle.Bold, "the title carries the hierarchy instead")
 	require.False(t, cell.platforms.TextStyle.Bold)
 }
+
+// A game GOG serves no installers for shows "No downloads" in italics rather
+// than a blank line that reads as missing data. A game with platforms names
+// them in normal weight.
+func TestGameCell_SaysWhenAGameHasNoDownloads(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	state := newLibraryState()
+	cell := newGameCell().(*gameCell)
+
+	// An online-only title: GOG's downloads list is empty.
+	bindGameCell(cell, db.Game{ID: 1, Title: "Online Only", Data: `{"title":"Online Only","downloads":[],"extras":[],"dlcs":[]}`},
+		rowBinding{sel: newGameSelection(), state: state})
+	require.True(t, cell.platforms.Visible())
+	require.Equal(t, "No downloads", cell.platforms.Text)
+	require.True(t, cell.platforms.TextStyle.Italic, "the no-downloads note is set apart in italics")
+
+	// A game with files names its platforms, in normal weight.
+	bindGameCell(cell, db.Game{ID: 2, Title: "Has Files", Data: richGameData},
+		rowBinding{sel: newGameSelection(), state: state})
+	require.Contains(t, cell.platforms.Text, "Windows")
+	require.False(t, cell.platforms.TextStyle.Italic)
+}

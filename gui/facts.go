@@ -51,6 +51,37 @@ func (s *libraryState) factsOf(game db.Game) gameFacts {
 func (s *libraryState) forgetParsed() {
 	s.facts = make(map[int]gameFacts)
 	s.sizes = make(map[sizeCacheKey]int64)
+	s.catalogueSizes = make(map[int]int64)
+}
+
+// catalogueSize is a game's size for filtering: the largest single-platform
+// install it offers, in any language, extras and DLCs counted. It does not
+// read the download-form settings, so filtering by size is about the game
+// rather than about the platform the user happens to have picked.
+func (s *libraryState) catalogueSize(game db.Game) int64 {
+	if size, ok := s.catalogueSizes[game.ID]; ok {
+		return size
+	}
+	parsed, err := parseGameData(game.Data)
+	if err != nil {
+		s.catalogueSizes[game.ID] = 0
+		return 0
+	}
+	languages := make(map[string]bool)
+	for _, download := range parsed.Downloads {
+		languages[download.Language] = true
+	}
+
+	var largest int64
+	for language := range languages {
+		for _, platform := range []string{"windows", "mac", "linux"} {
+			if size, err := parsed.EstimateStorageSize(language, platform, true, true); err == nil && size > largest {
+				largest = size
+			}
+		}
+	}
+	s.catalogueSizes[game.ID] = largest
+	return largest
 }
 
 // sizeCacheKey identifies an estimate together with the settings it was
@@ -65,10 +96,10 @@ func (s *libraryState) estimateSize(game db.Game) int64 {
 	prefs := fyne.CurrentApp().Preferences()
 	key := sizeCacheKey{
 		id:       game.ID,
-		lang:     prefs.StringWithFallback("downloadForm.language", "en"),
-		platform: prefs.StringWithFallback("downloadForm.platform", "windows"),
-		extras:   prefs.BoolWithFallback("downloadForm.extras", true),
-		dlcs:     prefs.BoolWithFallback("downloadForm.dlcs", true),
+		lang:     formLanguage(prefs),
+		platform: formPlatform(prefs),
+		extras:   formExtras(prefs),
+		dlcs:     formDLCs(prefs),
 	}
 	if v, ok := s.sizes[key]; ok {
 		return v
@@ -150,7 +181,9 @@ func (s *libraryState) factsFor(game db.Game, needs search.Needs) search.Facts {
 		facts.Genres = s.genres[game.ID]
 	}
 	if needs.Size {
-		facts.SizeBytes = s.estimateSize(game)
+		// The filter asks about the game's size, not the size of what the
+		// current settings would download, so it uses the catalogue size.
+		facts.SizeBytes = s.catalogueSize(game)
 	}
 	if needs.Platforms || needs.Languages {
 		read := s.factsOf(game)

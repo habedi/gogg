@@ -126,12 +126,19 @@ func bindGameCell(cell *gameCell, game db.Game, rb rowBinding) {
 	cell.title.SetText(game.Title)
 	cell.badges.show(game.ID, dm, rb.state)
 
-	if caption := platformCaption(rb.state, game); caption == "" {
-		cell.platforms.Hide()
-	} else {
+	// A game with downloads names its platforms; one with none says so in
+	// italics, rather than leaving a blank that reads as missing data. GOG
+	// serves no installer files for online, Galaxy-delivered titles, so gogg
+	// has nothing to download or a platform to name for them.
+	if caption := platformCaption(rb.state, game); caption != "" {
 		cell.platforms.SetText(caption)
-		cell.platforms.Show()
+		cell.platforms.TextStyle = fyne.TextStyle{}
+	} else {
+		cell.platforms.SetText("No downloads")
+		cell.platforms.TextStyle = fyne.TextStyle{Italic: true}
 	}
+	cell.platforms.Refresh()
+	cell.platforms.Show()
 
 	bindCheck(cell.check, sel.has(game.ID), func(checked bool) {
 		sel.set(game.ID, checked)
