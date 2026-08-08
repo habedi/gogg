@@ -154,17 +154,19 @@ DEBUG_GOGG=false gogg file size 1207658924 --platform=windows --lang=en --dlcs=t
 ### GUI Screenshots
 
 <div align="center">
-  <img alt="Game Library" src="docs/screenshots/v0.4.2/5.png" width="100%">
+  <img alt="Game Library" src="docs/screenshots/v0.5.0/6.png" width="100%">
 </div>
 
 <details>
 <summary>Show more screenshots</summary>
 
 <div align="center">
-  <img alt="File Operations" src="docs/screenshots/v0.4.2/2.png" width="100%">
-  <img alt="Download Games" src="docs/screenshots/v0.4.2/8.png" width="100%">
-  <img alt="About" src="docs/screenshots/v0.4.2/14.png" width="100%">
-  <img alt="Download Progress" src="docs/screenshots/v0.4.2/9.png" width="100%">
+  <img alt="Start 1" src="docs/screenshots/v0.5.0/1.png" width="100%">
+  <img alt="Start 2" src="docs/screenshots/v0.5.0/2.png" width="100%">
+  <img alt="Settings" src="docs/screenshots/v0.5.0/3.png" width="100%">
+  <img alt="Downloads" src="docs/screenshots/v0.5.0/4.png" width="100%">
+  <img alt="Refreshing Library" src="docs/screenshots/v0.5.0/5.png" width="100%">
+  <img alt="Downloaded Games" src="docs/screenshots/v0.5.0/7.png" width="100%">
 </div>
 
 </details>
