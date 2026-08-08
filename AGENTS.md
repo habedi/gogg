@@ -140,7 +140,7 @@ Fyne dependency. Use `-tags headless` when running in environments without a dis
 
 ## Go Conventions
 
-- Go version: 1.24 (as declared in `go.mod`).
+- Go version: 1.25 (as declared in `go.mod`).
 - Formatting is enforced by `gofmt` (via `make format`) and optionally `gofumpt` (via `make gofumpt`). Run
   `make format` before committing.
 - Naming follows Go standard conventions: `PascalCase` for exported identifiers, `camelCase` for unexported

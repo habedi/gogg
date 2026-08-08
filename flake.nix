@@ -64,7 +64,7 @@
 
             # The hash of what go mod vendor produces for go.mod and go.sum.
             # When the dependencies change, nix build prints the new value to put here.
-            vendorHash = "sha256-4cqeW3Hu9bab2xbE4eLCrZ595xiknmxdt8IKs2CtIdA=";
+            vendorHash = "sha256-V+KqDCQN4hk2m4hLgyJIGVg9RAr+OSvKsHNGFjJIBTo=";
 
             tags = [ "headless" ];
             env.CGO_ENABLED = "1";
