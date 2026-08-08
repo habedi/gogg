@@ -10,6 +10,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// isolatedConfigPath points the config file at a temporary location on every
+// platform and returns that path. os.UserConfigDir, which Path builds on,
+// reads XDG_CONFIG_HOME on Linux, HOME/Library/Application Support on macOS,
+// and %AppData% on Windows, so all three are redirected. The earlier tests
+// set only XDG_CONFIG_HOME and wrote to a hardcoded "gogg" folder, which
+// passed on Linux but read the wrong location on macOS and Windows.
+func isolatedConfigPath(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	t.Setenv("HOME", tmp)
+	t.Setenv("AppData", tmp)
+	p, err := Path()
+	require.NoError(t, err)
+	return p
+}
+
 func TestDefaults(t *testing.T) {
 	cfg := Defaults()
 	assert.Equal(t, "en", cfg.Language)
@@ -25,21 +42,17 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestLoad_NoFile(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "cfg"))
+	isolatedConfigPath(t)
 	cfg := Load()
 	// Should return defaults when file doesn't exist.
 	assert.Equal(t, Defaults(), cfg)
 }
 
 func TestLoad_ValidFile(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir := filepath.Join(tmp, "gogg")
-	require.NoError(t, os.MkdirAll(dir, 0o700))
+	p := isolatedConfigPath(t)
+	require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o700))
 	data := `{"language":"fr","platform":"linux","extras":false,"dlcs":false,"threads":3}`
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.json"), []byte(data), 0o600))
+	require.NoError(t, os.WriteFile(p, []byte(data), 0o600))
 
 	cfg := Load()
 	assert.Equal(t, "fr", cfg.Language)
@@ -53,20 +66,16 @@ func TestLoad_ValidFile(t *testing.T) {
 }
 
 func TestLoad_InvalidJSON(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir := filepath.Join(tmp, "gogg")
-	require.NoError(t, os.MkdirAll(dir, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.json"), []byte("not json"), 0o600))
+	p := isolatedConfigPath(t)
+	require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o700))
+	require.NoError(t, os.WriteFile(p, []byte("not json"), 0o600))
 
 	cfg := Load()
 	assert.Equal(t, Defaults(), cfg)
 }
 
 func TestSave_RoundTrip(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
+	isolatedConfigPath(t)
 
 	want := Config{
 		Language:    "de",
@@ -98,9 +107,8 @@ func TestSave_RoundTrip(t *testing.T) {
 }
 
 func TestSave_CreatesDir(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-	// gogg dir does not exist yet; Save must create it.
+	isolatedConfigPath(t)
+	// The config directory does not exist yet; Save must create it.
 	require.NoError(t, Save(Defaults()))
 	p, err := Path()
 	require.NoError(t, err)
