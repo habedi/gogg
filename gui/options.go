@@ -54,6 +54,14 @@ func languageChoices(offered []string) []string {
 		known = allLanguageNames()
 	}
 	sort.Strings(known)
+	// English leads when the game offers it, since it is the language most
+	// downloads default to; the rest stay in alphabetical order behind it.
+	for i, name := range known {
+		if name == "English" {
+			known = append([]string{"English"}, append(known[:i:i], known[i+1:]...)...)
+			break
+		}
+	}
 	return known
 }
 

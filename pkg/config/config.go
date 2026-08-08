@@ -37,6 +37,7 @@ func Defaults() Config {
 		Threads:     5,
 		Connections: 1,
 		Flatten:     true,
+		SkipPatches: true,
 	}
 }
 

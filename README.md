@@ -98,7 +98,7 @@ Run `gogg -h` to see the available commands and options.
 | [download_all_games.sh](docs/examples/download_all_games.sh)                             | Bash script to download all games user owns                         |
 | [simple_example.sh](docs/examples/simple_example.sh)                                     | Simple examples of how to use Gogg from the command line            |
 
-##### Login to GOG
+##### Log in to GOG
 
 ```bash
 # First-time using Gogg, you need to log in to GOG to authenticate
@@ -132,7 +132,7 @@ gogg download 1207658924 ./games --platform=windows --lang=en --dlcs=true --extr
  --resume=true --threads 5 --flatten=true --keep-latest=true
 ```
 
-##### File Hashes (For Verification)
+##### File Hashes (for Verification)
 
 ```bash
 # Will show the SHA1 hash of the downloaded files for `The Witcher: Enhanced Edition`

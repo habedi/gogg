@@ -14,7 +14,7 @@ Use the `login` command to log in to your GOG account the first time you use Gog
 
 ```sh
 gogg login
-````
+```
 
 > [\!IMPORTANT]
 > The current Gogg release might need [Google Chrome](https://www.google.com/chrome/),
@@ -27,7 +27,7 @@ gogg login
 > Google Chrome or Chromium browser when `gogg login` is run.
 > This is needed if the browser isn't already in your system `PATH`.
 >
-> **For Chrome:**
+> For Chrome, add the browser to your PATH:
 >
 > ```powershell
 > $env:PATH += ";C:\Program Files\Google\Chrome\Application\"
@@ -35,7 +35,7 @@ gogg login
 > gogg.exe login
 > ```
 >
-> **For Chromium:**
+> For Chromium, add the browser to your PATH:
 >
 > ```powershell
 > $env:PATH += ";c:\Program Files\Chromium\Application\"
@@ -43,7 +43,7 @@ gogg login
 > gogg.exe login
 > ```
 >
-> **For Microsoft Edge:**
+> For Microsoft Edge, add the browser to your PATH:
 >
 > ```powershell
 > $env:PATH += ";C:\Program Files (x86)\Microsoft\Edge\Application\"
@@ -137,13 +137,13 @@ The `download` command supports the following additional options:
 - `--platform`: Filter the files to be downloaded by platform (all, windows, mac, linux) (default is windows)
 - `--lang`: Filter the files to be downloaded by language (en, fr, de, es, it, ru, pl, pt-BR, zh-Hans, ja, ko) (default is en)
 - `--dlcs`: Include DLC files in the download (default is true)
-- `--extras`: Include extra files in the download like soundtracks, wallpapers, etc. (default is true)
+- `--extras`: Include extra files in the download such as soundtracks and wallpapers (default is true)
 - `--resume`: Resume interrupted downloads (default is true)
 - `--threads`: Number of worker threads to use for downloading (default is 5)
 - `--connections`: Number of connections per file (1 to 8, default is 1); more than one splits a large file into
   ranges downloaded at once, which can speed up download for large files
 - `--flatten`: Flatten the directory structure of the downloaded files (default is true)
-- `--skip-patches`: Skip patches when downloading (default is false)
+- `--skip-patches`: Skip patches when downloading (default is true)
 - `--keep-latest`: After a successful download, remove older installer versions and keep only the latest version (default is false)
 - `--romm`: Use RomM compatible folder layout `platform/game` for better integration with ROM Manager (default is false)
 - `--lutris`: Use Lutris compatible folder layout `game-slug/gog` (default is false); pointed at Lutris's
@@ -171,7 +171,7 @@ gogg download <game_id> <download_dir> --platform=all --lang=en --dlcs=true --ex
 
 The `saves` command downloads a game's GOG GALAXY cloud saves into a local directory.
 It only reads from the cloud (with no changes or deleting of what GOG stores).
-It can be used to back up the GOG GALAXY's save files locally.
+It can be used to back up the GOG GALAXY save files locally.
 
 ```sh
 gogg saves <game_id> <output_dir>
@@ -206,7 +206,7 @@ All keys are optional; this example shows every supported key with its built-in 
   "threads": 5,
   "connections": 1,
   "flatten": true,
-  "skip_patches": false,
+  "skip_patches": true,
   "keep_latest": false,
   "romm_layout": false,
   "lutris_layout": false

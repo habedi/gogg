@@ -10,8 +10,14 @@ import (
 )
 
 func TestLanguageChoices_OffersWhatTheGameShipsIn(t *testing.T) {
-	require.Equal(t, []string{"Deutsch", "English"},
+	// English leads when offered; the rest follow in alphabetical order.
+	require.Equal(t, []string{"English", "Deutsch"},
 		languageChoices([]string{"English", "Deutsch"}))
+	require.Equal(t, []string{"English", "Deutsch", "Français"},
+		languageChoices([]string{"Français", "Deutsch", "English"}))
+	// A game without English keeps plain alphabetical order.
+	require.Equal(t, []string{"Deutsch", "Français"},
+		languageChoices([]string{"Français", "Deutsch"}))
 }
 
 // GOG ships games in languages gogg has no code for. Offering nothing at all
