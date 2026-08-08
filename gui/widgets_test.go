@@ -107,11 +107,17 @@ func TestEmptyStates_AllSayItTheSameWay(t *testing.T) {
 
 	db.Path = filepath.Join(t.TempDir(), "games.db")
 	require.NoError(t, db.InitDB())
-	t.Cleanup(func() { _ = db.CloseDB() })
 	win := test.NewWindow(nil)
 	t.Cleanup(win.Close)
 
 	signedOut := LibraryTabUI(win, nil, &DownloadManager{Tasks: binding.NewUntypedList()}, openStores(), func() {})
+	// The signed-out pane is a static empty state that needs no database once
+	// built, so this connection is closed before the fixture opens its own.
+	// Two open connections to two temp databases would leave the first file
+	// locked on Windows, where an open file cannot be deleted, and its temp
+	// dir cleanup then fails the test.
+	require.NoError(t, db.CloseDB())
+
 	// A signed-in library with nothing picked out of the list.
 	signedIn, _ := newLibraryFixture(t, 2)
 

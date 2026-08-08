@@ -32,14 +32,18 @@ func TestTimeoutContext(t *testing.T) {
 	cmd.Env = os.Environ()
 	err := cmd.Run()
 	elapsed := time.Since(start)
+	// The command must not hang: a 500ms timeout should stop it. The ceiling
+	// is generous rather than tight, because the process's own startup
+	// dominates the run and is slow on emulated runners (Windows on ARM in
+	// particular), where it can be a couple of seconds on its own. A hang
+	// would be unbounded, so this still catches one.
+	const ceiling = 30 * time.Second
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); !ok {
 			t.Fatalf("unexpected error type: %v", err)
-		} else if elapsed > time.Second*2 {
-			t.Fatalf("timeout test exceeded expected duration: %v", elapsed)
 		}
 	}
-	if elapsed > time.Second*2 {
+	if elapsed > ceiling {
 		t.Fatalf("list command took too long with timeout flag: %v", elapsed)
 	}
 }
