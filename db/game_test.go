@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/habedi/gogg/db"
@@ -139,4 +140,19 @@ func TestSearchGamesByName_ReturnsEmptyForNoMatches(t *testing.T) {
 	games, err := db.SearchGamesByName("Nonexistent")
 	require.NoError(t, err)
 	assert.Empty(t, games)
+}
+
+// The package-level helpers guard against being called before the database
+// is opened, rather than panicking on a nil handle.
+func TestDBHelpers_RefuseWhenNotInitialized(t *testing.T) {
+	saved := db.Db
+	db.Db = nil
+	t.Cleanup(func() { db.Db = saved })
+
+	require.Error(t, db.EmptyCatalogue())
+	_, err := db.SearchGamesByName("x")
+	require.Error(t, err)
+	_, err = db.AllGameMetadata(context.Background())
+	require.Error(t, err)
+	require.Error(t, db.DeleteTokenRecord())
 }

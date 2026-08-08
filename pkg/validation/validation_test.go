@@ -94,3 +94,29 @@ func TestValidatePlatform(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateConnectionCount(t *testing.T) {
+	for _, n := range []int{MinConnections, 4, MaxConnections} {
+		if err := ValidateConnectionCount(n); err != nil {
+			t.Errorf("ValidateConnectionCount(%d) unexpected error: %v", n, err)
+		}
+	}
+	for _, n := range []int{0, -1, MaxConnections + 1} {
+		if err := ValidateConnectionCount(n); err == nil {
+			t.Errorf("ValidateConnectionCount(%d) expected an error", n)
+		}
+	}
+}
+
+func TestValidateLanguageCode(t *testing.T) {
+	codes := map[string]string{"en": "English", "de": "Deutsch"}
+	if err := ValidateLanguageCode("en", codes); err != nil {
+		t.Errorf("known code should validate: %v", err)
+	}
+	if err := ValidateLanguageCode("xx", codes); err == nil {
+		t.Error("unknown code should fail")
+	}
+	if err := ValidateLanguageCode("", codes); err == nil {
+		t.Error("empty code should fail")
+	}
+}
