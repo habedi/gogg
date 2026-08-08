@@ -44,7 +44,7 @@ func TestPruneOldInstallerVersions_RemovesOlderVersionsInSameFolder(t *testing.T
 		"some-game/windows/setup_game_1.2.10.exe",
 	)
 
-	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "windows"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", DownloadOptions{Platform: "windows"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,7 +59,7 @@ func TestPruneOldInstallerVersions_KeepsOtherPlatforms(t *testing.T) {
 		"some-game/linux/setup_game_1.2.4.sh",
 	)
 
-	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "all"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", DownloadOptions{Platform: "all"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,7 +76,7 @@ func TestPruneOldInstallerVersions_KeepsOtherPlatformsWhenFlattened(t *testing.T
 		"some-game/setup_game_1.2.4.sh",
 	)
 
-	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "all"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", DownloadOptions{Platform: "all"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -90,7 +90,7 @@ func TestPruneOldInstallerVersions_KeepsDLCInstallers(t *testing.T) {
 		"some-game/dlcs/the-dlc/windows/setup_game_2.0.0.exe",
 	)
 
-	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "windows"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", DownloadOptions{Platform: "windows"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,7 +110,7 @@ func TestPruneOldInstallerVersions_RommLayoutKeepsEachPlatform(t *testing.T) {
 		"windows/some-game/setup_game_1.2.4.exe",
 	)
 
-	if _, err := PruneOldInstallerVersions(root, "Some Game", true, "all"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", DownloadOptions{RomMLayout: true, Platform: "all"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,7 +128,7 @@ func TestPruneOldInstallerVersions_ReportsWhatItRemoved(t *testing.T) {
 		"some-game/setup_game_2.0.0.exe",
 	)
 
-	removed, err := PruneOldInstallerVersions(root, "Some Game", false, "windows")
+	removed, err := PruneOldInstallerVersions(root, "Some Game", DownloadOptions{Platform: "windows"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestPruneOldInstallerVersions_IgnoresNonInstallerFiles(t *testing.T) {
 		"some-game/windows/manual_1.0.0.pdf",
 	)
 
-	if _, err := PruneOldInstallerVersions(root, "Some Game", false, "windows"); err != nil {
+	if _, err := PruneOldInstallerVersions(root, "Some Game", DownloadOptions{Platform: "windows"}); err != nil {
 		t.Fatal(err)
 	}
 

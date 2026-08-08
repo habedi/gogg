@@ -212,6 +212,10 @@ type DownloadOptions struct {
 	SkipPatches bool
 	// RomMLayout arranges folders as platform/game.
 	RomMLayout bool
+	// LutrisLayout arranges folders as <lutris-slug>/gog, the way Lutris
+	// caches installer files, so Lutris finds them instead of re-downloading.
+	// It flattens: every file of the game lands in that one folder.
+	LutrisLayout bool
 	// Threads is how many files are transferred at once.
 	Threads int
 }
@@ -225,7 +229,12 @@ func DownloadGameFiles(
 	gameLanguage, platformName := options.Language, options.Platform
 	extrasFlag, dlcFlag, resumeFlag := options.Extras, options.DLCs, options.Resume
 	flattenFlag, skipPatchesFlag, rommLayout := options.Flatten, options.SkipPatches, options.RomMLayout
+	lutrisLayout := options.LutrisLayout
 	numThreads := options.Threads
+
+	if rommLayout && lutrisLayout {
+		return fmt.Errorf("the RomM and Lutris layouts cannot both be used")
+	}
 
 	// This transport is configured for large file downloads. It has connection
 	// timeouts but no total timeout, preventing failures on slow networks.
@@ -257,7 +266,9 @@ func DownloadGameFiles(
 	// Under the RomM layout those live in <root>/<platform>/<game>; with "all"
 	// they are spread across platforms, so it stays at the top level.
 	manifestDir := filepath.Join(downloadPath, SanitizePath(game.Title))
-	if rommLayout {
+	if lutrisLayout {
+		manifestDir = filepath.Join(downloadPath, LutrisSlug(game.Title), "gog")
+	} else if rommLayout {
 		if plat := strings.ToLower(strings.TrimSpace(platformName)); plat != "" && plat != "all" {
 			manifestDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
 		}
@@ -343,14 +354,19 @@ func DownloadGameFiles(
 			subDir = ""
 		}
 		var targetDir string
-		if rommLayout {
+		switch {
+		case lutrisLayout:
+			// Lutris cache layout: <slug>/gog/, flat, however the file is
+			// grouped by GOG.
+			targetDir = filepath.Join(downloadPath, LutrisSlug(game.Title), "gog")
+		case rommLayout:
 			// RomM layout: platform/game/
 			plat := strings.ToLower(strings.TrimSpace(strings.Split(subDir, string(os.PathSeparator))[0]))
 			if plat == "" {
 				plat = strings.ToLower(platformName)
 			}
 			targetDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
-		} else {
+		default:
 			targetDir = filepath.Join(downloadPath, SanitizePath(game.Title), SanitizePath(subDir))
 		}
 		filePath := filepath.Join(targetDir, fileName)

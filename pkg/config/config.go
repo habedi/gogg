@@ -20,6 +20,8 @@ type Config struct {
 	SkipPatches bool   `json:"skip_patches"`
 	KeepLatest  bool   `json:"keep_latest"`
 	RommLayout  bool   `json:"romm_layout"`
+	// LutrisLayout arranges downloads the way Lutris caches installers.
+	LutrisLayout bool `json:"lutris_layout"`
 }
 
 // Defaults returns the built-in default configuration.

@@ -73,17 +73,20 @@ var installerExtensions = map[string]struct{}{
 // someone's back is how trust in a downloader ends. Roots that do not exist
 // are simply skipped, and files it cannot remove are reported together rather
 // than stopping the sweep.
-func PruneOldInstallerVersions(rootPath, title string, rommLayout bool, platformName string) (removed []string, err error) {
+func PruneOldInstallerVersions(rootPath, title string, options DownloadOptions) (removed []string, err error) {
 	var roots []string
-	if rommLayout {
+	switch {
+	case options.LutrisLayout:
+		roots = []string{filepath.Join(rootPath, LutrisSlug(title), "gog")}
+	case options.RomMLayout:
 		platforms := []string{"windows", "mac", "linux"}
-		if plat := strings.ToLower(platformName); plat != "all" && plat != "" {
+		if plat := strings.ToLower(options.Platform); plat != "all" && plat != "" {
 			platforms = []string{plat}
 		}
 		for _, platform := range platforms {
 			roots = append(roots, filepath.Join(rootPath, platform, SanitizePath(title)))
 		}
-	} else {
+	default:
 		roots = []string{filepath.Join(rootPath, SanitizePath(title))}
 	}
 

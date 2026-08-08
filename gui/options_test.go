@@ -114,3 +114,27 @@ func TestBindCheckGroup_DoesNotFireForAProgrammaticChange(t *testing.T) {
 		"nothing wanted on offer ticks the first box: a download needs a language")
 	require.Empty(t, fired)
 }
+
+// The two special layouts contradict each other: ticking one clears the other.
+func TestDownloadForm_LayoutsExcludeEachOther(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	offMain(t, func() {
+		lt, _ := newLibraryFixture(t, 1)
+
+		romm := checkWithLabel(lt.content, "RomM folder layout (platform/game)")
+		lutris := checkWithLabel(lt.content, "Lutris cache layout (game/gog)")
+		require.NotNil(t, romm)
+		require.NotNil(t, lutris)
+
+		lutris.SetChecked(true)
+		romm.SetChecked(true)
+		require.False(t, lutris.Checked, "ticking RomM clears Lutris")
+
+		lutris.SetChecked(true)
+		require.False(t, romm.Checked, "and the other way round")
+		require.True(t, app.Preferences().Bool("downloadForm.lutris"))
+		require.False(t, app.Preferences().Bool("downloadForm.romm"))
+	})
+}

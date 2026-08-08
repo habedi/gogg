@@ -208,16 +208,17 @@ type queuedDownload struct {
 	// languages and platforms are every choice that was ticked; the singular
 	// fields above carry the first of each for whatever still expects one.
 	// Empty slices mean the singular fields are the whole answer.
-	languages       []string
-	platforms       []string
-	extrasFlag      bool
-	dlcFlag         bool
-	resumeFlag      bool
-	flattenFlag     bool
-	skipPatchesFlag bool
-	keepLatestFlag  bool
-	rommLayoutFlag  bool
-	numThreads      int
+	languages        []string
+	platforms        []string
+	extrasFlag       bool
+	dlcFlag          bool
+	resumeFlag       bool
+	flattenFlag      bool
+	skipPatchesFlag  bool
+	keepLatestFlag   bool
+	rommLayoutFlag   bool
+	lutrisLayoutFlag bool
+	numThreads       int
 }
 
 func NewDownloadManager() *DownloadManager {

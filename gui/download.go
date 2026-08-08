@@ -243,14 +243,17 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 	}
 
 	var targetDir string
-	if q.rommLayoutFlag {
+	switch {
+	case q.lutrisLayoutFlag:
+		targetDir = filepath.Join(q.downloadPath, client.LutrisSlug(parsedGameData.Title), "gog")
+	case q.rommLayoutFlag:
 		plat := strings.ToLower(q.platformName)
 		if plat == "all" { // show root for mixed
 			targetDir = q.downloadPath
 		} else {
 			targetDir = filepath.Join(q.downloadPath, plat, client.SanitizePath(parsedGameData.Title))
 		}
-	} else {
+	default:
 		targetDir = filepath.Join(q.downloadPath, client.SanitizePath(parsedGameData.Title))
 	}
 
@@ -323,7 +326,8 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 						Language: language, Platform: platform,
 						Extras: q.extrasFlag, DLCs: q.dlcFlag, Resume: q.resumeFlag,
 						Flatten: q.flattenFlag, SkipPatches: q.skipPatchesFlag,
-						RomMLayout: q.rommLayoutFlag, Threads: q.numThreads,
+						RomMLayout: q.rommLayoutFlag, LutrisLayout: q.lutrisLayoutFlag,
+						Threads: q.numThreads,
 					}, updater,
 				)
 				if err != nil {
@@ -394,7 +398,8 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 		}
 
 		if q.keepLatestFlag {
-			removed, pruneErr := client.PruneOldInstallerVersions(q.downloadPath, parsedGameData.Title, q.rommLayoutFlag, q.platformName)
+			removed, pruneErr := client.PruneOldInstallerVersions(q.downloadPath, parsedGameData.Title,
+				client.DownloadOptions{RomMLayout: q.rommLayoutFlag, LutrisLayout: q.lutrisLayoutFlag, Platform: q.platformName})
 			if pruneErr != nil {
 				log.Warn().Err(pruneErr).Msg("Failed to prune old versions (GUI)")
 			}

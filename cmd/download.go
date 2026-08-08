@@ -141,7 +141,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cfg := config.Load()
 
 	var language, platformName string
-	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool
+	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool
 	var numThreads int
 
 	cmd := &cobra.Command{
@@ -171,7 +171,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				}
 			}
 			ctx := cmd.Context()
-			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, numThreads)
+			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag, numThreads)
 		},
 	}
 
@@ -185,11 +185,12 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cmd.Flags().BoolVarP(&skipPatchesFlag, "skip-patches", "s", cfg.SkipPatches, "Skip patches when downloading? [true, false]")
 	cmd.Flags().BoolVar(&keepLatestFlag, "keep-latest", cfg.KeepLatest, "Remove older installer versions after successful download (keep only highest version)")
 	cmd.Flags().BoolVar(&rommLayoutFlag, "romm", cfg.RommLayout, "Use RomM compatible folder layout (platform/game)")
+	cmd.Flags().BoolVar(&lutrisLayoutFlag, "lutris", cfg.LutrisLayout, "Use Lutris compatible folder layout (game-slug/gog), so Lutris reuses the files as its installer cache")
 
 	return cmd
 }
 
-func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag bool, numThreads int) {
+func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool, numThreads int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
@@ -259,7 +260,7 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 			Language: languageFullName, Platform: platformName,
 			Extras: extrasFlag, DLCs: dlcFlag, Resume: resumeFlag,
 			Flatten: flattenFlag, SkipPatches: skipPatchesFlag, RomMLayout: rommLayoutFlag,
-			Threads: numThreads,
+			LutrisLayout: lutrisLayoutFlag, Threads: numThreads,
 		}, progressWriter)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -270,9 +271,14 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		return
 	}
 
-	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title)))
+	gameDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
+	if lutrisLayoutFlag {
+		gameDir = filepath.Join(downloadPath, client.LutrisSlug(parsedGameData.Title), "gog")
+	}
+	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", gameDir)
 	if keepLatestFlag {
-		removed, pruneErr := client.PruneOldInstallerVersions(downloadPath, parsedGameData.Title, rommLayoutFlag, platformName)
+		removed, pruneErr := client.PruneOldInstallerVersions(downloadPath, parsedGameData.Title,
+			client.DownloadOptions{RomMLayout: rommLayoutFlag, LutrisLayout: lutrisLayoutFlag, Platform: platformName})
 		if pruneErr != nil {
 			log.Warn().Err(pruneErr).Msg("Failed to prune old versions")
 		}

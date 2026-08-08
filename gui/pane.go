@@ -281,8 +281,23 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	skipPatchesCheck.SetChecked(prefs.BoolWithFallback("downloadForm.skipPatches", true))
 	keepLatestCheck := widget.NewCheck("Keep only latest installer", func(b bool) { prefs.SetBool("downloadForm.keepLatest", b) })
 	keepLatestCheck.SetChecked(prefs.BoolWithFallback("downloadForm.keepLatest", false))
-	rommCheck := widget.NewCheck("RomM folder layout (platform/game)", func(b bool) { prefs.SetBool("downloadForm.romm", b) })
+	// The two special layouts contradict each other, so ticking one clears
+	// the other.
+	var rommCheck, lutrisCheck *widget.Check
+	rommCheck = widget.NewCheck("RomM folder layout (platform/game)", func(b bool) {
+		prefs.SetBool("downloadForm.romm", b)
+		if b {
+			lutrisCheck.SetChecked(false)
+		}
+	})
+	lutrisCheck = widget.NewCheck("Lutris cache layout (game/gog)", func(b bool) {
+		prefs.SetBool("downloadForm.lutris", b)
+		if b {
+			rommCheck.SetChecked(false)
+		}
+	})
 	rommCheck.SetChecked(prefs.BoolWithFallback("downloadForm.romm", false))
+	lutrisCheck.SetChecked(prefs.BoolWithFallback("downloadForm.lutris", false))
 
 	// Short names, because these share a line with the download button now,
 	// and the pane has to fit the default window with the sidebar open.
@@ -330,7 +345,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 				extrasFlag: extrasCheck.Checked, dlcFlag: dlcsCheck.Checked,
 				resumeFlag: resumeCheck.Checked, flattenFlag: flattenCheck.Checked,
 				skipPatchesFlag: skipPatchesCheck.Checked, keepLatestFlag: keepLatestCheck.Checked,
-				rommLayoutFlag: rommCheck.Checked, numThreads: threads,
+				rommLayoutFlag: rommCheck.Checked, lutrisLayoutFlag: lutrisCheck.Checked,
+				numThreads: threads,
 			}
 		}), nil
 	}
@@ -392,7 +408,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 	checkboxes := container.NewVBox(
 		optionGroup("What to download", extrasCheck, dlcsCheck),
 		optionGroup("Which files", resumeCheck, skipPatchesCheck, keepLatestCheck),
-		optionGroup("Where they go", flattenCheck, rommCheck),
+		optionGroup("Where they go", flattenCheck, rommCheck, lutrisCheck),
 	)
 
 	relabel := func() {

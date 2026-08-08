@@ -540,6 +540,7 @@ func TestDownloadOptions_KeepsEverySwitchUnderAHeading(t *testing.T) {
 	require.ElementsMatch(t, []string{
 		"Include extras", "Include DLCs", "Resume downloads", "Skip patches",
 		"Keep only latest installer", "Flatten directory", "RomM folder layout (platform/game)",
+		"Lutris cache layout (game/gog)",
 	}, labels)
 
 	headings := labelTexts(options)
