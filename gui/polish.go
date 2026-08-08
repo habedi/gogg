@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	prefNotifications = "notificationsEnabled"
-	prefWindowWidth   = "windowWidth"
-	prefWindowHeight  = "windowHeight"
-	prefSplitOffset   = "library.splitOffset"
-	prefSelectedTab   = "window.selectedTab"
+	prefNotifications   = "notificationsEnabled"
+	prefWindowWidth     = "windowWidth"
+	prefWindowHeight    = "windowHeight"
+	prefSplitOffset     = "library.splitOffset"
+	prefSelectedTabName = "window.selectedTabName"
 )
 
 // notify shows a desktop notification. It is a variable so tests can observe
@@ -99,7 +99,9 @@ func registerShortcuts(canvas fyne.Canvas, shortcuts []libraryShortcut) {
 type windowState struct {
 	Width, Height float64
 	SplitOffset   float64
-	Tab           int
+	// Tab is the name of the tab the window was left on. Names survive tabs
+	// being added, moved, or retired, which indices did not.
+	Tab string
 }
 
 const (
@@ -125,7 +127,7 @@ func loadWindowState(prefs fyne.Preferences) windowState {
 		Width:       prefs.FloatWithFallback(prefWindowWidth, defaultWindowWidth),
 		Height:      prefs.FloatWithFallback(prefWindowHeight, defaultWindowHeight),
 		SplitOffset: offset,
-		Tab:         prefs.IntWithFallback(prefSelectedTab, 0),
+		Tab:         prefs.StringWithFallback(prefSelectedTabName, ""),
 	}
 }
 
@@ -133,13 +135,13 @@ func saveWindowState(prefs fyne.Preferences, state windowState) {
 	prefs.SetFloat(prefWindowWidth, state.Width)
 	prefs.SetFloat(prefWindowHeight, state.Height)
 	prefs.SetFloat(prefSplitOffset, state.SplitOffset)
-	prefs.SetInt(prefSelectedTab, state.Tab)
+	prefs.SetString(prefSelectedTabName, state.Tab)
 }
 
 // windowStateOnClose is what to remember about the window. A session that never
 // showed the library has no divider on screen to read, so the offset already
 // stored is kept rather than replaced with the default.
-func windowStateOnClose(prefs fyne.Preferences, size fyne.Size, tab int, split *container.Split) windowState {
+func windowStateOnClose(prefs fyne.Preferences, size fyne.Size, tab string, split *container.Split) windowState {
 	state := windowState{
 		Width:       float64(size.Width),
 		Height:      float64(size.Height),

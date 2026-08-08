@@ -39,6 +39,7 @@ func TestLibraryTab_MoreMenuDropsFromItsButton(t *testing.T) {
 		}
 		require.Contains(t, labels, "Export Game List as CSV")
 		require.Contains(t, labels, "Export Full Catalogue as JSON")
+		require.Contains(t, labels, "File Hashes...", "the hash utility lives here now")
 
 		button := fyne.CurrentApp().Driver().AbsolutePositionForObject(more)
 		require.InDelta(t, button.X, menu.Position().X, float64(theme.Padding()),

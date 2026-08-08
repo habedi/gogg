@@ -97,3 +97,20 @@ func TestFileTabUI_DoesNotRepeatTheSectionName(t *testing.T) {
 	require.NotContains(t, labelTexts(FileTabUI(win)), sectionFileHashes,
 		"the tab says what this is; the pane does not have to say it again")
 }
+
+// The hash utility opens from the library's More menu as a dialog, since it
+// is no longer a tab of its own.
+func TestShowFileHashes_OpensAsADialog(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
+	t.Cleanup(win.Close)
+
+	showFileHashes(win)
+
+	overlay := win.Canvas().Overlays().Top()
+	require.NotNil(t, overlay, "the utility opens over the window")
+	require.NotNil(t, buttonWithLabel(overlay, "Generate File Hashes"),
+		"and it is the hash utility that opened")
+}

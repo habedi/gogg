@@ -546,6 +546,8 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			fyne.NewMenuItemSeparator(),
 			fyne.NewMenuItem("Export Game List as CSV", func() { ExportCatalogueAction(win, st.games, "csv") }),
 			fyne.NewMenuItem("Export Full Catalogue as JSON", func() { ExportCatalogueAction(win, st.games, "json") }),
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("File Hashes...", func() { showFileHashes(win) }),
 		)
 	}
 	var moreBtn *iconButton

@@ -302,3 +302,13 @@ func generateHashFilesUI(dir, algo string, recursive bool, numThreads int, resul
 	}
 	return nil
 }
+
+// showFileHashes opens the hash utility in a dialog. It used to be a tab,
+// but downloads verify themselves now, so manual hashing is a utility to
+// reach for rather than a place to be.
+func showFileHashes(win fyne.Window) {
+	body := container.NewStack(HashUI(win))
+	popup := dialog.NewCustom(sectionFileHashes, "Close", body, win)
+	popup.Resize(fileDialogSize)
+	popup.Show()
+}

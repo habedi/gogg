@@ -174,13 +174,13 @@ func TestWindowState_RoundTrips(t *testing.T) {
 	defer app.Quit()
 	prefs := app.Preferences()
 
-	saveWindowState(prefs, windowState{Width: 1200, Height: 800, SplitOffset: 0.35, Tab: 2})
+	saveWindowState(prefs, windowState{Width: 1200, Height: 800, SplitOffset: 0.35, Tab: "Settings"})
 
 	restored := loadWindowState(prefs)
 	require.Equal(t, float64(1200), restored.Width)
 	require.Equal(t, float64(800), restored.Height)
 	require.InDelta(t, 0.35, restored.SplitOffset, 0.001)
-	require.Equal(t, 2, restored.Tab)
+	require.Equal(t, "Settings", restored.Tab)
 }
 
 func TestWindowState_Defaults(t *testing.T) {
@@ -225,14 +225,14 @@ func TestWindowStateOnClose_KeepsTheStoredSplitWhenThereIsNone(t *testing.T) {
 	defer app.Quit()
 
 	prefs := app.Preferences()
-	saveWindowState(prefs, windowState{Width: 1200, Height: 800, SplitOffset: 0.35, Tab: 2})
+	saveWindowState(prefs, windowState{Width: 1200, Height: 800, SplitOffset: 0.35, Tab: "Settings"})
 
-	state := windowStateOnClose(prefs, fyne.NewSize(1000, 700), 1, nil)
+	state := windowStateOnClose(prefs, fyne.NewSize(1000, 700), "Downloads", nil)
 
 	require.Equal(t, 0.35, state.SplitOffset, "a signed-out session must not move the divider")
 	require.Equal(t, float64(1000), state.Width)
 	require.Equal(t, float64(700), state.Height)
-	require.Equal(t, 1, state.Tab)
+	require.Equal(t, "Downloads", state.Tab)
 }
 
 // With the library on screen, where the user left the divider is what is kept.
@@ -245,7 +245,7 @@ func TestWindowStateOnClose_ReadsTheSplitOnScreen(t *testing.T) {
 	split := container.NewHSplit(widget.NewLabel("list"), widget.NewLabel("details"))
 	split.Offset = 0.7
 
-	state := windowStateOnClose(prefs, fyne.NewSize(1000, 700), 0, split)
+	state := windowStateOnClose(prefs, fyne.NewSize(1000, 700), "Catalogue", split)
 
 	require.InDelta(t, 0.7, state.SplitOffset, 0.001)
 }

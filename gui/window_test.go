@@ -49,7 +49,13 @@ func TestMainContent_BuildsAndSurvivesTheUsualPath(t *testing.T) {
 		win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
 
 		// Every tab draws, and none of them forces the window wider than it opens.
-		require.Len(t, content.tabs.Items, 5)
+		require.Len(t, content.tabs.Items, 4)
+		var tabNames []string
+		for _, tab := range content.tabs.Items {
+			tabNames = append(tabNames, tab.Text)
+		}
+		require.NotContains(t, tabNames, sectionFileHashes,
+			"file hashes moved to the library's More menu")
 		for i, tab := range content.tabs.Items {
 			content.tabs.SelectIndex(i)
 			require.NotNil(t, tab.Content, "%s has nothing in it", tab.Text)
@@ -124,12 +130,17 @@ func TestMainContent_OpensOnARealTab(t *testing.T) {
 
 	tabs := container.NewAppTabs(
 		container.NewTabItem("One", widget.NewLabel("one")),
-		container.NewTabItem("Two", widget.NewLabel("two")),
+		container.NewTabItem("Downloads", widget.NewLabel("two")),
 	)
-	for _, remembered := range []int{-1, 0, 1, 99} {
-		require.NotPanics(t, func() { selectRememberedTab(tabs, remembered) },
-			"tab %d", remembered)
-	}
-	selectRememberedTab(tabs, 99)
+	selectRememberedTab(tabs, "Downloads")
+	require.Equal(t, 1, tabs.SelectedIndex(), "the remembered tab opens by its name")
+
+	selectRememberedTab(tabs, "Downloads (2)")
+	require.Equal(t, 1, tabs.SelectedIndex(), "a name saved mid-download still finds its tab")
+
+	selectRememberedTab(tabs, "File Hashes")
 	require.Equal(t, 0, tabs.SelectedIndex(), "a tab that is no longer there opens the first one")
+
+	selectRememberedTab(tabs, "")
+	require.Equal(t, 0, tabs.SelectedIndex(), "no memory opens the first one")
 }

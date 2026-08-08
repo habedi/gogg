@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -54,7 +55,7 @@ func Run(version string, authService *auth.Service, loginer GogLoginer) {
 	// Remember where the user left the window.
 	myWindow.SetOnClosed(func() {
 		saveWindowState(prefs, windowStateOnClose(prefs, myWindow.Canvas().Size(),
-			content.tabs.SelectedIndex(), content.library.split))
+			content.tabs.Selected().Text, content.library.split))
 	})
 
 	myWindow.SetContent(installTipLayer(myWindow.Canvas(), content.tabs))
@@ -117,10 +118,12 @@ func buildMainContent(win fyne.Window, version string, authService *auth.Service
 		SettingsTabUI(win, st, func() { onSignOut() }))
 	downloadsTab := container.NewTabItemWithIcon(sectionDownloads, theme.DownloadIcon(),
 		DownloadsTabUI(win, dm))
+	// File hashes are no longer a tab of their own: downloads verify
+	// themselves now, so manual hashing is a utility behind the library's
+	// More menu rather than a top-level destination.
 	content.tabs = container.NewAppTabs(
 		catalogueTab,
 		downloadsTab,
-		container.NewTabItemWithIcon(sectionFileHashes, theme.DocumentIcon(), FileTabUI(win)),
 		settingsTab,
 		container.NewTabItemWithIcon(sectionAbout, theme.HelpIcon(), ShowAboutUI(version)),
 	)
@@ -150,14 +153,21 @@ func buildMainContent(win fyne.Window, version string, authService *auth.Service
 	return content
 }
 
-// selectRememberedTab opens the tab the user left gogg on, or the first one when
-// that tab is no longer there. It is selected rather than left alone so that
-// whatever the tab does on being opened happens for it too.
-func selectRememberedTab(tabs *container.AppTabs, remembered int) {
-	if remembered < 0 || remembered >= len(tabs.Items) {
-		remembered = 0
+// selectRememberedTab opens the tab the user left gogg on, or the first one
+// when that tab is no longer there. Tabs are remembered by name, so a tab
+// that moves or retires cannot misdirect the ones after it. It is selected
+// rather than left alone so that whatever the tab does on being opened
+// happens for it too.
+func selectRememberedTab(tabs *container.AppTabs, remembered string) {
+	for index, item := range tabs.Items {
+		// A prefix match, because the downloads tab counts its work in its
+		// name ("Downloads (2)") and may have been saved mid-download.
+		if item.Text == remembered || (item.Text != "" && strings.HasPrefix(remembered, item.Text+" (")) {
+			tabs.SelectIndex(index)
+			return
+		}
 	}
-	tabs.SelectIndex(remembered)
+	tabs.SelectIndex(0)
 }
 
 // FileTabUI is the file tools tab. Storage size estimates moved to the library,
