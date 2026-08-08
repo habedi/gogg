@@ -2,9 +2,13 @@ package gui
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	"fyne.io/fyne/v2"
+
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/db"
 	"github.com/stretchr/testify/require"
 )
@@ -148,4 +152,60 @@ func TestLibraryTab_HiddenGamesStayOutOfTheOtherLists(t *testing.T) {
 		require.Equal(t, []string{"Game 2"}, listedTitles(t, lt),
 			"and is there when it is what was asked for")
 	})
+}
+
+// The filter dialog shows platforms and languages by their names, and the
+// terms it writes use the keys and codes the search matches on.
+func TestFilterMapping_NamesInValuesOut(t *testing.T) {
+	require.Equal(t, "mac", platformKeyOrAny("macOS"))
+	require.Equal(t, "linux", platformKeyOrAny("Linux"))
+	require.Equal(t, anyChoice, platformKeyOrAny(anyChoice), "Any is not a filter")
+
+	require.Equal(t, "de", languageCodeOrAny("Deutsch"))
+	require.Equal(t, "English", languageNameForCode("en"))
+	require.Equal(t, anyChoice, languageCodeOrAny(anyChoice))
+	require.Empty(t, languageNameForCode(""), "no stored code shows as Any")
+}
+
+// Opening the dialog on an existing query shows the names, and applying it
+// writes the query back with the keys and codes intact: a round trip.
+func TestFiltersDialog_RoundTripsNamesAndValues(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	entry := widget.NewEntry()
+	entry.SetText("witcher platform:mac lang:de")
+	btn := newFiltersButton(entry, func() {})
+	win.SetContent(btn)
+
+	test.Tap(btn)
+	// The dialog parents to the driver's first window, which is the one the
+	// test app made, not necessarily our handle to it.
+	parent := fyne.CurrentApp().Driver().AllWindows()[0]
+	overlay := parent.Canvas().Overlays().Top()
+	require.NotNil(t, overlay, "the dialog opens")
+
+	var platform, language *widget.Select
+	for _, sel := range widgetsOfType[*widget.Select](overlay) {
+		switch {
+		case slices.Contains(sel.Options, "Windows"):
+			platform = sel
+		case slices.Contains(sel.Options, "English"):
+			language = sel
+		}
+	}
+	require.NotNil(t, platform, "the platform select shows names")
+	require.NotNil(t, language, "the language select shows names")
+	require.Equal(t, "macOS", platform.Selected, "the stored key shows as its name")
+	require.Equal(t, "Deutsch", language.Selected)
+
+	apply := buttonWithLabel(overlay, "Apply")
+	require.NotNil(t, apply)
+	apply.OnTapped()
+
+	require.Contains(t, entry.Text, "platform:mac", "the applied term keeps the key")
+	require.Contains(t, entry.Text, "lang:de", "and the code")
+	require.Contains(t, entry.Text, "witcher", "and the words the user typed")
 }

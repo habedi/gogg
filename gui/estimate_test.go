@@ -83,7 +83,7 @@ func TestLibraryTab_OffersToEstimateTheSelection(t *testing.T) {
 	defer app.Quit()
 
 	lt, _ := newLibraryFixture(t, 2)
-	require.NotNil(t, iconButtonWithTip(lt.content, tipEstimate))
+	require.NotNil(t, buttonWithLabel(lt.content, "Size"))
 }
 
 func TestFileTabUI_NoLongerCarriesItsOwnGameList(t *testing.T) {

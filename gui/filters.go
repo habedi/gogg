@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"sort"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -93,11 +92,13 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 		sizeMaxEntry.SetText(current.TermValue("size", "<="))
 
 		// The box understands more than downloads and sizes, so the dialog
-		// offers the rest of it rather than half.
-		platformSelect := widget.NewSelect([]string{anyChoice, "windows", "mac", "linux"}, nil)
-		platformSelect.SetSelected(chosenOr(current.TermValue("platform", ""), anyChoice))
-		languageSelect := widget.NewSelect(append([]string{anyChoice}, languageCodesOffered()...), nil)
-		languageSelect.SetSelected(chosenOr(current.TermValue("lang", ""), anyChoice))
+		// offers the rest of it rather than half. Platforms and languages
+		// show the names people know them by, while the terms they write use
+		// the keys and codes the search matches on.
+		platformSelect := widget.NewSelect([]string{anyChoice, "Windows", "macOS", "Linux"}, nil)
+		platformSelect.SetSelected(chosenOr(platformInWords(current.TermValue("platform", "")), anyChoice))
+		languageSelect := widget.NewSelect(append([]string{anyChoice}, languageChoices(nil)...), nil)
+		languageSelect.SetSelected(chosenOr(languageNameForCode(current.TermValue("lang", "")), anyChoice))
 		tagEntry := widget.NewEntry()
 		tagEntry.SetPlaceHolder("finished")
 		tagEntry.SetText(current.TermValue("tag", ""))
@@ -119,8 +120,11 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 			apply(filterTerms(filterChoices{
 				Downloaded: downloadedChk.Checked, HasUpdate: updateChk.Checked,
 				MinSize: sizeMinEntry.Text, MaxSize: sizeMaxEntry.Text,
-				Platform: platformSelect.Selected, Language: languageSelect.Selected,
-				Tag: tagEntry.Text, Genre: genreEntry.Text,
+				// The names on screen become the keys and codes the search
+				// terms carry.
+				Platform: platformKeyOrAny(platformSelect.Selected),
+				Language: languageCodeOrAny(languageSelect.Selected),
+				Tag:      tagEntry.Text, Genre: genreEntry.Text,
 				UpdatedSince: updatedEntry.Text,
 			})...)
 		})
@@ -156,12 +160,35 @@ func chosenOr(value, fallback string) string {
 	return value
 }
 
-// languageCodesOffered lists the language codes a search can ask for.
-func languageCodesOffered() []string {
-	codes := make([]string, 0, len(client.GameLanguages))
-	for code := range client.GameLanguages {
-		codes = append(codes, code)
+// languageNameForCode is the full name of a stored language code, empty when
+// there is no code to name so the select falls back to "Any".
+func languageNameForCode(code string) string {
+	if code == "" {
+		return ""
 	}
-	sort.Strings(codes)
-	return codes
+	if name, ok := client.GameLanguages[code]; ok {
+		return name
+	}
+	return code
+}
+
+// platformKeyOrAny maps a platform label back to its key, leaving "Any"
+// alone so filterTerms drops it.
+func platformKeyOrAny(label string) string {
+	if label == anyChoice || label == "" {
+		return label
+	}
+	return platformKeyFor(label)
+}
+
+// languageCodeOrAny maps a language name back to its code, leaving "Any"
+// alone so filterTerms drops it.
+func languageCodeOrAny(name string) string {
+	if name == anyChoice || name == "" {
+		return name
+	}
+	if code, ok := languageCodes[name]; ok {
+		return code
+	}
+	return name
 }

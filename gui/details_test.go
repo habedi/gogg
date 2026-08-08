@@ -205,10 +205,10 @@ func TestDetailsPane_TheDownloadButtonDoesNotScrollAway(t *testing.T) {
 		lt, _ := newLibraryFixture(t, 2)
 		require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: richGameData}))
 
-		require.NotNil(t, buttonWithLabel(lt.content, "Download Game"),
+		require.NotNil(t, buttonWithLabel(lt.content, "Download"),
 			"the download button is part of the pane")
 		for _, tab := range lt.pane.tabs.Items {
-			require.Nil(t, buttonWithLabel(tab.Content, "Download Game"),
+			require.Nil(t, buttonWithLabel(tab.Content, "Download"),
 				"but not part of %q, or it scrolls away with it", tab.Text)
 		}
 	})
@@ -470,9 +470,9 @@ func TestDetailsPane_ButtonsKeepTheirOwnSize(t *testing.T) {
 		win.Resize(fyne.NewSize(1600, 900))
 
 		for name, want := range map[string]fyne.Size{
-			"Download Game": paneActionSize,
-			"GOG":           paneCompactSize,
-			"GOGDB":         paneCompactSize,
+			"Download": paneActionSize,
+			"GOG":      paneCompactSize,
+			"GOGDB":    paneCompactSize,
 		} {
 			button := buttonWithLabel(lt.content, name)
 			require.NotNil(t, button, "%q is missing from the pane", name)

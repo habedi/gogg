@@ -58,6 +58,41 @@ func downloadsWord(n int) string {
 	return "downloads"
 }
 
+// downloadsHeadline is the line above the list for any state, not only while
+// something is running: an active summary when there is one, and otherwise a
+// count of what has finished, so a list of completed downloads is not sat
+// under a blank bar.
+func downloadsHeadline(tasks []*DownloadTask) string {
+	active, downloaded, total, speed := downloadTotals(tasks)
+	if active > 0 {
+		return totalsSummary(active, downloaded, total, speed)
+	}
+
+	var done, failed, paused int
+	for _, task := range tasks {
+		switch task.State() {
+		case StateCompleted:
+			done++
+		case StateCancelled, StateError:
+			failed++
+		case StatePaused:
+			paused++
+		}
+	}
+
+	var parts []string
+	if done > 0 {
+		parts = append(parts, fmt.Sprintf("%d finished", done))
+	}
+	if paused > 0 {
+		parts = append(parts, fmt.Sprintf("%d paused", paused))
+	}
+	if failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", failed))
+	}
+	return strings.Join(parts, " · ")
+}
+
 // totals is the aggregate line the Downloads tab shows. It is created on first
 // use so a manager built without a constructor still works.
 func (dm *DownloadManager) totals() binding.String {
@@ -67,5 +102,5 @@ func (dm *DownloadManager) totals() binding.String {
 
 // refreshTotals recomputes the aggregate line from the current downloads.
 func (dm *DownloadManager) refreshTotals() {
-	_ = dm.totals().Set(totalsSummary(downloadTotals(dm.tasksSnapshot())))
+	_ = dm.totals().Set(downloadsHeadline(dm.tasksSnapshot()))
 }

@@ -113,3 +113,28 @@ func TestDownloadsTabUI_ShowsTheAggregate(t *testing.T) {
 	}
 	require.Contains(t, shown, totalsSummary(1, 1<<20, 4<<20, 1<<10))
 }
+
+// The headline speaks in every state, not only while something runs: a list
+// of finished downloads must not sit under a blank bar.
+func TestDownloadsHeadline_SpeaksWhenNothingRuns(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	require.Empty(t, downloadsHeadline(nil), "with no downloads the empty state speaks instead")
+
+	// While something runs, the active summary wins.
+	running := downloadsHeadline([]*DownloadTask{
+		progressingTask(t, StateDownloading, 1<<20, 4<<20, 1<<10),
+		progressingTask(t, StateCompleted, 9, 9, 0),
+	})
+	require.Contains(t, running, "1 download", "the active summary is preferred")
+
+	// With nothing running, it counts what is finished, paused, and failed.
+	resting := downloadsHeadline([]*DownloadTask{
+		progressingTask(t, StateCompleted, 9, 9, 0),
+		progressingTask(t, StateCompleted, 9, 9, 0),
+		progressingTask(t, StatePaused, 1, 9, 0),
+		progressingTask(t, StateError, 1, 9, 0),
+	})
+	require.Equal(t, "2 finished · 1 paused · 1 failed", resting)
+}

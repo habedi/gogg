@@ -2,6 +2,7 @@ package gui
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -90,8 +91,11 @@ func TestAboutUI_DoesNotCarryAYearThatGoesStale(t *testing.T) {
 
 	texts := labelTexts(ShowAboutUI("1.2.3"))
 
-	require.Contains(t, texts, "© Hassan Abedi")
-	require.Contains(t, texts, "Version: 1.2.3")
+	joined := strings.Join(texts, "\n")
+	require.Contains(t, joined, "Hassan Abedi", "the About page still names the author")
+	require.Contains(t, texts, "1.2.3", "and shows the version it was built as")
+	require.NotRegexp(t, `\b(19|20)\d\d\b`, joined,
+		"a year written into the binary is wrong the January after it ships")
 }
 
 // Everywhere that can be empty says so the same way: an icon, a heading, and a

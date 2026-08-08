@@ -79,7 +79,7 @@ func TestBackupSavesButton_ReportsWhatItBroughtHome(t *testing.T) {
 	lt, root := newLibraryFixture(t, 1)
 	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: `{"title":"Game 1"}`}))
 
-	button := iconButtonWithTip(lt.content, tipBackupSaves)
+	button := buttonWithLabel(lt.content, "Saves")
 	require.NotNil(t, button, "the pane offers the backup button")
 	button.OnTapped()
 
@@ -103,7 +103,7 @@ func TestBackupSavesButton_SaysWhenThereIsNothing(t *testing.T) {
 	lt, _ := newLibraryFixture(t, 1)
 	require.NoError(t, lt.selected.Set(db.Game{ID: 1, Title: "Game 1", Data: `{"title":"Game 1"}`}))
 
-	iconButtonWithTip(lt.content, tipBackupSaves).OnTapped()
+	buttonWithLabel(lt.content, "Saves").OnTapped()
 
 	require.Contains(t, awaitNote(t, notes), "No cloud saves found for Game 1")
 }
@@ -116,7 +116,7 @@ func TestBackupSavesButton_DoesNothingWithoutAGame(t *testing.T) {
 	installFakeBackuper(t, fake)
 
 	lt, _ := newLibraryFixture(t, 1)
-	iconButtonWithTip(lt.content, tipBackupSaves).OnTapped()
+	buttonWithLabel(lt.content, "Saves").OnTapped()
 
 	select {
 	case <-fake.called:
@@ -144,7 +144,7 @@ func TestBackupSavesButton_EndToEndAgainstTheFixture(t *testing.T) {
 	lt, root := newLibraryFixture(t, 1)
 	require.NoError(t, lt.selected.Set(db.Game{ID: 42, Title: "Game 1", Data: `{"title":"Game 1"}`}))
 
-	iconButtonWithTip(lt.content, tipBackupSaves).OnTapped()
+	buttonWithLabel(lt.content, "Saves").OnTapped()
 
 	require.Contains(t, awaitNote(t, notes), "Backed up 1 save file")
 	saved, err := os.ReadFile(filepath.Join(root, "saves", "game-1", "__default", "slot.sav"))

@@ -82,6 +82,51 @@ func platformGroupChoices(offered []string) []string {
 	return choices[:len(choices)-1]
 }
 
+// platformGroupLabels is platformGroupChoices in the names people know the
+// platforms by: the boxes say "Windows", "macOS", and "Linux", while the
+// values underneath stay the keys the rest of gogg downloads with.
+func platformGroupLabels(offered []string) []string {
+	keys := platformGroupChoices(offered)
+	labels := make([]string, len(keys))
+	for i, key := range keys {
+		labels[i] = platformInWords(key)
+	}
+	return labels
+}
+
+// platformKeyFor turns a display label back into the platform key. An
+// unknown label lowercases, which is what the keys already are.
+func platformKeyFor(label string) string {
+	switch label {
+	case "Windows":
+		return "windows"
+	case "macOS":
+		return "mac"
+	case "Linux":
+		return "linux"
+	}
+	return strings.ToLower(label)
+}
+
+// platformKeys maps a set of display labels back to keys.
+func platformKeys(labels []string) []string {
+	keys := make([]string, len(labels))
+	for i, label := range labels {
+		keys[i] = platformKeyFor(label)
+	}
+	return keys
+}
+
+// platformLabels maps a set of keys to their display labels, for pre-ticking
+// the boxes from what was stored.
+func platformLabels(keys []string) []string {
+	labels := make([]string, len(keys))
+	for i, key := range keys {
+		labels[i] = platformInWords(key)
+	}
+	return labels
+}
+
 // bindCheckGroup points a check group at a new set of options, keeping of the
 // wanted values the ones the game offers. The change handler is detached
 // first, for the reason bindSelect gives. When nothing wanted is on offer,

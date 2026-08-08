@@ -88,9 +88,9 @@ func TestLibraryTab_SelectingAGameNarrowsTheOptions(t *testing.T) {
 	require.Equal(t, []string{"Deutsch"}, language.Selected,
 		"a wanted language the game lacks falls back to what it has")
 
-	platform := checkGroupWithOption(t, lt.content, "windows")
-	require.Equal(t, []string{"windows"}, platform.Options,
-		"no all box: in check boxes, all is every box ticked")
+	platform := checkGroupWithOption(t, lt.content, "Windows")
+	require.Equal(t, []string{"Windows"}, platform.Options,
+		"the boxes show platform names, and there is no all box: all is every box ticked")
 
 	require.Equal(t, "en", app.Preferences().String("downloadForm.language"),
 		"narrowing the list must not rewrite the user's default language")
@@ -159,4 +159,18 @@ func TestDownloadForm_OffersConnectionsPerFile(t *testing.T) {
 
 	connections.SetSelected("4")
 	require.Equal(t, "4", app.Preferences().String("downloadForm.connections"))
+}
+
+// The platform boxes read as Windows, macOS, and Linux, while the values
+// underneath stay the keys downloads run on.
+func TestPlatformGroupLabels_ShowProperNames(t *testing.T) {
+	require.Equal(t, []string{"Windows", "Linux"}, platformGroupLabels([]string{"Windows", "Linux"}))
+	require.Equal(t, []string{"Windows", "macOS", "Linux"}, platformGroupLabels(nil))
+
+	// The labels map back to the keys the download options take.
+	require.Equal(t, []string{"windows", "mac", "linux"},
+		platformKeys([]string{"Windows", "macOS", "Linux"}))
+	// And the stored keys map to labels for pre-ticking the boxes.
+	require.Equal(t, []string{"Windows", "macOS", "Linux"},
+		platformLabels([]string{"windows", "mac", "linux"}))
 }

@@ -701,9 +701,16 @@ func DownloadsTabUI(win fyne.Window, dm *DownloadManager) fyne.CanvasObject {
 	dm.Tasks.AddListener(binding.NewDataListener(relist))
 	dm.states().AddListener(binding.NewDataListener(relist))
 
+	// A title names the tab, and the line under it says how the downloads
+	// stand: what is moving, or what has finished, so the header is never a
+	// blank bar over a full list.
+	titleLabel := widget.NewLabelWithStyle("Downloads", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	totalsLabel := widget.NewLabelWithData(dm.totals())
-	totalsLabel.TextStyle = fyne.TextStyle{Bold: true}
-	header := container.NewPadded(totalsLabel)
+	totalsLabel.TextStyle = fyne.TextStyle{Italic: true}
+	header := container.NewVBox(
+		container.NewPadded(container.NewVBox(titleLabel, totalsLabel)),
+		widget.NewSeparator(),
+	)
 	dm.refreshTotals()
 
 	clearFinished := func() {
@@ -744,7 +751,30 @@ func DownloadsTabUI(win fyne.Window, dm *DownloadManager) fyne.CanvasObject {
 				}
 			}, win)
 	})
-	bottomBar := container.NewHBox(layout.NewSpacer(), clearAllBtn)
+	clearAllBtn.SetIcon(theme.DeleteIcon())
+	bottomBar := container.NewVBox(
+		widget.NewSeparator(),
+		container.NewHBox(layout.NewSpacer(), clearAllBtn),
+	)
+	// The way to tidy the list only belongs on screen when there is
+	// something finished to tidy; an empty list has nothing to clear.
+	refreshBottomBar := func() {
+		hasFinished := false
+		for _, task := range dm.tasksSnapshot() {
+			switch task.State() {
+			case StateCompleted, StateCancelled, StateError:
+				hasFinished = true
+			}
+		}
+		if hasFinished {
+			bottomBar.Show()
+		} else {
+			bottomBar.Hide()
+		}
+	}
+	refreshBottomBar()
+	dm.Tasks.AddListener(binding.NewDataListener(refreshBottomBar))
+	dm.states().AddListener(binding.NewDataListener(refreshBottomBar))
 
 	return container.NewBorder(header, bottomBar, nil, nil, body)
 }

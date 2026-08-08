@@ -215,16 +215,16 @@ func TestLibraryTab_SelectAllShownSelectsTheListedGames(t *testing.T) {
 
 	selectAll := buttonWithLabel(lt.content, "Select All Shown")
 	require.NotNil(t, selectAll, "the library must offer Select All Shown")
-	download := buttonWithLabel(lt.content, "Download Game")
+	download := buttonWithLabel(lt.content, "Download")
 	require.NotNil(t, download, "the download button starts out in single-game mode")
 
 	selectAll.OnTapped()
-	require.Equal(t, "Download Selected (3)", download.Text)
+	require.Equal(t, "Download (3)", download.Text)
 
 	clear := buttonWithLabel(lt.content, "Clear Selection")
 	require.NotNil(t, clear)
 	clear.OnTapped()
-	require.Equal(t, "Download Game", download.Text)
+	require.Equal(t, "Download", download.Text)
 }
 
 // Rows are rebound on every refresh; throwing the thumbnail away each time

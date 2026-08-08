@@ -240,10 +240,13 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			prefs.SetString("downloadForm.language", codes[0])
 		}
 	}
-	onPlatformsPicked := func(platforms []string) {
-		prefs.SetString("downloadForm.platforms", strings.Join(platforms, ","))
-		if len(platforms) > 0 {
-			prefs.SetString("downloadForm.platform", platforms[0])
+	// The boxes show platform names but store the keys the rest of gogg
+	// downloads with, the same way the language boxes store codes.
+	onPlatformsPicked := func(labels []string) {
+		keys := platformKeys(labels)
+		prefs.SetString("downloadForm.platforms", strings.Join(keys, ","))
+		if len(keys) > 0 {
+			prefs.SetString("downloadForm.platform", keys[0])
 		}
 	}
 
@@ -262,9 +265,9 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		bindCheckGroup(langGroup, languageChoices(languages),
 			languageNamesFor(prefs.StringWithFallback("downloadForm.languages",
 				prefs.StringWithFallback("downloadForm.language", "en"))), onLanguagesPicked)
-		bindCheckGroup(platformGroup, platformGroupChoices(platforms),
-			splitCSV(prefs.StringWithFallback("downloadForm.platforms",
-				prefs.StringWithFallback("downloadForm.platform", "windows"))), onPlatformsPicked)
+		bindCheckGroup(platformGroup, platformGroupLabels(platforms),
+			platformLabels(splitCSV(prefs.StringWithFallback("downloadForm.platforms",
+				prefs.StringWithFallback("downloadForm.platform", "windows")))), onPlatformsPicked)
 	}
 	narrowTo(db.Game{})
 	threadsSelect := widget.NewSelect([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, func(s string) { prefs.SetString("downloadForm.threads", s) })
@@ -329,7 +332,8 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 			return batchResult{}, errors.New("download path cannot be empty")
 		}
 		languages := append([]string{}, langGroup.Selected...)
-		platforms := append([]string{}, platformGroup.Selected...)
+		// The boxes carry display names; downloads want the keys.
+		platforms := platformKeys(platformGroup.Selected)
 		if len(languages) == 0 || len(platforms) == 0 {
 			return batchResult{}, errors.New("pick at least one language and one platform")
 		}
@@ -369,9 +373,10 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		return []db.Game{gameRaw.(db.Game)}
 	}
 
-	// An icon with its meaning on hover, like the toolbar's: the row it sits
-	// in has the web links, the download button, and only so much pane.
-	estimateBtn := newIconButton(theme.InfoIcon(), tipEstimate, func() {
+	// Labeled rather than icon-only: a new user should not have to hover to
+	// learn what "estimate the size" and "back up saves" are. They sit on
+	// their own row above the download button, so the labels have the room.
+	estimateBtn := widget.NewButtonWithIcon("Size", theme.InfoIcon(), func() {
 		games := targets()
 		if len(games) == 0 {
 			return
@@ -380,7 +385,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		showSizeEstimate(win, estimates, total)
 	})
 
-	savesBtn := newIconButton(theme.DocumentSaveIcon(), tipBackupSaves, func() {
+	savesBtn := widget.NewButtonWithIcon("Saves", theme.DocumentSaveIcon(), func() {
 		gameRaw, _ := selectedGame.Get()
 		if gameRaw == nil {
 			return
@@ -413,7 +418,7 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 		}
 		dialog.ShowInformation("Downloads", result.summary(), win)
 	}
-	downloadBtn := widget.NewButtonWithIcon("Download Game", theme.DownloadIcon(), startDownload)
+	downloadBtn := widget.NewButtonWithIcon("Download", theme.DownloadIcon(), startDownload)
 	downloadBtn.Importance = widget.HighImportance
 
 	form := widget.NewForm(
@@ -433,18 +438,18 @@ func createDownloadForm(win fyne.Window, authService *auth.Service, dm *Download
 
 	relabel := func() {
 		if n := sel.count(); n > 0 {
-			downloadBtn.SetText(fmt.Sprintf("Download Selected (%d)", n))
+			downloadBtn.SetText(fmt.Sprintf("Download (%d)", n))
 			return
 		}
-		downloadBtn.SetText("Download Game")
+		downloadBtn.SetText("Download")
 	}
 
 	return &downloadForm{
 		options: container.NewVBox(form, widget.NewSeparator(), checkboxes),
-		// The ways out to the web sit left, the things to do sit right, on one
-		// line: what is about the game and what acts on it, at a glance. Each
-		// at its own size: a button handed the whole width of the pane reads
-		// as a banner rather than something to press.
+		// One row. The ways out to the web sit left, and the things that act
+		// on the game sit right: the size estimate, the save backup, and the
+		// download, each labeled so nothing has to be hovered to be
+		// understood.
 		actions: container.NewHBox(
 			fixedSize(storeBtn, paneCompactSize), fixedSize(gogdbBtn, paneCompactSize),
 			layout.NewSpacer(),
@@ -519,7 +524,7 @@ func fillStoreHeader(pane *detailsPane, meta *client.GameMetadata) {
 // pane hands out instead.
 var (
 	paneButtonSize = fyne.NewSize(160, 36)
-	paneActionSize = fyne.NewSize(200, 36)
+	paneActionSize = fyne.NewSize(144, 36)
 	// paneCompactSize fits a short word: the web links share the action row
 	// with the download button, and every point they take is the pane's.
 	paneCompactSize = fyne.NewSize(68, 36)
