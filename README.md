@@ -4,13 +4,13 @@
   </picture>
 <br>
 
-[![Tests](https://img.shields.io/github/actions/workflow/status/habedi/gogg/tests.yml?label=tests&style=flat&labelColor=555555&logo=github)](https://github.com/habedi/gogg/actions/workflows/tests.yml)
-[![Code Coverage](https://img.shields.io/codecov/c/github/habedi/gogg?style=flat&labelColor=555555&logo=codecov)](https://codecov.io/gh/habedi/gogg)
-[![Release](https://img.shields.io/github/release/habedi/gogg.svg?style=flat&labelColor=555555&logo=github)](https://github.com/habedi/gogg/releases/latest)
+[![Tests](https://img.shields.io/github/actions/workflow/status/habedi/gogg/tests.yml?label=tests&style=flat&labelColor=282c34&logo=github)](https://github.com/habedi/gogg/actions/workflows/tests.yml)
+[![Code Coverage](https://img.shields.io/codecov/c/github/habedi/gogg?style=flat&labelColor=282c34&logo=codecov)](https://codecov.io/gh/habedi/gogg)
+[![Release](https://img.shields.io/github/release/habedi/gogg.svg?style=flat&labelColor=282c34&logo=github)](https://github.com/habedi/gogg/releases/latest)
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io-007ec6?style=flat&labelColor=282c34&logo=docker)](https://github.com/habedi/gogg/pkgs/container/gogg)
-[![Docs](https://img.shields.io/badge/docs-read-3776ab?style=flat&labelColor=555555&logo=readthedocs)](docs)
-[![License](https://img.shields.io/badge/license-MIT-3776ab?style=flat&labelColor=555555&logo=open-source-initiative)](LICENSE)
-[![Total Downloads](https://img.shields.io/github/downloads/habedi/gogg/total.svg?style=flat&labelColor=555555&logo=github)](https://github.com/habedi/gogg/releases)
+[![Docs](https://img.shields.io/badge/docs-read-3776ab?style=flat&labelColor=282c34&logo=readthedocs)](docs)
+[![License](https://img.shields.io/badge/license-MIT-3776ab?style=flat&labelColor=282c34&logo=open-source-initiative)](LICENSE)
+[![Total Downloads](https://img.shields.io/github/downloads/habedi/gogg/total.svg?style=flat&labelColor=282c34&logo=github)](https://github.com/habedi/gogg/releases)
 
 </div>
     
