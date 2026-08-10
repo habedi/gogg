@@ -25,6 +25,10 @@ Your contributions help improve the project and make it more useful for everyone
 
 ## Development Workflow
 
+> [!IMPORTANT]
+> If you're using an AI-assisted coding tool like Claude Code or Codex, make sure the AI follows the instructions in
+> the root [AGENTS.md](AGENTS.md) file.
+
 ### Prerequisites
 
 Install system dependencies (Go and GNU Make).
