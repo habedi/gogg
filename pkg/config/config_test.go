@@ -114,3 +114,42 @@ func TestSave_CreatesDir(t *testing.T) {
 	require.NoError(t, err)
 	assert.FileExists(t, p)
 }
+
+func TestSave_ReportsADirectoryItCannotCreate(t *testing.T) {
+	dir := t.TempDir()
+	// A regular file where the config directory has to go: MkdirAll cannot
+	// make a directory out of it, so Save has nowhere to write.
+	blocked := filepath.Join(dir, "blocked")
+	require.NoError(t, os.WriteFile(blocked, []byte("in the way"), 0o600))
+	t.Setenv("XDG_CONFIG_HOME", blocked)
+	t.Setenv("HOME", blocked)
+	t.Setenv("AppData", blocked)
+
+	require.Error(t, Save(Defaults()))
+}
+
+func TestLoad_IgnoresAConfigItCannotParse(t *testing.T) {
+	p := isolatedConfigPath(t)
+	require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o700))
+	require.NoError(t, os.WriteFile(p, []byte("{not json at all"), 0o600))
+
+	// A config file that cannot be read falls back to the built-in defaults
+	// rather than leaving the command with nothing.
+	assert.Equal(t, Defaults(), Load())
+}
+
+func TestPath_ReportsAHomelessEnvironment(t *testing.T) {
+	// os.UserConfigDir reads XDG_CONFIG_HOME then HOME on Linux, HOME on
+	// macOS, and AppData on Windows. With all of them empty it has nowhere
+	// to point, and everything built on it says so rather than guessing.
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	t.Setenv("AppData", "")
+
+	if _, err := Path(); err == nil {
+		t.Skip("this platform still has a config directory without those variables")
+	}
+
+	require.Error(t, Save(Defaults()))
+	assert.Equal(t, Defaults(), Load(), "a config that cannot be found leaves the defaults")
+}

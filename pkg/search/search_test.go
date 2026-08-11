@@ -271,3 +271,44 @@ func TestMatch_Downloadable(t *testing.T) {
 	// It needs the platforms worked out, or it cannot tell.
 	require.True(t, no.Needs().Platforms)
 }
+
+func TestQueryMentions(t *testing.T) {
+	q, err := Parse("god of war downloaded:yes tag:favorite")
+	require.NoError(t, err)
+
+	require.True(t, q.Mentions("downloaded"), "a field the query names is mentioned")
+	require.True(t, q.Mentions("installed"), "and so is that field under its alias")
+	require.True(t, q.Mentions("tag"))
+	require.False(t, q.Mentions("hidden"), "a field the query says nothing about is not")
+
+	empty, err := Parse("")
+	require.NoError(t, err)
+	require.False(t, empty.Mentions("downloaded"))
+}
+
+func TestQueryAnd(t *testing.T) {
+	shown, err := Parse("god of war")
+	require.NoError(t, err)
+	notHidden, err := Parse("hidden:no")
+	require.NoError(t, err)
+
+	narrowed := shown.And(notHidden)
+	require.True(t, narrowed.Mentions("hidden"), "the terms of both queries are in the result")
+	require.False(t, shown.Mentions("hidden"), "and neither query is changed by the narrowing")
+
+	f := facts()
+	require.True(t, narrowed.Match(f), "a game both queries let through still passes")
+
+	f.Tags = []string{"hidden"}
+	require.False(t, narrowed.Match(f), "a game the second query rules out does not")
+}
+
+func TestQueryAnd_WithAnEmptyQueryLetsTheSameGamesThrough(t *testing.T) {
+	q, err := Parse("god of war")
+	require.NoError(t, err)
+	empty, err := Parse("")
+	require.NoError(t, err)
+
+	require.True(t, q.And(empty).Match(facts()))
+	require.True(t, empty.And(q).Match(facts()))
+}

@@ -132,3 +132,36 @@ func TestMetadataRepository_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, viaGlobal, 2)
 }
+
+func TestTokenRepositoryDelete(t *testing.T) {
+	temp := t.TempDir()
+	db.Path = filepath.Join(temp, "games.db")
+	require.NoError(t, db.InitDB())
+	t.Cleanup(func() { _ = db.CloseDB() })
+
+	repo := db.NewTokenRepository(db.GetDB())
+	ctx := context.Background()
+	require.NoError(t, repo.Upsert(ctx, &db.Token{AccessToken: "a", RefreshToken: "r", ExpiresAt: "soon"}))
+
+	require.NoError(t, repo.Delete(ctx))
+
+	tok, err := repo.Get(ctx)
+	require.NoError(t, err)
+	require.Nil(t, tok, "logging out leaves no token behind")
+
+	// Deleting again is not an error; there is simply nothing to delete.
+	require.NoError(t, repo.Delete(ctx))
+}
+
+func TestTokenRepositoryDelete_ReportsAClosedDatabase(t *testing.T) {
+	temp := t.TempDir()
+	db.Path = filepath.Join(temp, "games.db")
+	require.NoError(t, db.InitDB())
+
+	repo := db.NewTokenRepository(db.GetDB())
+	require.NoError(t, db.CloseDB())
+
+	err := repo.Delete(context.Background())
+	require.Error(t, err, "a database that is closed cannot delete the token")
+	require.Contains(t, err.Error(), "failed to delete token")
+}

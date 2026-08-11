@@ -294,3 +294,52 @@ func TestGalleryImage_BackdropFollowsTheTheme(t *testing.T) {
 	require.Less(t, b>>8, uint32(0x40))
 	require.Equal(t, theme.Color(theme.ColorNameBackground), img.border.FillColor)
 }
+
+// The gallery takes the keyboard, so it has to answer the whole focusable
+// contract, not only the arrow keys it acts on.
+func TestGameGallery_AnswersTheFocusableContract(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	base := storeStub(t, nil)
+
+	gallery := newGameGallery(testCoverCache(t, t.TempDir()), test.NewWindow(nil))
+	pictures, selected := galleryPicturesFor(gameWithCover(base+"/cover"), shots(base, 3))
+	gallery.show(pictures, selected)
+
+	gallery.FocusGained()
+	require.True(t, gallery.viewer.border.StrokeWidth > 0, "the focused gallery outlines what the keys will move")
+	gallery.FocusLost()
+	require.Zero(t, gallery.viewer.border.StrokeWidth)
+
+	require.False(t, gallery.AcceptsTab(), "tab moves on rather than into the gallery")
+
+	// A typed rune is not one of the gallery's keys and must change nothing.
+	before := gallery.selected
+	gallery.TypedRune('x')
+	require.Equal(t, before, gallery.selected)
+
+	// Tapping asks for the keyboard. There is no canvas behind the widget in
+	// a test, so this only has to leave the gallery as it was.
+	gallery.Tapped(nil)
+	require.Equal(t, before, gallery.selected)
+}
+
+// Opening a picture is what a tap on the viewer does. With no window there is
+// nothing to open into, and nothing must go wrong either.
+func TestGameGallery_OpenSelectedNeedsAWindowAndAPicture(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	base := storeStub(t, nil)
+
+	windowless := newGameGallery(testCoverCache(t, t.TempDir()), nil)
+	windowless.show(galleryPicturesFor(gameWithCover(base+"/cover"), nil))
+	windowless.openSelected()
+
+	gallery := newGameGallery(testCoverCache(t, t.TempDir()), test.NewWindow(nil))
+	gallery.openSelected() // nothing has been shown yet
+
+	pictures, selected := galleryPicturesFor(gameWithCover(base+"/cover"), shots(base, 2))
+	gallery.show(pictures, selected)
+	gallery.openSelected()
+	require.Equal(t, selected, gallery.selected, "opening a picture leaves the gallery on it")
+}

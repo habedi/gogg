@@ -233,3 +233,38 @@ func TestShowPictures_OnePictureOffersNoTravel(t *testing.T) {
 		}
 	}
 }
+
+// The dialog body takes the keyboard, so it answers the focusable contract
+// the same way the gallery does.
+func TestPictureViewer_AnswersTheFocusableContract(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	base, _ := gatedPictureServer(t)
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	showPictures(win, picturesFor(base, 2), 0, testCoverCache(t, t.TempDir()))
+
+	overlay := win.Canvas().Overlays().Top()
+	require.NotNil(t, overlay)
+	viewers := widgetsOfType[*pictureViewer](overlay)
+	require.Len(t, viewers, 1)
+	viewer := viewers[0]
+
+	require.False(t, viewer.AcceptsTab(), "tab moves on rather than into the picture")
+
+	// None of these move through the pictures, and none may go wrong.
+	viewer.FocusGained()
+	viewer.TypedRune('x')
+	viewer.FocusLost()
+
+	counter := func() string {
+		for _, label := range labelTexts(overlay) {
+			if strings.Contains(label, "/") {
+				return label
+			}
+		}
+		return ""
+	}
+	require.Equal(t, "1 / 2", counter(), "the picture on show has not moved")
+}

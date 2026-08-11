@@ -195,6 +195,52 @@ func TestWriteCoverTemp_GivesEachWriterItsOwnFile(t *testing.T) {
 	require.Equal(t, "one", string(data), "neither writer overwrites what the other wrote")
 }
 
+func TestWriteCoverTemp_ReportsADirectoryItCannotWriteTo(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-directory")
+
+	_, err := writeCoverTemp(missing, filepath.Join(missing, "cover.img"), []byte("one"))
+	require.Error(t, err, "a directory that is not there cannot hold a temp file")
+}
+
+// A cache that cannot write still serves the picture it fetched. Only the copy
+// for next time is lost.
+func TestCoverCache_ServesThePictureWhenTheCacheDirectoryIsAFile(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	srv, _ := imageServer(t)
+
+	// A regular file where the cache directory should be: MkdirAll cannot
+	// make a directory out of it.
+	blocked := filepath.Join(t.TempDir(), "cache")
+	require.NoError(t, os.WriteFile(blocked, []byte("in the way"), 0o644))
+
+	data, err := testCoverCache(t, blocked).fetchURL(srv.URL + "/bg.jpg")
+	require.NoError(t, err)
+	require.NotEmpty(t, data, "the picture is returned even though it could not be cached")
+}
+
+func TestCoverCache_ServesThePictureWhenTheCoverCannotBeRenamedIntoPlace(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	srv, _ := imageServer(t)
+
+	dir := t.TempDir()
+	cache := testCoverCache(t, dir)
+	url := srv.URL + "/bg.jpg"
+	// A directory standing where the cover file belongs: the rename onto it
+	// cannot succeed.
+	require.NoError(t, os.MkdirAll(cache.pathFor(url), 0o755))
+
+	data, err := cache.fetchURL(url)
+	require.NoError(t, err)
+	require.NotEmpty(t, data)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the temp file is cleaned up after the failed rename")
+	require.True(t, entries[0].IsDir(), "only the directory that was in the way is left")
+}
+
 func TestCoverCache_ReportsGamesWithNoCover(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
