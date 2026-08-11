@@ -217,6 +217,11 @@ type downloadTask struct {
 	subDir   string
 	resume   bool
 	flatten  bool
+	// dlc marks a file that belongs to a DLC rather than to the game itself.
+	// The game data carries no product ID for a DLC, so there is no product to
+	// ask about the file, and asking the base game's product returns the
+	// wrong file's checksum.
+	dlc bool
 }
 
 // DownloadOptions says what DownloadGameFiles should fetch and how it should
@@ -236,6 +241,10 @@ type DownloadOptions struct {
 	Flatten bool
 	// SkipPatches leaves patch files out.
 	SkipPatches bool
+	// SkipVerify leaves downloaded files unchecked against the MD5 GOG
+	// publishes for them. What arrived is still hashed and recorded; only the
+	// verdict is skipped, so a download cannot fail over a checksum.
+	SkipVerify bool
 	// RomMLayout arranges folders as platform/game.
 	RomMLayout bool
 	// LutrisLayout arranges folders as <lutris-slug>/gog, the way Lutris
@@ -260,6 +269,7 @@ func DownloadGameFiles(
 	extrasFlag, dlcFlag, resumeFlag := options.Extras, options.DLCs, options.Resume
 	flattenFlag, skipPatchesFlag, rommLayout := options.Flatten, options.SkipPatches, options.RomMLayout
 	lutrisLayout := options.LutrisLayout
+	skipVerify := options.SkipVerify
 	numThreads := options.Threads
 	connections := options.Connections
 	if connections < 1 {
@@ -415,11 +425,12 @@ func DownloadGameFiles(
 		// against the one GOG publishes for the file. A mismatch means the
 		// bytes on disk are not the file, so the copy is deleted and the
 		// error sent back retryable: the next attempt starts clean. No
-		// published checksum means no verdict, never failure.
+		// published checksum means no verdict, never failure, and neither does
+		// a download the caller asked to leave unverified.
 		finishFile := func(sum string, size int64) error {
 			verified := false
-			if sum != "" {
-				expected := fetchExpectedMD5(ctx, client, accessToken, game.ID, task.url)
+			if sum != "" && !task.dlc && !skipVerify {
+				expected := fetchExpectedMD5(ctx, client, accessToken, game.ID, task.url, fileName, size)
 				if expected != "" {
 					if expected != sum {
 						_ = os.Remove(filePath)
@@ -965,14 +976,20 @@ func enqueueExtras(ctx context.Context, enqueue func(downloadTask), extras []Ext
 }
 
 func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool) error {
+	// A DLC's files are marked as they are queued, so that what verifies them
+	// later does not mistake them for the base game's.
+	enqueueDLCFile := func(task downloadTask) {
+		task.dlc = true
+		enqueue(task)
+	}
 	for _, dlc := range game.DLCs {
 		dlcSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title))
 		dlcGame := Game{Title: dlc.Title, Downloads: dlc.ParsedDownloads}
-		if err := enqueueGameFiles(ctx, enqueue, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches); err != nil {
+		if err := enqueueGameFiles(ctx, enqueueDLCFile, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches); err != nil {
 			return err
 		}
 		if extras {
-			if err := enqueueExtras(ctx, enqueue, dlc.Extras, filepath.Join(dlcSubDir, "extras"), resume, flatten); err != nil {
+			if err := enqueueExtras(ctx, enqueueDLCFile, dlc.Extras, filepath.Join(dlcSubDir, "extras"), resume, flatten); err != nil {
 				return err
 			}
 		}

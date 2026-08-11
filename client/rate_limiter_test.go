@@ -113,9 +113,16 @@ func TestSetGlobalDownloadRateLimit_TokensCapped(t *testing.T) {
 	}
 }
 
+// Every rate here is positive, so a limiter must be left behind whichever
+// goroutine writes last. A zero among them would mean "turn the limit off",
+// and the test would fail whenever that call happened to come last.
+// Concurrent enabling and disabling is covered by
+// TestSetGlobalDownloadRateLimit_DisableWhileReading.
 func TestSetGlobalDownloadRateLimit_Concurrent(t *testing.T) {
+	t.Cleanup(func() { SetGlobalDownloadRateLimit(0) })
+
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := 1; i <= 100; i++ {
 		wg.Add(1)
 		go func(val int64) {
 			defer wg.Done()

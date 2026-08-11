@@ -59,7 +59,7 @@
           # packaged artifact is the one that makes sense to run anywhere.
           default = pkgs.buildGoModule {
             pname = "gogg";
-            version = "0.5.0-beta";
+            version = "0.5.1-beta";
             src = ./.;
 
             # The hash of what go mod vendor produces for go.mod and go.sum.

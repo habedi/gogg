@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	version   = "0.5.0-beta"
+	version   = "0.5.1-beta"
 	goVersion = runtime.Version()
 	platform  = runtime.GOOS + "/" + runtime.GOARCH
 )

@@ -24,6 +24,10 @@ type Config struct {
 	RommLayout  bool `json:"romm_layout"`
 	// LutrisLayout arranges downloads the way Lutris caches installers.
 	LutrisLayout bool `json:"lutris_layout"`
+	// NoVerify turns off checking downloaded files against the MD5 GOG
+	// publishes. The key is negative so that a config written before it
+	// existed, which decodes to false, keeps verification on.
+	NoVerify bool `json:"no_verify"`
 }
 
 // Defaults returns the built-in default configuration.

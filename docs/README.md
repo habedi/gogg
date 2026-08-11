@@ -148,10 +148,17 @@ The `download` command supports the following additional options:
 - `--romm`: Use RomM compatible folder layout `platform/game` for better integration with ROM Manager (default is false)
 - `--lutris`: Use Lutris compatible folder layout `game-slug/gog` (default is false); pointed at Lutris's
   installer cache directory, this lets Lutris reuse the downloaded files instead of fetching them again
+- `--no-verify`: Do not check downloaded files against the MD5 that GOG publishes for them (default is false)
 
 Downloads are verified when possible.
-For installers and patches, Gogg compares the checksum of what arrived against the MD5 that GOG publishes for the file, deletes a mismatched file, and tries again.
-Every completed download is recorded in a `files.json` manifest next to `metadata.json`, with exact sizes, checksums, and timestamps.
+GOG publishes an MD5 checksum for the game's own installers and patches.
+Gogg compares that checksum with the file it downloaded.
+If the two do not match, Gogg deletes the file and downloads it again.
+Gogg does not check DLC files, because GOG publishes their checksums under the DLC's own product, and the game data does not include that product ID.
+Gogg records every finished download in a `files.json` file next to `metadata.json`, with the exact size, the checksum, and the time for each file.
+The `md5_verified` field shows which files were checked.
+Use `--no-verify` to turn the check off.
+Gogg still computes each checksum and writes it to `files.json`, so you lose only the check.
 
 > [!NOTE]
 > The `--keep-latest` flag scans downloaded installer files whose names contain a version-like pattern of digits separated by dots (like `game_installer_1.2.3.exe`).
@@ -209,7 +216,8 @@ All keys are optional; this example shows every supported key with its built-in 
   "skip_patches": true,
   "keep_latest": false,
   "romm_layout": false,
-  "lutris_layout": false
+  "lutris_layout": false,
+  "no_verify": false
 }
 ```
 

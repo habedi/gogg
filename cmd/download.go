@@ -141,7 +141,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cfg := config.Load()
 
 	var language, platformName string
-	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool
+	var extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag, noVerifyFlag bool
 	var numThreads int
 	var connections int
 
@@ -172,7 +172,7 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 				}
 			}
 			ctx := cmd.Context()
-			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag, numThreads, connections)
+			executeDownload(ctx, authService, gameID, downloadDir, language, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag, noVerifyFlag, numThreads, connections)
 		},
 	}
 
@@ -188,11 +188,12 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 	cmd.Flags().BoolVar(&keepLatestFlag, "keep-latest", cfg.KeepLatest, "Remove older installer versions after successful download (keep only highest version)")
 	cmd.Flags().BoolVar(&rommLayoutFlag, "romm", cfg.RommLayout, "Use RomM compatible folder layout (platform/game)")
 	cmd.Flags().BoolVar(&lutrisLayoutFlag, "lutris", cfg.LutrisLayout, "Use Lutris compatible folder layout (game-slug/gog), so Lutris reuses the files as its installer cache")
+	cmd.Flags().BoolVar(&noVerifyFlag, "no-verify", cfg.NoVerify, "Do not check downloaded files against the MD5 GOG publishes; checksums are still recorded in files.json")
 
 	return cmd
 }
 
-func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag bool, numThreads, connections int) {
+func executeDownload(ctx context.Context, authService *auth.Service, gameID int, downloadPath, language, platformName string, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, keepLatestFlag, rommLayoutFlag, lutrisLayoutFlag, noVerifyFlag bool, numThreads, connections int) {
 	log.Info().Msgf("Downloading games to %s...", downloadPath)
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
@@ -264,6 +265,9 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 	parsedGameData.ID = game.ID
 
 	logDownloadParameters(parsedGameData, gameID, downloadPath, languageFullName, platformName, extrasFlag, dlcFlag, resumeFlag, flattenFlag, skipPatchesFlag, numThreads)
+	if noVerifyFlag {
+		fmt.Println("Checksum verification is off. Each checksum is still recorded in files.json, but it is not checked against GOG.")
+	}
 
 	progressWriter := &cliProgressWriter{}
 
@@ -272,7 +276,8 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 			Language: languageFullName, Platform: platformName,
 			Extras: extrasFlag, DLCs: dlcFlag, Resume: resumeFlag,
 			Flatten: flattenFlag, SkipPatches: skipPatchesFlag, RomMLayout: rommLayoutFlag,
-			LutrisLayout: lutrisLayoutFlag, Threads: numThreads, Connections: connections,
+			LutrisLayout: lutrisLayoutFlag, SkipVerify: noVerifyFlag,
+			Threads: numThreads, Connections: connections,
 		}, progressWriter)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
