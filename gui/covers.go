@@ -173,9 +173,15 @@ func (c *coverCache) fetchURL(url string) ([]byte, error) {
 		return data, nil
 	}
 	// Written through a temporary file so a failed write cannot leave a
-	// half-downloaded picture to be served on the next run.
-	temp := path + ".part"
-	if err := os.WriteFile(temp, data, 0o644); err != nil {
+	// half-downloaded picture to be served on the next run. Each writer gets
+	// a name of its own: one URL can be fetched twice at once, as it is when
+	// a picture is both the thumbnail and the large one, and a shared name
+	// puts the two writers on the same file. Windows then refuses to rename
+	// a file the other one still holds open, and the cleanup after that
+	// failure takes away the file the other one was about to rename, so
+	// neither picture is cached.
+	temp, err := writeCoverTemp(c.dir, path, data)
+	if err != nil {
 		log.Debug().Err(err).Msg("Could not cache cover")
 		return data, nil
 	}
@@ -184,6 +190,30 @@ func (c *coverCache) fetchURL(url string) ([]byte, error) {
 		_ = os.Remove(temp)
 	}
 	return data, nil
+}
+
+// writeCoverTemp writes data to a file of its own beside the cover it is to
+// become, and returns that file's name.
+func writeCoverTemp(dir, path string, data []byte) (string, error) {
+	file, err := os.CreateTemp(dir, filepath.Base(path)+".*.part")
+	if err != nil {
+		return "", err
+	}
+	name := file.Name()
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		_ = os.Remove(name)
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(name)
+		return "", err
+	}
+	// os.CreateTemp opens at 0600; the cached covers have always been 0644.
+	if err := os.Chmod(name, 0o644); err != nil {
+		log.Debug().Err(err).Msg("Could not set the mode of a cached cover")
+	}
+	return name, nil
 }
 
 func (c *coverCache) download(url string) ([]byte, error) {

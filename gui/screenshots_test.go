@@ -58,14 +58,22 @@ func (l *pathLog) contains(substring string) bool {
 	return false
 }
 
-// cachedFiles counts what a cache has written. Tests wait on it so a picture
-// cannot land in the directory after the test that owns it has been cleaned up.
+// cachedFiles counts the covers a cache has finished writing. Tests wait on it
+// so a picture cannot land in the directory after the test that owns it has
+// been cleaned up. A file still being written is not counted; it carries a
+// .part suffix until it is renamed into place.
 func cachedFiles(dir string) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0
 	}
-	return len(entries)
+	count := 0
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".part") {
+			count++
+		}
+	}
+	return count
 }
 
 func shots(base string, n int) []client.Screenshot {

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -122,6 +123,76 @@ func TestCoverCache_KeepsCoversOnDisk(t *testing.T) {
 	served, _, err := testCoverCache(t, dir).fetch(game, coverBanner)
 	require.NoError(t, err)
 	require.NotNil(t, served)
+}
+
+// One URL can be fetched twice at once, as it is when a picture serves as both
+// the thumbnail and the large one. Each fetch must write a file of its own, or
+// the two writers meet on one temp file and, on Windows, neither picture is
+// cached.
+func TestCoverCache_ConcurrentFetchesOfOneURLLeaveOneCover(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	// The requests are held until all of them have arrived, so the writes
+	// overlap the way they do behind a gallery.
+	const fetchers = 4
+	arrived := make(chan struct{}, fetchers)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		arrived <- struct{}{}
+		<-release
+		_, _ = w.Write(onePixelPNG)
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	cache := testCoverCache(t, dir)
+
+	done := make(chan error, fetchers)
+	for i := 0; i < fetchers; i++ {
+		go func() {
+			_, err := cache.fetchURL(srv.URL + "/one.jpg")
+			done <- err
+		}()
+	}
+	for i := 0; i < fetchers; i++ {
+		<-arrived
+	}
+	close(release)
+	for i := 0; i < fetchers; i++ {
+		require.NoError(t, <-done)
+	}
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	require.Len(t, names, 1, "one cover is cached and no temp file is left behind: %v", names)
+	require.False(t, strings.HasSuffix(names[0], ".part"), "the cover is renamed into place")
+}
+
+// Two writers for one cover must not meet on the same temp file. Windows
+// refuses to rename a file another writer still holds open, and the cleanup
+// after that failure takes away the file the other writer was about to
+// rename, so a shared name costs both of them their picture.
+func TestWriteCoverTemp_GivesEachWriterItsOwnFile(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "cover.img")
+
+	first, err := writeCoverTemp(dir, target, []byte("one"))
+	require.NoError(t, err)
+	second, err := writeCoverTemp(dir, target, []byte("two"))
+	require.NoError(t, err)
+
+	require.NotEqual(t, first, second, "two writers for one cover get two files")
+	require.FileExists(t, first)
+	require.FileExists(t, second)
+
+	data, err := os.ReadFile(first)
+	require.NoError(t, err)
+	require.Equal(t, "one", string(data), "neither writer overwrites what the other wrote")
 }
 
 func TestCoverCache_ReportsGamesWithNoCover(t *testing.T) {
