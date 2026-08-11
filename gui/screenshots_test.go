@@ -58,14 +58,22 @@ func (l *pathLog) contains(substring string) bool {
 	return false
 }
 
-// cachedFiles counts what a cache has written. Tests wait on it so a picture
-// cannot land in the directory after the test that owns it has been cleaned up.
+// cachedFiles counts the covers a cache has finished writing. Tests wait on it
+// so a picture cannot land in the directory after the test that owns it has
+// been cleaned up. A file still being written is not counted; it carries a
+// .part suffix until it is renamed into place.
 func cachedFiles(dir string) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0
 	}
-	return len(entries)
+	count := 0
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".part") {
+			count++
+		}
+	}
+	return count
 }
 
 func shots(base string, n int) []client.Screenshot {
@@ -224,4 +232,39 @@ func TestShowPictures_OnePictureOffersNoTravel(t *testing.T) {
 			require.False(t, label.Visible(), "a counter with one page is noise")
 		}
 	}
+}
+
+// The dialog body takes the keyboard, so it answers the focusable contract
+// the same way the gallery does.
+func TestPictureViewer_AnswersTheFocusableContract(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	base, _ := gatedPictureServer(t)
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	showPictures(win, picturesFor(base, 2), 0, testCoverCache(t, t.TempDir()))
+
+	overlay := win.Canvas().Overlays().Top()
+	require.NotNil(t, overlay)
+	viewers := widgetsOfType[*pictureViewer](overlay)
+	require.Len(t, viewers, 1)
+	viewer := viewers[0]
+
+	require.False(t, viewer.AcceptsTab(), "tab moves on rather than into the picture")
+
+	// None of these move through the pictures, and none may go wrong.
+	viewer.FocusGained()
+	viewer.TypedRune('x')
+	viewer.FocusLost()
+
+	counter := func() string {
+		for _, label := range labelTexts(overlay) {
+			if strings.Contains(label, "/") {
+				return label
+			}
+		}
+		return ""
+	}
+	require.Equal(t, "1 / 2", counter(), "the picture on show has not moved")
 }

@@ -180,3 +180,13 @@ func TestBackupCloudSaves_MacSpellsItsPlatformOsx(t *testing.T) {
 	require.ErrorIs(t, err, ErrCloudSavesUnavailable)
 	require.Equal(t, []string{fmt.Sprintf("/products/%d/os/osx/builds", 7)}, asked)
 }
+
+func TestNewCloudSaveClient_PointsAtGOG(t *testing.T) {
+	c := NewCloudSaveClient()
+	require.NotNil(t, c)
+	require.NotNil(t, c.HTTP)
+	require.Equal(t, "https://auth.gog.com", c.AuthURL)
+	require.Equal(t, "https://content-system.gog.com", c.ContentSystemURL)
+	require.Equal(t, "https://remote-config.gog.com", c.RemoteConfigURL)
+	require.Equal(t, "https://cloudstorage.gog.com", c.StorageURL)
+}

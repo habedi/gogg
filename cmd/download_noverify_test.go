@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/habedi/gogg/auth"
+	"github.com/habedi/gogg/client"
 	"github.com/habedi/gogg/pkg/config"
 	"github.com/stretchr/testify/require"
 )
@@ -54,4 +55,21 @@ func TestConfigLoad_OlderConfigKeepsVerificationOn(t *testing.T) {
 	cfg := config.Load()
 	require.Equal(t, "de", cfg.Language)
 	require.False(t, cfg.NoVerify)
+}
+
+func TestLogDownloadParameters_NamesWhatTheDownloadWillDo(t *testing.T) {
+	game := client.Game{Title: "God of War"}
+	out := captureStdout2(func() {
+		logDownloadParameters(game, 1234, "/games", "English", "windows", true, false, true, false, true, 5)
+	})
+
+	for _, want := range []string{
+		"God of War", "1234", "/games", "windows", "English",
+		"Include Extras: true", "Include DLCs: false", "Resume enabled: true",
+		"Number of worker threads for download: 5",
+		"Flatten directory structure: false",
+		"Skip patches: true",
+	} {
+		require.Contains(t, out, want)
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -122,6 +123,122 @@ func TestCoverCache_KeepsCoversOnDisk(t *testing.T) {
 	served, _, err := testCoverCache(t, dir).fetch(game, coverBanner)
 	require.NoError(t, err)
 	require.NotNil(t, served)
+}
+
+// One URL can be fetched twice at once, as it is when a picture serves as both
+// the thumbnail and the large one. Each fetch must write a file of its own, or
+// the two writers meet on one temp file and, on Windows, neither picture is
+// cached.
+func TestCoverCache_ConcurrentFetchesOfOneURLLeaveOneCover(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	// The requests are held until all of them have arrived, so the writes
+	// overlap the way they do behind a gallery.
+	const fetchers = 4
+	arrived := make(chan struct{}, fetchers)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		arrived <- struct{}{}
+		<-release
+		_, _ = w.Write(onePixelPNG)
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	cache := testCoverCache(t, dir)
+
+	done := make(chan error, fetchers)
+	for i := 0; i < fetchers; i++ {
+		go func() {
+			_, err := cache.fetchURL(srv.URL + "/one.jpg")
+			done <- err
+		}()
+	}
+	for i := 0; i < fetchers; i++ {
+		<-arrived
+	}
+	close(release)
+	for i := 0; i < fetchers; i++ {
+		require.NoError(t, <-done)
+	}
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	require.Len(t, names, 1, "one cover is cached and no temp file is left behind: %v", names)
+	require.False(t, strings.HasSuffix(names[0], ".part"), "the cover is renamed into place")
+}
+
+// Two writers for one cover must not meet on the same temp file. Windows
+// refuses to rename a file another writer still holds open, and the cleanup
+// after that failure takes away the file the other writer was about to
+// rename, so a shared name costs both of them their picture.
+func TestWriteCoverTemp_GivesEachWriterItsOwnFile(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "cover.img")
+
+	first, err := writeCoverTemp(dir, target, []byte("one"))
+	require.NoError(t, err)
+	second, err := writeCoverTemp(dir, target, []byte("two"))
+	require.NoError(t, err)
+
+	require.NotEqual(t, first, second, "two writers for one cover get two files")
+	require.FileExists(t, first)
+	require.FileExists(t, second)
+
+	data, err := os.ReadFile(first)
+	require.NoError(t, err)
+	require.Equal(t, "one", string(data), "neither writer overwrites what the other wrote")
+}
+
+func TestWriteCoverTemp_ReportsADirectoryItCannotWriteTo(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-directory")
+
+	_, err := writeCoverTemp(missing, filepath.Join(missing, "cover.img"), []byte("one"))
+	require.Error(t, err, "a directory that is not there cannot hold a temp file")
+}
+
+// A cache that cannot write still serves the picture it fetched. Only the copy
+// for next time is lost.
+func TestCoverCache_ServesThePictureWhenTheCacheDirectoryIsAFile(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	srv, _ := imageServer(t)
+
+	// A regular file where the cache directory should be: MkdirAll cannot
+	// make a directory out of it.
+	blocked := filepath.Join(t.TempDir(), "cache")
+	require.NoError(t, os.WriteFile(blocked, []byte("in the way"), 0o644))
+
+	data, err := testCoverCache(t, blocked).fetchURL(srv.URL + "/bg.jpg")
+	require.NoError(t, err)
+	require.NotEmpty(t, data, "the picture is returned even though it could not be cached")
+}
+
+func TestCoverCache_ServesThePictureWhenTheCoverCannotBeRenamedIntoPlace(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	srv, _ := imageServer(t)
+
+	dir := t.TempDir()
+	cache := testCoverCache(t, dir)
+	url := srv.URL + "/bg.jpg"
+	// A directory standing where the cover file belongs: the rename onto it
+	// cannot succeed.
+	require.NoError(t, os.MkdirAll(cache.pathFor(url), 0o755))
+
+	data, err := cache.fetchURL(url)
+	require.NoError(t, err)
+	require.NotEmpty(t, data)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the temp file is cleaned up after the failed rename")
+	require.True(t, entries[0].IsDir(), "only the directory that was in the way is left")
 }
 
 func TestCoverCache_ReportsGamesWithNoCover(t *testing.T) {
