@@ -31,9 +31,11 @@ func TestEnsureDirExists_RefusesAPathThatIsAFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "not-a-directory")
 	require.NoError(t, os.WriteFile(path, []byte("in the way"), 0o644))
 
-	err := ensureDirExists(path)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "not a directory")
+	require.Error(t, ensureDirExists(path))
+
+	kept, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "in the way", string(kept), "the file that was in the way is left as it was")
 }
 
 func TestWriteFileManifest_KeepsWhatEarlierRunsBrought(t *testing.T) {
