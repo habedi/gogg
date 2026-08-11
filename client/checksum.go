@@ -42,9 +42,13 @@ func downlinkKind(manualURL string) (kind, fileID string) {
 
 // fetchExpectedMD5 asks GOG for the official MD5 of one file. An empty result
 // means no verdict rather than failure: the file has no manifest, the product
-// ID does not serve it, or the network let the lookup down. A download must
-// never fail because its verification data was unavailable.
-func fetchExpectedMD5(ctx context.Context, httpClient *http.Client, accessToken string, productID int, manualURL string) string {
+// ID does not serve it, the manifest turns out to be about another file, or
+// the network let the lookup down. A download must never fail because its
+// verification data was unavailable.
+func fetchExpectedMD5(
+	ctx context.Context, httpClient *http.Client, accessToken string,
+	productID int, manualURL, fileName string, size int64,
+) string {
 	kind, fileID := downlinkKind(manualURL)
 	if kind == "" || productID == 0 {
 		return ""
@@ -69,12 +73,33 @@ func fetchExpectedMD5(ctx context.Context, httpClient *http.Client, accessToken 
 		return ""
 	}
 	var root struct {
-		MD5 string `xml:"md5,attr"`
+		Name      string `xml:"name,attr"`
+		MD5       string `xml:"md5,attr"`
+		TotalSize int64  `xml:"total_size,attr"`
 	}
 	if xml.Unmarshal(manifest, &root) != nil {
 		return ""
 	}
+	if !manifestDescribes(root.Name, root.TotalSize, fileName, size) {
+		log.Debug().Str("file", fileName).Str("manifest", root.Name).
+			Msg("Checksum lookup skipped: the manifest is about another file")
+		return ""
+	}
 	return strings.ToLower(root.MD5)
+}
+
+// manifestDescribes reports whether a checksum manifest is about the file that
+// arrived. The downlink endpoint is addressed by product and file ID, and a
+// DLC numbers its files the way the base game does, so a product asked about a
+// file ID it shares with a DLC answers about its own file. Comparing that
+// answer against the bytes on disk would condemn a sound download, which is
+// why a manifest naming another file is no verdict on this one. A manifest
+// that carries no name is told apart by size, the only other thing it says.
+func manifestDescribes(manifestName string, manifestSize int64, fileName string, size int64) bool {
+	if manifestName != "" {
+		return strings.EqualFold(manifestName, fileName)
+	}
+	return manifestSize <= 0 || size <= 0 || manifestSize == size
 }
 
 // fetchWithBearer reads one small authenticated response, refusing anything
