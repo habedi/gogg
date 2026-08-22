@@ -13,6 +13,9 @@ import (
 
 // isGameDownloaded checks if a game has been successfully downloaded based on download history
 func isGameDownloaded(dm *DownloadManager, gameID int) bool {
+	if dm == nil {
+		return false
+	}
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
 
@@ -32,6 +35,9 @@ func isGameDownloaded(dm *DownloadManager, gameID int) bool {
 
 // getLastCompletedDownloadDir returns the download directory for the most recent completed download of a game, if any.
 func getLastCompletedDownloadDir(dm *DownloadManager, gameID int) (string, bool) {
+	if dm == nil {
+		return "", false
+	}
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
 
@@ -93,9 +99,22 @@ func getGameDownloadDirectory(dm *DownloadManager, game db.Game) (string, bool) 
 	if root == "" {
 		return "", false
 	}
+	// Standard layout
 	candidate := filepath.Join(root, client.SanitizePath(game.Title))
 	if _, err := os.Stat(filepath.Join(candidate, "metadata.json")); err == nil {
 		return candidate, true
+	}
+	// Lutris layout
+	lutrisCandidate := filepath.Join(root, client.LutrisSlug(game.Title), "gog")
+	if _, err := os.Stat(filepath.Join(lutrisCandidate, "metadata.json")); err == nil {
+		return lutrisCandidate, true
+	}
+	// RomM layout
+	for _, plat := range []string{"win", "mac", "linux"} {
+		rommCandidate := filepath.Join(root, plat, client.SanitizePath(game.Title))
+		if _, err := os.Stat(filepath.Join(rommCandidate, "metadata.json")); err == nil {
+			return rommCandidate, true
+		}
 	}
 	return "", false
 }

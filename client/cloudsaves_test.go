@@ -137,15 +137,18 @@ func TestBackupCloudSaves_SkipsPlaceholdersAndEscapees(t *testing.T) {
 	fx.saves["__default/empty.sav"] = []byte("")
 	fx.hashes["__default/empty.sav"] = emptyGzipMD5
 	fx.saves["../escape.sav"] = []byte("must never land outside")
+	fx.saves["..dotted.sav"] = []byte("inside, despite the dots")
 
 	tmp := t.TempDir()
 	result, err := fx.client().BackupCloudSaves(context.Background(), "user-refresh", 42, "windows", tmp)
 	require.NoError(t, err)
-	require.Equal(t, []string{"__default/real.sav"}, result.Files)
+	require.ElementsMatch(t, []string{"__default/real.sav", "..dotted.sav"}, result.Files)
 	require.ElementsMatch(t, []string{"__default/empty.sav", "../escape.sav"}, result.Skipped)
 
 	_, statErr := os.Stat(filepath.Join(filepath.Dir(tmp), "escape.sav"))
 	require.True(t, os.IsNotExist(statErr), "a hostile bucket name must not write outside the output directory")
+	require.FileExists(t, filepath.Join(tmp, "..dotted.sav"),
+		"a name that merely starts with dots stays inside and must be backed up")
 }
 
 func TestBackupCloudSaves_NothingThereIsSaidPlainly(t *testing.T) {

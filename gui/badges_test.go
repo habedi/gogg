@@ -70,6 +70,30 @@ func TestGameCell_ShowsTheDownloadHappeningNow(t *testing.T) {
 	})
 }
 
+// The update badge opens its details dialog on the window the row was bound
+// with, not on whichever window the driver lists first.
+func TestGameRow_UpdateBadgeParentsToTheRowsWindow(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	state := newLibraryState()
+	state.statuses[1] = updateStatus{Downloaded: true, HasUpdate: true, Diff: []string{"setup.exe changed"}}
+
+	win := test.NewWindow(nil)
+	t.Cleanup(win.Close)
+
+	offMain(t, func() {
+		row := newGameRow().(*gameRow)
+		win.SetContent(row)
+		bindGameRow(row, db.Game{ID: 1, Title: "One"},
+			rowBinding{sel: newGameSelection(), state: state, win: win})
+
+		require.True(t, row.badges.update.Visible(), "a waiting update shows its badge")
+		test.Tap(row.badges.update)
+		require.NotNil(t, win.Canvas().Overlays().Top(), "the dialog opens on the bound window")
+	})
+}
+
 // The cell says what a game runs on, under its title.
 func TestGameCell_NamesThePlatformsUnderTheTitle(t *testing.T) {
 	app := test.NewApp()

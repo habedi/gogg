@@ -34,3 +34,38 @@ func TestGetGameDownloadDirectory_FindsTheFormTypedPath(t *testing.T) {
 	require.True(t, ok, "the game under the typed path has to be found")
 	require.Equal(t, dir, found)
 }
+
+func TestGetGameDownloadDirectory_LutrisAndRomMLayouts(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	root := t.TempDir()
+	app.Preferences().SetString("downloadForm.path", root)
+
+	// Test Lutris layout
+	lutrisGame := db.Game{ID: 10, Title: "Lutris Game"}
+	lutrisDir := filepath.Join(root, client.LutrisSlug(lutrisGame.Title), "gog")
+	require.NoError(t, os.MkdirAll(lutrisDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(lutrisDir, "metadata.json"), []byte("{}"), 0o644))
+
+	found, ok := getGameDownloadDirectory(nil, lutrisGame)
+	require.True(t, ok, "lutris layout should be discovered")
+	require.Equal(t, lutrisDir, found)
+
+	// Test RomM layout
+	rommGame := db.Game{ID: 20, Title: "RomM Game"}
+	rommDir := filepath.Join(root, "win", client.SanitizePath(rommGame.Title))
+	require.NoError(t, os.MkdirAll(rommDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(rommDir, "metadata.json"), []byte("{}"), 0o644))
+
+	found, ok = getGameDownloadDirectory(nil, rommGame)
+	require.True(t, ok, "romm layout should be discovered")
+	require.Equal(t, rommDir, found)
+}
+
+func TestHistory_NilDownloadManagerSafety(t *testing.T) {
+	require.False(t, isGameDownloaded(nil, 1))
+	dir, ok := getLastCompletedDownloadDir(nil, 1)
+	require.False(t, ok)
+	require.Empty(t, dir)
+}
