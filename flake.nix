@@ -63,7 +63,7 @@
             src = ./.;
 
             # The hash of what go mod vendor produces for go.mod and go.sum.
-            # When the dependencies change, nix build prints the new value to put here.
+            # When the dependencies change, Nix build prints the new value to put here.
             vendorHash = "sha256-ikrEMyl8uQshhSHMkyXEhp0AXKaboNTQ0wESWG4LN7g=";
 
             tags = [ "headless" ];
