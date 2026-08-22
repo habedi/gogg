@@ -123,8 +123,9 @@ func TestDownloadGameFiles_RommLayout(t *testing.T) {
 		DownloadOptions{Language: "en", Platform: "windows", RomMLayout: true, Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
-	// RomM layout: downloadPath/platform/game/filename
-	assert.FileExists(t, filepath.Join(tmp, "windows", "testgame", "game.exe"))
+	// RomM layout: downloadPath/platform/game/filename, with the platform
+	// folder named as RomM expects ("win", not "windows").
+	assert.FileExists(t, filepath.Join(tmp, "win", "testgame", "game.exe"))
 }
 
 func TestDownloadGameFiles_FlattenFlag(t *testing.T) {

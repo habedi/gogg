@@ -42,7 +42,7 @@ func TestDownloadGameFiles_RommLayoutStoresMetadataWithTheFiles(t *testing.T) {
 		DownloadOptions{Language: "English", Platform: "windows", RomMLayout: true, Threads: // rommLayout
 		1}, io.Discard))
 
-	gameDir := filepath.Join(root, "windows", "some-game")
+	gameDir := filepath.Join(root, "win", "some-game")
 	require.FileExists(t, filepath.Join(gameDir, "setup.bin"))
 	require.FileExists(t, filepath.Join(gameDir, "metadata.json"))
 	require.NoDirExists(t, filepath.Join(root, "some-game"),

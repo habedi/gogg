@@ -313,7 +313,7 @@ func DownloadGameFiles(
 	if lutrisLayout {
 		manifestDir = filepath.Join(downloadPath, LutrisSlug(game.Title), "gog")
 	} else if rommLayout {
-		if plat := strings.ToLower(strings.TrimSpace(platformName)); plat != "" && plat != "all" {
+		if plat := RomMPlatform(platformName); plat != "" && plat != "all" {
 			manifestDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
 		}
 	}
@@ -405,9 +405,9 @@ func DownloadGameFiles(
 			targetDir = filepath.Join(downloadPath, LutrisSlug(game.Title), "gog")
 		case rommLayout:
 			// RomM layout: platform/game/
-			plat := strings.ToLower(strings.TrimSpace(strings.Split(subDir, string(os.PathSeparator))[0]))
+			plat := RomMPlatform(strings.Split(subDir, string(os.PathSeparator))[0])
 			if plat == "" {
-				plat = strings.ToLower(platformName)
+				plat = RomMPlatform(platformName)
 			}
 			targetDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
 		default:
