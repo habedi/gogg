@@ -73,14 +73,16 @@ func bindCheck(check *widget.Check, checked bool, onChanged func(bool)) {
 }
 
 // rowBinding is what a list row or grid cell needs to describe a game: who
-// is ticked, where artwork comes from, what is downloading, and what is known
-// about the game. One bundle, so new knowledge does not grow every signature.
-// covers, dm, and state may each be nil in tests that are not about them.
+// is ticked, where artwork comes from, what is downloading, what is known
+// about the game, and which window parents the dialogs a badge opens. One
+// bundle, so new knowledge does not grow every signature. covers, dm, state,
+// and win may each be nil in tests that are not about them.
 type rowBinding struct {
 	sel      *gameSelection
 	covers   *coverCache
 	dm       *DownloadManager
 	state    *libraryState
+	win      fyne.Window
 	onToggle func()
 }
 
@@ -131,10 +133,11 @@ func newStatusBadges() *statusBadges {
 	return badges
 }
 
-// show marks a game with what is known about it. Tapping the update badge lists
-// what has changed. dm may be nil, in which case no download can be running;
-// s may be nil, in which case nothing is known.
-func (b *statusBadges) show(gameID int, dm *DownloadManager, s *libraryState) {
+// show marks a game with what is known about it. Tapping the update badge
+// lists what has changed, in a dialog parented to win. dm may be nil, in which
+// case no download can be running; s may be nil, in which case nothing is
+// known; a nil win falls back to the driver's first window.
+func (b *statusBadges) show(gameID int, dm *DownloadManager, s *libraryState, win fyne.Window) {
 	if s == nil {
 		s = newLibraryState()
 	}
@@ -167,8 +170,15 @@ func (b *statusBadges) show(gameID int, dm *DownloadManager, s *libraryState) {
 	b.update.Show()
 	b.update.SetText(fmt.Sprintf("%d", len(diff)))
 	b.update.OnTapped = func() {
-		dialog.ShowCustom("Update Details", "Close", updateDetailsBody(diff),
-			fyne.CurrentApp().Driver().AllWindows()[0])
+		parent := win
+		if parent == nil {
+			wins := fyne.CurrentApp().Driver().AllWindows()
+			if len(wins) == 0 {
+				return
+			}
+			parent = wins[0]
+		}
+		dialog.ShowCustom("Update Details", "Close", updateDetailsBody(diff), parent)
 	}
 }
 
@@ -238,7 +248,7 @@ func bindGameRow(row fyne.CanvasObject, game db.Game, rb rowBinding) {
 
 	r.title.SetText(game.Title)
 	r.loadThumbnail(game, covers, sameGame)
-	r.badges.show(game.ID, dm, rb.state)
+	r.badges.show(game.ID, dm, rb.state, rb.win)
 }
 
 // How much room the list of changes may take before it starts scrolling.

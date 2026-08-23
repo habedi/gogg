@@ -105,9 +105,9 @@ func TestPruneOldInstallerVersions_KeepsDLCInstallers(t *testing.T) {
 func TestPruneOldInstallerVersions_RommLayoutKeepsEachPlatform(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root,
-		"windows/some-game/setup_game_1.2.3.exe",
+		"win/some-game/setup_game_1.2.3.exe",
 		"linux/some-game/setup_game_1.2.4.sh",
-		"windows/some-game/setup_game_1.2.4.exe",
+		"win/some-game/setup_game_1.2.4.exe",
 	)
 
 	if _, err := PruneOldInstallerVersions(root, "Some Game", DownloadOptions{RomMLayout: true, Platform: "all"}); err != nil {
@@ -115,10 +115,10 @@ func TestPruneOldInstallerVersions_RommLayoutKeepsEachPlatform(t *testing.T) {
 	}
 
 	assertExists(t, root,
-		"windows/some-game/setup_game_1.2.4.exe",
+		"win/some-game/setup_game_1.2.4.exe",
 		"linux/some-game/setup_game_1.2.4.sh",
 	)
-	assertGone(t, root, "windows/some-game/setup_game_1.2.3.exe")
+	assertGone(t, root, "win/some-game/setup_game_1.2.3.exe")
 }
 
 func TestPruneOldInstallerVersions_ReportsWhatItRemoved(t *testing.T) {

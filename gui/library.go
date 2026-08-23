@@ -314,7 +314,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				return
 			}
 			bindGameCell(cell, games[id], rowBinding{sel: sel, covers: covers, dm: dm,
-				state: state, onToggle: func() { afterSelectionChange() }})
+				state: state, win: win, onToggle: func() { afterSelectionChange() }})
 		},
 	)
 
@@ -328,7 +328,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 				return
 			}
 			bindGameRow(obj, game, rowBinding{sel: sel, covers: covers, dm: dm,
-				state: state, onToggle: func() { afterSelectionChange() }})
+				state: state, win: win, onToggle: func() { afterSelectionChange() }})
 		},
 	)
 	gameGridWidget.OnSelected = func(id widget.GridWrapItemID) {
@@ -561,7 +561,7 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	// The button is made here so the toolbar can hold it; what it does is wired
 	// once the collections it shows exist.
 	collectionsBtn := newIconButton(theme.MenuIcon(), tipCollections, nil)
-	filtersBtn := newFiltersButton(&searchEntry.Entry, updateDisplayedGames)
+	filtersBtn := newFiltersButton(win, &searchEntry.Entry, updateDisplayedGames)
 	// The buttons scroll rather than forcing a minimum width on the window; the
 	// update summary stays pinned to the right.
 	toolbarButtons := container.NewHScroll(

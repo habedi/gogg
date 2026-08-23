@@ -72,7 +72,7 @@ func withoutHidden(query search.Query) search.Query {
 // newFiltersButton edits the field terms of the search, leaving the words the
 // user typed. The dialog and the search box are then the same filter, one of
 // them just easier to discover.
-func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button {
+func newFiltersButton(win fyne.Window, searchEntry *widget.Entry, refresh func()) *widget.Button {
 	var dlg *dialog.CustomDialog
 	btn := widget.NewButtonWithIcon("Filters", theme.SearchIcon(), func() {
 		current, _ := search.Parse(searchEntry.Text)
@@ -145,7 +145,7 @@ func newFiltersButton(searchEntry *widget.Entry, refresh func()) *widget.Button 
 			widget.NewLabel("These become terms in the search box, where they can also be typed."),
 			container.NewHBox(applyBtn, resetBtn),
 		)
-		dlg = dialog.NewCustom("Library Filters", "Close", content, fyne.CurrentApp().Driver().AllWindows()[0])
+		dlg = dialog.NewCustom("Library Filters", "Close", content, win)
 		dlg.Resize(fyne.NewSize(460, 420))
 		dlg.Show()
 	})

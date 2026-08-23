@@ -35,6 +35,15 @@ func setupMemDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open mem db: %v", err)
 	}
+	// A single connection serializes the refresh workers' writes. With more,
+	// concurrent writers on a shared-cache memory database collide into
+	// "database table is locked" errors, which the refresh swallows, and the
+	// game the losing worker carried is silently missing.
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	db.Db = gormDB
 	if err := db.Db.AutoMigrate(&db.Token{}, &db.Game{}); err != nil {
 		t.Fatalf("migrate: %v", err)
