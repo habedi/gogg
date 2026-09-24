@@ -154,11 +154,15 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			gameID, err := strconv.Atoi(args[0])
 			if err != nil {
+				e := clierr.New(clierr.Validation, "Invalid game ID. It must be a positive integer.", err)
 				cmd.PrintErrln("Error: Invalid game ID. It must be a positive integer.")
+				setLastCliErr(e)
 				return
 			}
 			if err := validation.ValidateGameID(gameID); err != nil {
+				e := clierr.New(clierr.Validation, err.Error(), err)
 				cmd.PrintErrln("Error:", err)
+				setLastCliErr(e)
 				return
 			}
 			var downloadDir string
@@ -167,7 +171,9 @@ func downloadCmd(authService *auth.Service) *cobra.Command {
 			} else {
 				downloadDir = cfg.DownloadDir
 				if downloadDir == "" {
+					e := clierr.New(clierr.Validation, "downloadDir argument is required (or set download_dir in ~/.config/gogg/config.json)", nil)
 					cmd.PrintErrln("Error: downloadDir argument is required (or set download_dir in ~/.config/gogg/config.json)")
+					setLastCliErr(e)
 					return
 				}
 			}
@@ -198,7 +204,9 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 	log.Info().Msgf("Language: %s, Platform: %s, Extras: %v, DLC: %v", language, platformName, extrasFlag, dlcFlag)
 
 	if err := validation.ValidateThreadCount(numThreads); err != nil {
-		fmt.Println(clierr.New(clierr.Validation, "Invalid thread count", err).Message)
+		e := clierr.New(clierr.Validation, "Invalid thread count", err)
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		return
 	}
 	// Configs written before the key existed decode to zero, which means
@@ -207,11 +215,15 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		connections = 1
 	}
 	if err := validation.ValidateConnectionCount(connections); err != nil {
-		fmt.Println(clierr.New(clierr.Validation, "Invalid connection count", err).Message)
+		e := clierr.New(clierr.Validation, "Invalid connection count", err)
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		return
 	}
 	if err := validation.ValidatePlatform(platformName); err != nil {
-		fmt.Println(clierr.New(clierr.Validation, "Invalid platform", err).Message)
+		e := clierr.New(clierr.Validation, "Invalid platform", err)
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		return
 	}
 
@@ -225,7 +237,9 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		}
 	}
 	if !found {
-		fmt.Println(clierr.New(clierr.Validation, "Invalid language code", nil).Message)
+		e := clierr.New(clierr.Validation, "Invalid language code", nil)
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		for langCode, langName := range client.GameLanguages {
 			fmt.Printf("'%s' for %s\n", langCode, langName)
 		}
@@ -234,7 +248,9 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 
 	user, err := authService.RefreshTokenCtx(ctx)
 	if err != nil {
-		fmt.Println("Failed to find or refresh the access token. Did you login?")
+		e := clierr.New(clierr.Internal, "Failed to find or refresh the access token. Did you login?", err)
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		return
 	}
 
@@ -242,6 +258,8 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		log.Info().Msgf("Creating download path %s", downloadPath)
 		if err := os.MkdirAll(downloadPath, os.ModePerm); err != nil {
 			log.Error().Err(err).Msgf("Failed to create download path %s", downloadPath)
+			e := clierr.New(clierr.Internal, fmt.Sprintf("Failed to create download path %s", downloadPath), err)
+			setLastCliErr(e)
 			return
 		}
 	}
@@ -249,17 +267,23 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 	gameRepo := db.NewGameRepository(db.GetDB())
 	game, err := gameRepo.GetByID(ctx, gameID)
 	if err != nil {
-		fmt.Println(clierr.New(clierr.Internal, "Error retrieving game from local catalogue", err).Message)
+		e := clierr.New(clierr.Internal, "Error retrieving game from local catalogue", err)
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		return
 	}
 	if game == nil {
-		fmt.Println(clierr.New(clierr.NotFound, fmt.Sprintf("Game %d not found in local catalogue", gameID), nil).Message)
+		e := clierr.New(clierr.NotFound, fmt.Sprintf("Game %d not found in local catalogue", gameID), nil)
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		return
 	}
 	parsedGameData, err := client.ParseGameData(game.Data)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to parse game details.")
-		fmt.Println("Error parsing game data from local catalogue.")
+		e := clierr.New(clierr.Internal, "Error parsing game data from local catalogue.", err)
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		return
 	}
 	parsedGameData.ID = game.ID
@@ -280,17 +304,30 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 			Threads: numThreads, Connections: connections,
 		}, progressWriter)
 	if err != nil {
+		var e *clierr.Error
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			fmt.Println(clierr.New(clierr.Internal, "Download cancelled or timed out", err).Message)
+			e = clierr.New(clierr.Internal, "Download cancelled or timed out", err)
 		} else {
-			fmt.Println(clierr.New(clierr.Download, "Failed to download game files", err).Message)
+			e = clierr.New(clierr.Download, "Failed to download game files", err)
 		}
+		fmt.Println(e.Message)
+		setLastCliErr(e)
 		return
 	}
 
-	gameDir := filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
-	if lutrisLayoutFlag {
+	var gameDir string
+	switch {
+	case lutrisLayoutFlag:
 		gameDir = filepath.Join(downloadPath, client.LutrisSlug(parsedGameData.Title), "gog")
+	case rommLayoutFlag:
+		plat := client.RomMPlatform(platformName)
+		if plat == "all" {
+			gameDir = downloadPath
+		} else {
+			gameDir = filepath.Join(downloadPath, plat, client.SanitizePath(parsedGameData.Title))
+		}
+	default:
+		gameDir = filepath.Join(downloadPath, client.SanitizePath(parsedGameData.Title))
 	}
 	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", gameDir)
 	if keepLatestFlag {

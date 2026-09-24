@@ -34,22 +34,30 @@ func savesCmd(authService *auth.Service) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			gameID, err := strconv.Atoi(args[0])
 			if err != nil {
+				e := clierr.New(clierr.Validation, "Invalid game ID. It must be a positive integer.", err)
 				cmd.PrintErrln("Error: Invalid game ID. It must be a positive integer.")
+				setLastCliErr(e)
 				return
 			}
 			if err := validation.ValidateGameID(gameID); err != nil {
+				e := clierr.New(clierr.Validation, err.Error(), err)
 				cmd.PrintErrln("Error:", err)
+				setLastCliErr(e)
 				return
 			}
 
 			gameRepo := db.NewGameRepository(db.GetDB())
 			game, err := gameRepo.GetByID(cmd.Context(), gameID)
 			if err != nil {
-				fmt.Println(clierr.New(clierr.Internal, "Error retrieving game from local catalogue", err).Message)
+				e := clierr.New(clierr.Internal, "Error retrieving game from local catalogue", err)
+				fmt.Println(e.Message)
+				setLastCliErr(e)
 				return
 			}
 			if game == nil {
-				fmt.Println(clierr.New(clierr.NotFound, fmt.Sprintf("Game %d not found in local catalogue", gameID), nil).Message)
+				e := clierr.New(clierr.NotFound, fmt.Sprintf("Game %d not found in local catalogue", gameID), nil)
+				fmt.Println(e.Message)
+				setLastCliErr(e)
 				return
 			}
 
@@ -58,7 +66,9 @@ func savesCmd(authService *auth.Service) *cobra.Command {
 				outputDir = args[1]
 			} else {
 				if cfg.DownloadDir == "" {
+					e := clierr.New(clierr.Validation, "outputDir argument is required (or set download_dir in ~/.config/gogg/config.json)", nil)
 					cmd.PrintErrln("Error: outputDir argument is required (or set download_dir in ~/.config/gogg/config.json)")
+					setLastCliErr(e)
 					return
 				}
 				outputDir = filepath.Join(cfg.DownloadDir, "saves", client.SanitizePath(game.Title))
@@ -67,7 +77,9 @@ func savesCmd(authService *auth.Service) *cobra.Command {
 			ctx := cmd.Context()
 			token, err := authService.RefreshTokenCtx(ctx)
 			if err != nil {
-				fmt.Println("Failed to find or refresh the access token. Did you login?")
+				e := clierr.New(clierr.Internal, "Failed to find or refresh the access token. Did you login?", err)
+				fmt.Println(e.Message)
+				setLastCliErr(e)
 				return
 			}
 
@@ -79,7 +91,9 @@ func savesCmd(authService *auth.Service) *cobra.Command {
 					return
 				}
 				log.Error().Err(err).Msg("Cloud save backup failed.")
-				fmt.Println(clierr.New(clierr.Internal, "Failed to back up cloud saves", err).Message)
+				e := clierr.New(clierr.Internal, "Failed to back up cloud saves", err)
+				fmt.Println(e.Message)
+				setLastCliErr(e)
 				return
 			}
 

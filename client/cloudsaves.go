@@ -109,8 +109,12 @@ func (c *CloudSaveClient) BackupCloudSaves(ctx context.Context, refreshToken str
 			result.Skipped = append(result.Skipped, file.Name)
 			continue
 		}
-		destination := filepath.Join(cleanRoot, filepath.FromSlash(file.Name))
-		if !strings.HasPrefix(destination, cleanRoot+string(os.PathSeparator)) {
+		name := filepath.FromSlash(file.Name)
+		destination := filepath.Join(cleanRoot, name)
+		// IsLocal rejects a name that is empty, absolute, or steps out of the
+		// directory it is joined to; a name that resolves to the directory
+		// itself is no file either.
+		if !filepath.IsLocal(name) || destination == cleanRoot {
 			log.Warn().Str("name", file.Name).Msg("Skipping cloud save entry: its name escapes the output directory")
 			result.Skipped = append(result.Skipped, file.Name)
 			continue

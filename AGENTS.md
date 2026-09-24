@@ -39,6 +39,7 @@ Gogg has real users. The following must stay backward compatible:
 
 ## Writing Style
 
+- Write in simple, plain English. Use short sentences and everyday words.
 - Use Oxford commas in inline lists: "a, b, and c" not "a, b, c".
 - Do not use em dashes, in documentation or in code comments. Restructure the sentence, or use a colon or
   semicolon instead.

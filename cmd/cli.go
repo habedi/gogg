@@ -51,9 +51,11 @@ func Execute() {
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Error().Err(err).Msg("Command execution failed.")
+		closeDatabase()
 		os.Exit(1)
 	}
 	if e := getLastCliErr(); e != nil { // mapped exit code
+		closeDatabase()
 		if code, ok := exitCodeByType[e.Type]; ok {
 			os.Exit(code)
 		}

@@ -264,7 +264,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 	case q.lutrisLayoutFlag:
 		targetDir = filepath.Join(q.downloadPath, client.LutrisSlug(parsedGameData.Title), "gog")
 	case q.rommLayoutFlag:
-		plat := strings.ToLower(q.platformName)
+		plat := client.RomMPlatform(q.platformName)
 		if plat == "all" { // show root for mixed
 			targetDir = q.downloadPath
 		} else {

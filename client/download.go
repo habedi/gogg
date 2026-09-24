@@ -313,7 +313,7 @@ func DownloadGameFiles(
 	if lutrisLayout {
 		manifestDir = filepath.Join(downloadPath, LutrisSlug(game.Title), "gog")
 	} else if rommLayout {
-		if plat := strings.ToLower(strings.TrimSpace(platformName)); plat != "" && plat != "all" {
+		if plat := RomMPlatform(platformName); plat != "" && plat != "all" {
 			manifestDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
 		}
 	}
@@ -405,11 +405,22 @@ func DownloadGameFiles(
 			targetDir = filepath.Join(downloadPath, LutrisSlug(game.Title), "gog")
 		case rommLayout:
 			// RomM layout: platform/game/
-			plat := strings.ToLower(strings.TrimSpace(strings.Split(subDir, string(os.PathSeparator))[0]))
-			if plat == "" {
-				plat = strings.ToLower(platformName)
+			plat := ""
+			for _, part := range strings.Split(subDir, string(os.PathSeparator)) {
+				partLower := strings.ToLower(strings.TrimSpace(part))
+				if partLower == "windows" || partLower == "mac" || partLower == "linux" || partLower == "win" {
+					plat = RomMPlatform(partLower)
+					break
+				}
 			}
-			targetDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
+			if plat == "" {
+				plat = RomMPlatform(platformName)
+			}
+			if plat == "" || plat == "all" {
+				targetDir = filepath.Join(downloadPath, SanitizePath(game.Title))
+			} else {
+				targetDir = filepath.Join(downloadPath, plat, SanitizePath(game.Title))
+			}
 		default:
 			targetDir = filepath.Join(downloadPath, SanitizePath(game.Title), SanitizePath(subDir))
 		}
@@ -955,7 +966,7 @@ func enqueueExtras(ctx context.Context, enqueue func(downloadTask), extras []Ext
 			continue
 		}
 		fileName := SanitizePath(extra.Name)
-		if ext := filepath.Ext(extra.ManualURL); ext != "" {
+		if ext := filepath.Ext(extra.ManualURL); ext != "" && filepath.Ext(fileName) != ext {
 			fileName += ext
 		}
 		task := downloadTask{

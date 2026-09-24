@@ -79,8 +79,8 @@ func PruneOldInstallerVersions(rootPath, title string, options DownloadOptions) 
 	case options.LutrisLayout:
 		roots = []string{filepath.Join(rootPath, LutrisSlug(title), "gog")}
 	case options.RomMLayout:
-		platforms := []string{"windows", "mac", "linux"}
-		if plat := strings.ToLower(options.Platform); plat != "all" && plat != "" {
+		platforms := []string{"win", "mac", "linux"}
+		if plat := RomMPlatform(options.Platform); plat != "all" && plat != "" {
 			platforms = []string{plat}
 		}
 		for _, platform := range platforms {

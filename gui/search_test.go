@@ -5,8 +5,6 @@ import (
 	"slices"
 	"testing"
 
-	"fyne.io/fyne/v2"
-
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 	"github.com/habedi/gogg/db"
@@ -177,14 +175,11 @@ func TestFiltersDialog_RoundTripsNamesAndValues(t *testing.T) {
 
 	entry := widget.NewEntry()
 	entry.SetText("witcher platform:mac lang:de")
-	btn := newFiltersButton(entry, func() {})
+	btn := newFiltersButton(win, entry, func() {})
 	win.SetContent(btn)
 
 	test.Tap(btn)
-	// The dialog parents to the driver's first window, which is the one the
-	// test app made, not necessarily our handle to it.
-	parent := fyne.CurrentApp().Driver().AllWindows()[0]
-	overlay := parent.Canvas().Overlays().Top()
+	overlay := win.Canvas().Overlays().Top()
 	require.NotNil(t, overlay, "the dialog opens")
 
 	var platform, language *widget.Select

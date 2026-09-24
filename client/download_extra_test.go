@@ -123,8 +123,42 @@ func TestDownloadGameFiles_RommLayout(t *testing.T) {
 		DownloadOptions{Language: "en", Platform: "windows", RomMLayout: true, Threads: 1}, io.Discard)
 	require.NoError(t, err)
 
-	// RomM layout: downloadPath/platform/game/filename
-	assert.FileExists(t, filepath.Join(tmp, "windows", "testgame", "game.exe"))
+	// RomM layout: downloadPath/platform/game/filename, with the platform
+	// folder named as RomM expects ("win", not "windows").
+	assert.FileExists(t, filepath.Join(tmp, "win", "testgame", "game.exe"))
+}
+
+func TestDownloadGameFiles_RommLayoutDLCsAndExtras(t *testing.T) {
+	server := newSimpleServer(t, []byte("x"))
+	defer server.Close()
+
+	tmp := t.TempDir()
+	rawURL := server.URL + "/files/dlc.exe"
+	extraURL := server.URL + "/files/manual.pdf"
+	game := gameWithURL("TestGame", server.URL+"/files/game.exe")
+	game.Downloads[0].Platforms.Windows[0].Name = "game.exe"
+	game.DLCs = []DLC{
+		{
+			Title: "Expansion",
+			ParsedDownloads: []Downloadable{
+				{
+					Language: "en",
+					Platforms: Platform{
+						Windows: []PlatformFile{{Name: "dlc.exe", ManualURL: &rawURL}},
+					},
+				},
+			},
+		},
+	}
+	game.Extras = []Extra{{Name: "manual.pdf", ManualURL: extraURL}}
+
+	err := DownloadGameFiles(context.Background(), "token", game, tmp,
+		DownloadOptions{Language: "en", Platform: "windows", RomMLayout: true, Extras: true, DLCs: true, Threads: 1}, io.Discard)
+	require.NoError(t, err)
+
+	assert.FileExists(t, filepath.Join(tmp, "win", "testgame", "game.exe"))
+	assert.FileExists(t, filepath.Join(tmp, "win", "testgame", "dlc.exe"))
+	assert.FileExists(t, filepath.Join(tmp, "win", "testgame", "manual.pdf"))
 }
 
 func TestDownloadGameFiles_FlattenFlag(t *testing.T) {

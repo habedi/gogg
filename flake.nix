@@ -59,11 +59,11 @@
           # packaged artifact is the one that makes sense to run anywhere.
           default = pkgs.buildGoModule {
             pname = "gogg";
-            version = "0.5.1-beta";
+            version = "0.5.2-beta";
             src = ./.;
 
             # The hash of what go mod vendor produces for go.mod and go.sum.
-            # When the dependencies change, nix build prints the new value to put here.
+            # When the dependencies change, Nix build prints the new value to put here.
             vendorHash = "sha256-ikrEMyl8uQshhSHMkyXEhp0AXKaboNTQ0wESWG4LN7g=";
 
             tags = [ "headless" ];

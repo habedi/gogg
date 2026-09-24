@@ -130,7 +130,7 @@ func TestExecuteDownload_RommLayoutUsesThePlatformFolder(t *testing.T) {
 			false, false, false, false, false, false, true, false, true, 1, 1)
 	})
 
-	require.FileExists(t, filepath.Join(dir, "windows", "god-of-war", "setup.exe"))
+	require.FileExists(t, filepath.Join(dir, "win", "god-of-war", "setup.exe"))
 }
 
 func TestExecuteDownload_ReportsAGameThatIsNotInTheCatalogue(t *testing.T) {

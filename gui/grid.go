@@ -124,7 +124,7 @@ func bindGameCell(cell *gameCell, game db.Game, rb rowBinding) {
 	sameGame := cell.gameID == game.ID
 	cell.gameID = game.ID
 	cell.title.SetText(game.Title)
-	cell.badges.show(game.ID, dm, rb.state)
+	cell.badges.show(game.ID, dm, rb.state, rb.win)
 
 	// A game with downloads names its platforms; one with none says so in
 	// italics, rather than leaving a blank that reads as missing data. GOG
