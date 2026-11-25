@@ -268,6 +268,28 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 		}
 	}
 
+	// A slower scan must not overwrite a newer result for the same game.
+	var scanNumber uint64
+	lastApplied := make(map[int]uint64)
+	scanStatuses := func(games []db.Game, refresh func()) {
+		scanNumber++
+		number := scanNumber
+		statusWorker(func() gameStatuses { return statusesFor(dm, games) }, func(found gameStatuses) {
+			if closed.Load() {
+				return
+			}
+			for id := range found {
+				if lastApplied[id] > number {
+					delete(found, id)
+				} else {
+					lastApplied[id] = number
+				}
+			}
+			state.applyStatuses(found)
+			refresh()
+		})
+	}
+
 	// recomputeStatuses refreshes the cached download and update status for the
 	// whole library. It reads the filesystem and reparses every stored game, so
 	// it runs only when something that can change a status happened. onDone,
@@ -275,24 +297,18 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 	recomputeStatuses := func(onDone func()) {
 		games := allGames
 		updatesLabel.SetText("Checking downloads...")
-		statusWorker(
-			func() gameStatuses { return statusesFor(dm, games) },
-			func(found gameStatuses) {
-				if closed.Load() {
-					return
-				}
-				state.applyStatuses(found)
-				if sidebar != nil && sidebar.content.Visible() {
-					sidebar.refresh(allGames)
-				}
-				updateDisplayedGames()
-				if refreshUpdatesSummary != nil {
-					refreshUpdatesSummary()
-				}
-				if onDone != nil {
-					onDone()
-				}
-			})
+		scanStatuses(games, func() {
+			if sidebar != nil && sidebar.content.Visible() {
+				sidebar.refresh(allGames)
+			}
+			updateDisplayedGames()
+			if refreshUpdatesSummary != nil {
+				refreshUpdatesSummary()
+			}
+			if onDone != nil {
+				onDone()
+			}
+		})
 	}
 
 	// Typing is followed at a small distance: each keystroke restarts the
@@ -360,22 +376,16 @@ func LibraryTabUI(win fyne.Window, authService *auth.Service, dm *DownloadManage
 			return
 		}
 		touched := gamesWithTasks(dm, allGames)
-		statusWorker(
-			func() gameStatuses { return statusesFor(dm, touched) },
-			func(found gameStatuses) {
-				if closed.Load() {
-					return
-				}
-				state.applyStatuses(found)
-				if sidebar != nil && sidebar.content.Visible() {
-					sidebar.refresh(allGames)
-				}
-				updateDisplayedGames()
-				if refreshUpdatesSummary != nil {
-					refreshUpdatesSummary()
-				}
-				gameListWidget.Refresh()
-			})
+		scanStatuses(touched, func() {
+			if sidebar != nil && sidebar.content.Visible() {
+				sidebar.refresh(allGames)
+			}
+			updateDisplayedGames()
+			if refreshUpdatesSummary != nil {
+				refreshUpdatesSummary()
+			}
+			gameListWidget.Refresh()
+		})
 	})
 	// The list of downloads changes when one is added; a download that finishes
 	// changes only its state. The badges follow both.

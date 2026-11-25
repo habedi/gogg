@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,4 +185,24 @@ func TestExecuteDownload_RefusesBothLayoutsAtOnce(t *testing.T) {
 			false, false, false, false, false, false, true, true, true, 1, 1)
 	})
 	require.Contains(t, out, "Failed to download game files")
+}
+
+func TestExecuteDownload_KeepLatestReportsOnlyReplacedInstallers(t *testing.T) {
+	id, dir := downloadFixture(t, []byte("installer"))
+	repo := db.NewGameRepository(db.GetDB())
+	game, err := repo.GetByID(context.Background(), id)
+	require.NoError(t, err)
+	original := game.Data
+	for _, version := range []string{"1.0", "2.0"} {
+		game.Data = strings.Replace(original, "setup.exe", "game_"+version+".exe", 1)
+		require.NoError(t, repo.Put(context.Background(), *game))
+		out := captureStdout2(func() {
+			executeDownload(context.Background(), authFromDB(), id, dir, "en", "windows", false, false, true, false, false, true, false, false, true, 1, 1)
+		})
+		if version == "2.0" {
+			require.Contains(t, out, "Removed 1 older installer file.")
+		}
+	}
+	require.NoFileExists(t, filepath.Join(dir, "god-of-war", "windows", "game_1.0.exe"))
+	require.FileExists(t, filepath.Join(dir, "god-of-war", "windows", "game_2.0.exe"))
 }

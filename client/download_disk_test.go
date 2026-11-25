@@ -69,17 +69,14 @@ func TestWriteFileManifest_ReplacesTheEntryForAFileBroughtAgain(t *testing.T) {
 	require.Equal(t, int64(20), entries[0].SizeBytes)
 }
 
-func TestWriteFileManifest_StartsOverOnAManifestItCannotRead(t *testing.T) {
+func TestWriteFileManifest_PreservesAManifestItCannotRead(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "files.json")
 	require.NoError(t, os.WriteFile(path, []byte("{not json at all"), 0o644))
 
-	writeFileManifest(path, []DownloadedFile{{Path: "windows/setup.exe", SizeBytes: 10}})
-
+	require.Error(t, writeFileManifest(path, []DownloadedFile{{Path: "windows/setup.exe", SizeBytes: 10}}))
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	var entries []DownloadedFile
-	require.NoError(t, json.Unmarshal(data, &entries))
-	require.Len(t, entries, 1, "an unreadable manifest is replaced rather than kept")
+	require.Equal(t, "{not json at all", string(data))
 }
 
 func TestWriteFileManifest_SaysNothingWhenTheDirectoryCannotBeMade(t *testing.T) {

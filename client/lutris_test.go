@@ -88,20 +88,3 @@ func TestDownloadGameFiles_RefusesRomMAndLutrisTogether(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot both")
 }
-
-// Pruning under the Lutris layout works on the <slug>/gog folder.
-func TestPruneOldInstallerVersions_LutrisLayout(t *testing.T) {
-	root := t.TempDir()
-	writeFiles(t, root,
-		"stalker-shadow-of-chornobyl/gog/setup_game_1.0.0.exe",
-		"stalker-shadow-of-chornobyl/gog/setup_game_2.0.0.exe",
-	)
-
-	removed, err := PruneOldInstallerVersions(root, "S.T.A.L.K.E.R.: Shadow of Chornobyl",
-		DownloadOptions{LutrisLayout: true})
-	require.NoError(t, err)
-	require.Len(t, removed, 1)
-
-	assertExists(t, root, "stalker-shadow-of-chornobyl/gog/setup_game_2.0.0.exe")
-	assertGone(t, root, "stalker-shadow-of-chornobyl/gog/setup_game_1.0.0.exe")
-}

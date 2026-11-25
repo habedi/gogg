@@ -62,7 +62,7 @@ func TestEnqueueExtras_ContextCancelled(t *testing.T) {
 
 func TestEnqueueDLCs_Empty(t *testing.T) {
 	var tasks []downloadTask
-	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, &Game{}, "en", "windows", false, false, false, false)
+	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, &Game{}, "en", "windows", false, false, false, false, nil)
 	require.NoError(t, err)
 	assert.Empty(t, tasks)
 }
@@ -85,7 +85,7 @@ func TestEnqueueDLCs_EnqueuesDLCGameFiles(t *testing.T) {
 		},
 	}
 	var tasks []downloadTask
-	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", false, false, false, false)
+	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", false, false, false, false, nil)
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Contains(t, tasks[0].subDir, "my-dlc")
@@ -102,7 +102,7 @@ func TestEnqueueDLCs_EnqueuesDLCExtrasWhenFlagSet(t *testing.T) {
 		},
 	}
 	var tasks []downloadTask
-	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", true, false, false, false)
+	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", true, false, false, false, nil)
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Contains(t, tasks[0].subDir, "extras")
@@ -118,7 +118,7 @@ func TestEnqueueDLCs_SkipsDLCExtrasWhenFlagUnset(t *testing.T) {
 		},
 	}
 	var tasks []downloadTask
-	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", false, false, false, false)
+	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", false, false, false, false, nil)
 	require.NoError(t, err)
 	assert.Empty(t, tasks)
 }
@@ -143,7 +143,7 @@ func TestEnqueueDLCs_MultipleDLCs(t *testing.T) {
 		},
 	}
 	var tasks []downloadTask
-	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", false, false, false, false)
+	err := enqueueDLCs(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", false, false, false, false, nil)
 	require.NoError(t, err)
 	assert.Len(t, tasks, 2)
 }
@@ -157,7 +157,7 @@ func TestEnqueueGameFiles_LanguageMismatch(t *testing.T) {
 		Platforms: Platform{Windows: []PlatformFile{{ManualURL: &url, Name: "setup.exe"}}},
 	}}}
 	var tasks []downloadTask
-	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", "", false, false, false)
+	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", "", false, false, false, nil)
 	require.NoError(t, err)
 	assert.Empty(t, tasks)
 }
@@ -168,7 +168,7 @@ func TestEnqueueGameFiles_NilManualURL(t *testing.T) {
 		Platforms: Platform{Windows: []PlatformFile{{ManualURL: nil, Name: "setup.exe"}}},
 	}}}
 	var tasks []downloadTask
-	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", "", false, false, false)
+	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", "", false, false, false, nil)
 	require.NoError(t, err)
 	assert.Empty(t, tasks)
 }
@@ -186,7 +186,7 @@ func TestEnqueueGameFiles_AllPlatforms(t *testing.T) {
 		},
 	}}}
 	var tasks []downloadTask
-	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "all", "", false, false, false)
+	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "all", "", false, false, false, nil)
 	require.NoError(t, err)
 	assert.Len(t, tasks, 3)
 }
@@ -202,7 +202,7 @@ func TestEnqueueGameFiles_SkipPatchesByURL(t *testing.T) {
 		}},
 	}}}
 	var tasks []downloadTask
-	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", "", false, false, true)
+	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", "", false, false, true, nil)
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Equal(t, "setup.exe", tasks[0].fileName)
@@ -219,7 +219,7 @@ func TestEnqueueGameFiles_SkipPatchesByName(t *testing.T) {
 		}},
 	}}}
 	var tasks []downloadTask
-	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", "", false, false, true)
+	err := enqueueGameFiles(context.Background(), func(t downloadTask) { tasks = append(tasks, t) }, game, "en", "windows", "", false, false, true, nil)
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Equal(t, "setup.exe", tasks[0].fileName)
@@ -233,7 +233,7 @@ func TestEnqueueGameFiles_ContextCancelled(t *testing.T) {
 	}}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := enqueueGameFiles(ctx, func(_ downloadTask) {}, game, "en", "windows", "", false, false, false)
+	err := enqueueGameFiles(ctx, func(_ downloadTask) {}, game, "en", "windows", "", false, false, false, nil)
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -249,7 +249,7 @@ func TestEnqueueDLCs_ExtrasContextCancelled(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := enqueueDLCs(ctx, func(_ downloadTask) {}, game, "en", "windows", true, false, false, false)
+	err := enqueueDLCs(ctx, func(_ downloadTask) {}, game, "en", "windows", true, false, false, false, nil)
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -267,6 +267,6 @@ func TestEnqueueDLCs_ContextCancelled(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := enqueueDLCs(ctx, func(_ downloadTask) {}, game, "en", "windows", false, false, false, false)
+	err := enqueueDLCs(ctx, func(_ downloadTask) {}, game, "en", "windows", false, false, false, false, nil)
 	assert.ErrorIs(t, err, context.Canceled)
 }

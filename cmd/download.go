@@ -293,11 +293,15 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 		fmt.Println("Checksum verification is off. Each checksum is still recorded in files.json, but it is not checked against GOG.")
 	}
 
+	var cleanup *client.InstallerCleanup
+	if keepLatestFlag {
+		cleanup = &client.InstallerCleanup{}
+	}
 	progressWriter := &cliProgressWriter{}
 
 	err = client.DownloadGameFiles(ctx, user.AccessToken, parsedGameData, downloadPath,
 		client.DownloadOptions{
-			Language: languageFullName, Platform: platformName,
+			Cleanup: cleanup, Language: languageFullName, Platform: platformName,
 			Extras: extrasFlag, DLCs: dlcFlag, Resume: resumeFlag,
 			Flatten: flattenFlag, SkipPatches: skipPatchesFlag, RomMLayout: rommLayoutFlag,
 			LutrisLayout: lutrisLayoutFlag, SkipVerify: noVerifyFlag,
@@ -332,7 +336,7 @@ func executeDownload(ctx context.Context, authService *auth.Service, gameID int,
 	fmt.Printf("\rGame files downloaded successfully to: \"%s\" \n", gameDir)
 	if keepLatestFlag {
 		removed, pruneErr := client.PruneOldInstallerVersions(downloadPath, parsedGameData.Title,
-			client.DownloadOptions{RomMLayout: rommLayoutFlag, LutrisLayout: lutrisLayoutFlag, Platform: platformName})
+			client.DownloadOptions{Cleanup: cleanup, RomMLayout: rommLayoutFlag, LutrisLayout: lutrisLayoutFlag, Platform: platformName})
 		if pruneErr != nil {
 			log.Warn().Err(pruneErr).Msg("Failed to prune old versions")
 		}

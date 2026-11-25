@@ -358,6 +358,10 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 			}
 		}
 
+		var cleanup *client.InstallerCleanup
+		if q.keepLatestFlag {
+			cleanup = &client.InstallerCleanup{}
+		}
 		pass := 0
 		var overallBase int64
 		for _, language := range languages {
@@ -378,7 +382,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 				err = client.DownloadGameFiles(
 					ctx, token.AccessToken, parsedGameData, q.downloadPath,
 					client.DownloadOptions{
-						Language: language, Platform: platform,
+						Cleanup: cleanup, Language: language, Platform: platform,
 						Extras: q.extrasFlag, DLCs: q.dlcFlag, Resume: q.resumeFlag,
 						Flatten: q.flattenFlag, SkipPatches: q.skipPatchesFlag,
 						RomMLayout: q.rommLayoutFlag, LutrisLayout: q.lutrisLayoutFlag,
@@ -457,7 +461,7 @@ func executeDownload(dm *DownloadManager, q queuedDownload) error {
 
 		if q.keepLatestFlag {
 			removed, pruneErr := client.PruneOldInstallerVersions(q.downloadPath, parsedGameData.Title,
-				client.DownloadOptions{RomMLayout: q.rommLayoutFlag, LutrisLayout: q.lutrisLayoutFlag, Platform: q.platformName})
+				client.DownloadOptions{Cleanup: cleanup, RomMLayout: q.rommLayoutFlag, LutrisLayout: q.lutrisLayoutFlag, Platform: q.platformName})
 			if pruneErr != nil {
 				log.Warn().Err(pruneErr).Msg("Failed to prune old versions (GUI)")
 			}
