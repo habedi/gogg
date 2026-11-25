@@ -212,11 +212,12 @@ func SanitizePath(name string) string {
 }
 
 type downloadTask struct {
-	url      string
-	fileName string
-	subDir   string
-	resume   bool
-	flatten  bool
+	installer *InstallerInfo
+	url       string
+	fileName  string
+	subDir    string
+	resume    bool
+	flatten   bool
 	// dlc marks a file that belongs to a DLC rather than to the game itself.
 	// The game data carries no product ID for a DLC, so there is no product to
 	// ask about the file, and asking the base game's product returns the
@@ -228,6 +229,8 @@ type downloadTask struct {
 // land on disk. The zero value downloads nothing useful: Language, Platform,
 // and Threads have no defaults worth guessing.
 type DownloadOptions struct {
+	// Cleanup collects completed passes for keep-latest cleanup.
+	Cleanup *InstallerCleanup
 	// Language is the full name the game data spells it in, such as "English".
 	Language string
 	// Platform is windows, mac, linux, or all.
@@ -431,6 +434,14 @@ func DownloadGameFiles(
 			return err
 		}
 
+		relPath, relErr := filepath.Rel(manifestDir, filePath)
+		if relErr != nil || !filepath.IsLocal(relPath) {
+			relPath, err = filepath.Abs(filePath)
+			if err != nil {
+				return err
+			}
+		}
+		var totalSize int64
 		// finishFile is the shared tail of both download paths: the checksum
 		// verdict, then the manifest entry. The streamed MD5 is compared
 		// against the one GOG publishes for the file. A mismatch means the
@@ -450,11 +461,9 @@ func DownloadGameFiles(
 					verified = true
 				}
 			}
-			relPath := filePath
-			if rel, relErr := filepath.Rel(manifestDir, filePath); relErr == nil && !strings.HasPrefix(rel, "..") {
-				relPath = rel
-			}
 			recordFile(DownloadedFile{
+				Installer:    task.installer,
+				uncertain:    size <= 0 || totalSize > 0 && totalSize != size,
 				Path:         relPath,
 				SizeBytes:    size,
 				MD5:          sum,
@@ -479,7 +488,7 @@ func DownloadGameFiles(
 			log.Warn().Str("file", fileName).Str("url", url).Msg("Skipping file: server returned HTTP 403; file may be bundled in the main installer")
 			return nil
 		}
-		totalSize := headResp.ContentLength
+		totalSize = headResp.ContentLength
 
 		// A sidecar means the .part file has holes only the parallel path
 		// can fill; any other path must start the file over.
@@ -577,6 +586,8 @@ func DownloadGameFiles(
 				_ = file.Close()
 				_ = os.Rename(partPath, filePath)
 			}
+			recordFile(DownloadedFile{Path: relPath, SizeBytes: startOffset, Installer: task.installer, resumed: true, uncertain: startOffset != totalSize})
+
 			return nil
 		}
 
@@ -770,7 +781,7 @@ func DownloadGameFiles(
 	go func() {
 		defer wg.Done()
 		enqueueErr = func() error {
-			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, "", resumeFlag, flattenFlag, skipPatchesFlag); err != nil {
+			if err := enqueueGameFiles(ctx, enqueue, game, gameLanguage, platformName, "", resumeFlag, flattenFlag, skipPatchesFlag, options.Cleanup); err != nil {
 				return err
 			}
 			if extrasFlag {
@@ -779,7 +790,7 @@ func DownloadGameFiles(
 				}
 			}
 			if dlcFlag {
-				if err := enqueueDLCs(ctx, enqueue, &game, gameLanguage, platformName, extrasFlag, resumeFlag, flattenFlag, skipPatchesFlag); err != nil {
+				if err := enqueueDLCs(ctx, enqueue, &game, gameLanguage, platformName, extrasFlag, resumeFlag, flattenFlag, skipPatchesFlag, options.Cleanup); err != nil {
 					return err
 				}
 			}
@@ -817,7 +828,19 @@ func DownloadGameFiles(
 		manifestMu.Lock()
 		brought := append([]DownloadedFile{}, broughtFiles...)
 		manifestMu.Unlock()
-		writeFileManifest(filepath.Join(manifestDir, "files.json"), brought)
+		manifestPath := filepath.Join(manifestDir, "files.json")
+		err = writeFileManifest(manifestPath, brought)
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not save file manifest")
+		}
+		if options.Cleanup != nil {
+			if err != nil || len(brought) != len(tasks) {
+				options.Cleanup.incomplete = true
+				log.Warn().Msg("Skipping installer cleanup because the download or its manifest is incomplete")
+			} else {
+				options.Cleanup.passes = append(options.Cleanup.passes, installerPass{manifestDir, brought})
+			}
+		}
 	}
 
 	log.Info().Msg("Download process completed.")
@@ -829,9 +852,12 @@ func DownloadGameFiles(
 // the MD5 of what streamed in, and when. The checksum is of what was written,
 // so a file can later be told apart from what it was.
 type DownloadedFile struct {
-	Path      string `json:"path"` // relative to the game's folder when under it
-	SizeBytes int64  `json:"size_bytes"`
-	MD5       string `json:"md5,omitempty"`
+	resumed, uncertain bool
+	Shared             bool           `json:"shared,omitempty"`
+	Installer          *InstallerInfo `json:"installer,omitempty"`
+	Path               string         `json:"path"` // relative to the game's folder when under it
+	SizeBytes          int64          `json:"size_bytes"`
+	MD5                string         `json:"md5,omitempty"`
 	// MD5Verified says the checksum above matched the one GOG publishes for
 	// the file. False means unverified, not wrong: most often the file has no
 	// published checksum at all.
@@ -841,17 +867,29 @@ type DownloadedFile struct {
 
 // writeFileManifest records what this run downloaded, keeping the entries of
 // files earlier runs brought and this one skipped.
-func writeFileManifest(path string, fresh []DownloadedFile) {
+func writeFileManifest(path string, fresh []DownloadedFile) error {
+	fileManifestMu.Lock()
+	defer fileManifestMu.Unlock()
 	entries := make(map[string]DownloadedFile)
-	if data, err := os.ReadFile(path); err == nil {
-		var existing []DownloadedFile
-		if json.Unmarshal(data, &existing) == nil {
-			for _, entry := range existing {
-				entries[entry.Path] = entry
-			}
-		}
+	existing, err := readFileManifest(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, entry := range existing {
+		entries[entry.Path] = entry
 	}
 	for _, entry := range fresh {
+		old, exists := entries[entry.Path]
+		if exists {
+			entry.Shared = old.Shared || !sameSelection(old.Installer, entry.Installer)
+		}
+		if entry.resumed {
+			if exists {
+				old.Shared = entry.Shared
+				entries[entry.Path] = old
+			}
+			continue
+		}
 		entries[entry.Path] = entry
 	}
 
@@ -861,16 +899,7 @@ func writeFileManifest(path string, fresh []DownloadedFile) {
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].Path < all[j].Path })
 
-	data, err := json.MarshalIndent(all, "", "  ")
-	if err != nil {
-		return
-	}
-	if ensureDirExists(filepath.Dir(path)) != nil {
-		return
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		log.Debug().Err(err).Msg("Could not write the file manifest")
-	}
+	return saveFileManifest(path, all)
 }
 
 // isCancellation reports whether err is, or wraps, a context cancellation or a
@@ -922,7 +951,7 @@ func buildManualURL(u string) string {
 	return fmt.Sprintf("https://embed.gog.com%s", u)
 }
 
-func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform, subDirPrefix string, resume, flatten, skipPatches bool) error {
+func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game, lang, platform, subDirPrefix string, resume, flatten, skipPatches bool, cleanup *InstallerCleanup) error {
 	for _, download := range game.Downloads {
 		if !strings.EqualFold(download.Language, lang) {
 			continue
@@ -936,17 +965,25 @@ func enqueueGameFiles(ctx context.Context, enqueue func(downloadTask), game Game
 			}
 			for _, file := range files {
 				if file.ManualURL == nil || *file.ManualURL == "" {
+					if cleanup != nil {
+						cleanup.incomplete = true
+					}
 					continue
 				}
 				if skipPatches && (strings.Contains(strings.ToLower(*file.ManualURL), "patch") || strings.Contains(strings.ToLower(file.Name), "patch")) {
 					continue
 				}
+				info := &InstallerInfo{GameID: game.ID, Product: game.Title, Platform: name, Language: download.Language, DLC: subDirPrefix != ""}
+				if file.Version != nil {
+					info.Version = *file.Version
+				}
 				task := downloadTask{
-					url:      buildManualURL(*file.ManualURL),
-					fileName: file.Name,
-					subDir:   filepath.Join(subDirPrefix, name),
-					resume:   resume,
-					flatten:  flatten,
+					installer: info,
+					url:       buildManualURL(*file.ManualURL),
+					fileName:  file.Name,
+					subDir:    filepath.Join(subDirPrefix, name),
+					resume:    resume,
+					flatten:   flatten,
 				}
 				select {
 				case <-ctx.Done():
@@ -986,7 +1023,7 @@ func enqueueExtras(ctx context.Context, enqueue func(downloadTask), extras []Ext
 	return nil
 }
 
-func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool) error {
+func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, lang, platform string, extras, resume, flatten, skipPatches bool, cleanup *InstallerCleanup) error {
 	// A DLC's files are marked as they are queued, so that what verifies them
 	// later does not mistake them for the base game's.
 	enqueueDLCFile := func(task downloadTask) {
@@ -995,8 +1032,8 @@ func enqueueDLCs(ctx context.Context, enqueue func(downloadTask), game *Game, la
 	}
 	for _, dlc := range game.DLCs {
 		dlcSubDir := filepath.Join("dlcs", SanitizePath(dlc.Title))
-		dlcGame := Game{Title: dlc.Title, Downloads: dlc.ParsedDownloads}
-		if err := enqueueGameFiles(ctx, enqueueDLCFile, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches); err != nil {
+		dlcGame := Game{ID: game.ID, Title: dlc.Title, Downloads: dlc.ParsedDownloads}
+		if err := enqueueGameFiles(ctx, enqueueDLCFile, dlcGame, lang, platform, dlcSubDir, resume, flatten, skipPatches, cleanup); err != nil {
 			return err
 		}
 		if extras {

@@ -161,10 +161,10 @@ Use `--no-verify` to turn the check off.
 Gogg still computes each checksum and writes it to `files.json`, so you lose only the check.
 
 > [!NOTE]
-> The `--keep-latest` flag scans downloaded installer files whose names contain a version-like pattern of digits separated by dots (like `game_installer_1.2.3.exe`).
-> For each prefix before the version (like `game_installer_`), it keeps only the file with the highest numeric version and removes older ones (like keeps `1.2.3` and removes `1.1.0`).
-> Files without a detectable version pattern are left untouched.
-> Supported installer extensions for pruning include: `.exe`, `.bin`, `.dmg`, `.sh`, `.zip`, `.tar.gz`, and `.rar`.
+> With `--keep-latest`, Gogg uses `files.json` to identify older installers for the same game or DLC, platform, and language.
+> It compares version numbers or GOG build IDs in the filenames and checks the files on disk against their recorded checksums.
+> If a requested installer part is missing, Gogg keeps the old build. It also keeps files you have edited, files shared by different selections, and files it cannot identify.
+> Older manifests have fewer details, so some existing installers may need manual cleanup.
 
 For example, to download all files (English language) of a game with the ID `<game_id>` to the directory
 `<download_dir>` with the specified options:
