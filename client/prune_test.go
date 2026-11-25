@@ -160,3 +160,17 @@ func TestPruneOldInstallerVersions_IgnoresNonInstallerFiles(t *testing.T) {
 	)
 	assertGone(t, root, "some-game/windows/setup_game_1.0.0.exe")
 }
+
+func TestPruneGOGInstallerBuilds(t *testing.T) {
+	root := t.TempDir()
+	old := "prey/setup_prey_12742273_(64bit)_(65935)"
+	current := "prey/setup_prey_12742274_(64bit)_(65936)"
+	other := "prey/setup_prey_12742273_(32bit)_(65935).exe"
+	dlc := "prey/setup_prey_dlc_12742273_(64bit)_(65935).exe"
+	writeFiles(t, root, old+".exe", old+"-1.bin", current+".exe", current+"-1.bin", current+"-2.bin", other, dlc)
+	if _, err := PruneOldInstallerVersions(root, "Prey", DownloadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	assertGone(t, root, old+".exe", old+"-1.bin")
+	assertExists(t, root, current+".exe", current+"-1.bin", current+"-2.bin", other, dlc)
+}

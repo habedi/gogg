@@ -193,8 +193,14 @@ func TestLibraryTab_FinishedDownloadUpdatesTheCollectionsAndTheList(t *testing.T
 			Status: binding.NewString(), Details: binding.NewString(),
 			Progress: binding.NewFloat(), FileStatus: binding.NewString(),
 		}
+		held := holdStatusWork(t)
+		finished.SetState(StateDownloading)
+		require.NoError(t, dm.AddTask(finished))
+		applyEarlier, earlier := held.apply, held.work()
+		require.Equal(t, "0", lt.sidebar.buttons["Downloaded"].count.Text)
 		finished.SetState(StateCompleted)
-		require.NoError(t, dm.Tasks.Append(finished))
+		held.run()
+		applyEarlier(earlier)
 
 		require.Equal(t, "1", lt.sidebar.buttons["Downloaded"].count.Text,
 			"the collections have to count the finished download")

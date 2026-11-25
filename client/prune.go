@@ -11,9 +11,19 @@ import (
 
 var installerVersionPattern = regexp.MustCompile(`^(?P<prefix>.*?)(?P<ver>\d+(?:\.\d+)+)(?P<suffix>\.[^.]+)$`)
 
+// GOG Windows installers may include an architecture, a build ID, and a part number.
+var gogBuildPattern = regexp.MustCompile(`^(setup_.+_)\d+(?:\.\d+)*(_\((?:32|64)bit\))?_\((\d+)\)((?:-\d+)?\.(?:bin|exe))$`)
+
 // parseInstallerVersion splits an installer's file name into what surrounds
 // the version and the version itself.
 func parseInstallerVersion(filename string) (prefix string, version []int, suffix string, ok bool) {
+	if m := gogBuildPattern.FindStringSubmatch(filename); m != nil {
+		build, err := strconv.Atoi(m[3])
+		if err != nil {
+			return "", nil, "", false
+		}
+		return m[1], []int{build}, m[2] + "_()" + m[4], true
+	}
 	m := installerVersionPattern.FindStringSubmatch(filename)
 	if m == nil {
 		return "", nil, "", false
